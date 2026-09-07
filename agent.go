@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
@@ -78,24 +79,39 @@ func (a *AgentCmd) Validate() error {
 	return nil
 }
 
+// clusterController, wgController and hostsWriter are the parts of the
+// cluster, wg and etchosts packages the agent loop drives; they exist so the
+// loop can be tested with fakes.
+type clusterController interface {
+	Members() <-chan []common.Node
+	Leave()
+}
+
+type wgController interface {
+	SetUpInterface([]common.Node) error
+	DownInterface() error
+}
+
+type hostsWriter interface {
+	WriteEntries(map[string][]string) error
+}
+
+// Run wires up cluster, wireguard and /etc/hosts, joins the cluster and runs the agent loop until SIGTERM/SIGINT.
 func (a *AgentCmd) Run(cli *cli) error {
-	// Create the wireguard and cluster configuration
 	cluster, err := cluster.New(a.Interface, a.Init, a.ClusterKey.bytes, a.BindAddr, a.ClusterPort, a.UseIPAsName)
 	if err != nil {
-		logrus.WithError(err).Fatal("could not create cluster")
+		return fmt.Errorf("creating cluster: %w", err)
 	}
 	wgstate, localNode, err := wg.New(a.Interface, a.WireguardPort, a.OverlayNet, cluster.LocalName)
 	if err != nil {
-		logrus.WithError(err).Fatal("could not instantiate wireguard controller")
+		return fmt.Errorf("instantiating wireguard controller: %w", err)
 	}
 
-	// Prepare the /etc/hosts writer
 	hostsFile := &etchosts.EtcHosts{
 		Banner: "# ! managed automatically by wesher interface " + a.Interface,
 		Logger: logrus.StandardLogger(),
 	}
 
-	// Join the cluster
 	cluster.Update(localNode)
 
 	nodec := cluster.Members() // avoid deadlocks by starting before join
@@ -106,51 +122,62 @@ func (a *AgentCmd) Run(cli *cli) error {
 			logrus.WithError(err).Errorf("could not join cluster, retrying in %s", dur)
 		},
 	); err != nil {
-		logrus.WithError(err).Fatal("could not join cluster")
+		return fmt.Errorf("joining cluster: %w", err)
 	}
 
 	ctx, cancelSignals := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer cancelSignals()
 
-	// Main loop
+	return a.loop(ctx, nodec, cluster, wgstate, hostsFile)
+}
+
+// loop applies each membership update until ctx is done, then leaves and tears down.
+func (a *AgentCmd) loop(ctx context.Context, nodec <-chan []common.Node, cl clusterController, wgstate wgController, hosts hostsWriter) error {
 	logrus.Debug("waiting for cluster events")
 	for {
 		select {
-		case rawNodes := <-nodec:
-			nodes := make([]common.Node, 0, len(rawNodes))
-			hosts := make(map[string][]string, len(rawNodes))
-			logrus.Info("cluster members:\n")
-			for _, node := range rawNodes {
-				if err := node.DecodeMeta(); err != nil {
-					logrus.Warnf("\t addr: %s, could not decode metadata", node.Addr)
-					continue
-				}
-				logrus.Infof("\taddr: %s, overlay: %s, pubkey: %s", node.Addr, node.OverlayAddr, node.PubKey)
-				nodes = append(nodes, node)
-				hosts[node.OverlayAddr.String()] = []string{node.Name}
+		case rawNodes, ok := <-nodec:
+			if !ok {
+				return errors.New("cluster membership channel closed")
 			}
-			if err := wgstate.SetUpInterface(nodes); err != nil {
-				logrus.WithError(err).Error("could not up interface")
-				wgstate.DownInterface() // nolint: errcheck // opportunistic
-			}
-			if !a.NoEtcHosts {
-				if err := hostsFile.WriteEntries(hosts); err != nil {
-					logrus.WithError(err).Error("could not write hosts entries")
-				}
-			}
+			a.apply(rawNodes, wgstate, hosts)
 		case <-ctx.Done():
-			cancelSignals()
 			logrus.Info("terminating...")
-			cluster.Leave()
+			cl.Leave()
 			if !a.NoEtcHosts {
-				if err := hostsFile.WriteEntries(map[string][]string{}); err != nil {
+				if err := hosts.WriteEntries(map[string][]string{}); err != nil {
 					logrus.WithError(err).Error("could not remove stale hosts entries")
 				}
 			}
 			if err := wgstate.DownInterface(); err != nil {
-				logrus.WithError(err).Error("could not down interface")
+				return fmt.Errorf("downing interface: %w", err)
 			}
-			os.Exit(0)
+			return nil
+		}
+	}
+}
+
+// apply pushes one membership snapshot to wireguard and /etc/hosts; nodes with undecodable metadata are skipped.
+func (a *AgentCmd) apply(rawNodes []common.Node, wgstate wgController, hosts hostsWriter) {
+	nodes := make([]common.Node, 0, len(rawNodes))
+	hostEntries := make(map[string][]string, len(rawNodes))
+	logrus.Info("cluster members:\n")
+	for _, node := range rawNodes {
+		if err := node.DecodeMeta(); err != nil {
+			logrus.Warnf("\t addr: %s, could not decode metadata", node.Addr)
+			continue
+		}
+		logrus.Infof("\taddr: %s, overlay: %s, pubkey: %s", node.Addr, node.OverlayAddr, node.PubKey)
+		nodes = append(nodes, node)
+		hostEntries[node.OverlayAddr.String()] = []string{node.Name}
+	}
+	if err := wgstate.SetUpInterface(nodes); err != nil {
+		logrus.WithError(err).Error("could not up interface")
+		wgstate.DownInterface() // nolint: errcheck // opportunistic
+	}
+	if !a.NoEtcHosts {
+		if err := hosts.WriteEntries(hostEntries); err != nil {
+			logrus.WithError(err).Error("could not write hosts entries")
 		}
 	}
 }
