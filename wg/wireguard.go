@@ -15,10 +15,28 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
+// wgClient is the subset of *wgctrl.Client used by State.
+type wgClient interface {
+	Device(name string) (*wgtypes.Device, error)
+	ConfigureDevice(name string, cfg wgtypes.Config) error
+}
+
+// netlinker is the subset of *netlink.Handle used by State.
+type netlinker interface {
+	LinkAdd(netlink.Link) error
+	LinkDel(netlink.Link) error
+	LinkByName(string) (netlink.Link, error)
+	AddrReplace(netlink.Link, *netlink.Addr) error
+	LinkSetMTU(netlink.Link, int) error
+	LinkSetUp(netlink.Link) error
+	RouteAdd(*netlink.Route) error
+}
+
 // State holds the configured state of a Wesher Wireguard interface.
 type State struct {
 	iface       string
-	client      *wgctrl.Client
+	client      wgClient
+	nl          netlinker
 	OverlayAddr netip.Addr
 	Port        int
 	PrivKey     wgtypes.Key
@@ -33,7 +51,10 @@ func New(iface string, port int, prefix netip.Prefix, name string) (*State, *com
 	if err != nil {
 		return nil, nil, fmt.Errorf("instantiating wireguard client: %w", err)
 	}
+	return newState(iface, port, prefix, name, client, &netlink.Handle{})
+}
 
+func newState(iface string, port int, prefix netip.Prefix, name string, client wgClient, nl netlinker) (*State, *common.Node, error) {
 	privKey, err := wgtypes.GeneratePrivateKey()
 	if err != nil {
 		return nil, nil, fmt.Errorf("generating private key: %w", err)
@@ -43,6 +64,7 @@ func New(iface string, port int, prefix netip.Prefix, name string) (*State, *com
 	state := State{
 		iface:   iface,
 		client:  client,
+		nl:      nl,
 		Port:    port,
 		PrivKey: privKey,
 		PubKey:  pubKey,
@@ -94,16 +116,16 @@ func (s *State) DownInterface() error {
 		}
 		return fmt.Errorf("getting device %s: %w", s.iface, err)
 	}
-	link, err := netlink.LinkByName(s.iface)
+	link, err := s.nl.LinkByName(s.iface)
 	if err != nil {
 		return fmt.Errorf("getting link for %s: %w", s.iface, err)
 	}
-	return netlink.LinkDel(link)
+	return s.nl.LinkDel(link)
 }
 
 // SetUpInterface creates and sets up the associated network interface.
 func (s *State) SetUpInterface(nodes []common.Node) error {
-	if err := netlink.LinkAdd(&netlink.Wireguard{LinkAttrs: netlink.LinkAttrs{Name: s.iface}}); err != nil && !os.IsExist(err) {
+	if err := s.nl.LinkAdd(&netlink.Wireguard{LinkAttrs: netlink.LinkAttrs{Name: s.iface}}); err != nil && !os.IsExist(err) {
 		return fmt.Errorf("creating link %s: %w", s.iface, err)
 	}
 
@@ -120,24 +142,24 @@ func (s *State) SetUpInterface(nodes []common.Node) error {
 		return fmt.Errorf("setting wireguard configuration for %s: %w", s.iface, err)
 	}
 
-	link, err := netlink.LinkByName(s.iface)
+	link, err := s.nl.LinkByName(s.iface)
 	if err != nil {
 		return fmt.Errorf("getting link information for %s: %w", s.iface, err)
 	}
-	if err := netlink.AddrReplace(link, &netlink.Addr{
+	if err := s.nl.AddrReplace(link, &netlink.Addr{
 		IPNet: addrToIPNet(s.OverlayAddr),
 	}); err != nil {
 		return fmt.Errorf("setting address for %s: %w", s.iface, err)
 	}
 	// TODO: make MTU configurable?
-	if err := netlink.LinkSetMTU(link, 1420); err != nil {
+	if err := s.nl.LinkSetMTU(link, 1420); err != nil {
 		return fmt.Errorf("setting MTU for %s: %w", s.iface, err)
 	}
-	if err := netlink.LinkSetUp(link); err != nil {
+	if err := s.nl.LinkSetUp(link); err != nil {
 		return fmt.Errorf("enabling interface %s: %w", s.iface, err)
 	}
 	for _, node := range nodes {
-		if err := netlink.RouteAdd(&netlink.Route{
+		if err := s.nl.RouteAdd(&netlink.Route{
 			LinkIndex: link.Attrs().Index,
 			Dst:       addrToIPNet(node.OverlayAddr),
 			Scope:     netlink.SCOPE_LINK,
