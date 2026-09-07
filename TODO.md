@@ -18,62 +18,41 @@ Baseline (2026-09-07, upstream `main` @ 8887b51, last commit 2024-11-11):
 ## Phase 0: groundwork
 
 - [x] **DECISION**: fork strategy. Keep module path `github.com/costela/wesher`
-      until phase 3 so fixes stay easy to upstream; revisit then.
+      until phase 5 so fixes stay easy to upstream; revisit then.
 - [x] Add `make coverage` and `make test` targets.
 - [x] Add `make vulncheck` and `make lint` (pinned via `go run pkg@version`) and a
       non-blocking CI job. Lint is non-blocking until its 7 findings are fixed:
-      3 errcheck (phase 3) and 4 govet inline warnings that vanish with the Go
+      3 errcheck (phase 5) and 4 govet inline warnings that vanish with the Go
       directive bump (phase 2). govulncheck: 0 called vulnerabilities, 36 in
       required modules that are not reached (phase 2 motivation).
 - [x] Baseline numbers recorded in the table above.
 
-## Phase 1: fill out the test suite
+## Phase 1: pure-logic unit tests
 
 Target: every function that does not require `NET_ADMIN` reaches near 100%.
-Functions that touch netlink/wgctrl get covered by root-gated tests or e2e.
 
-Pure logic, no privileges needed (do first, cheap wins):
+Pure logic, no privileges needed (done 2026-09-07; total coverage 17.4% -> 41.1%):
 
-- [ ] `key.UnmarshalText` (key.go): valid key, bad base64, wrong length.
-- [ ] `AgentCmd.Validate` (agent.go): key length check, overlay mask not a
+- [x] `key.UnmarshalText` (key.go): valid key, bad base64, wrong length.
+- [x] `AgentCmd.Validate` (agent.go): key length check, overlay mask not a
       multiple of 8, bind-addr + bind-iface conflict, bind-iface resolution
-      (use `lo`), autodetect fallback to `0.0.0.0`.
-- [ ] `computeClusterKey` (cluster/cluster.go): provided key wins, state key
+      (uses `lo`), autodetect. Remaining gaps are OS error branches.
+- [x] `computeClusterKey` (cluster/cluster.go): provided key wins, state key
       used when none provided, random key generated and stored when both empty.
-- [ ] `loadState` (cluster/state.go): missing file, fallback to deprecated
-      `state.json` path, malformed JSON leaves state untouched, unreadable file
-      warns. Existing test writes to `/tmp` directly; move to `t.TempDir()`.
-- [ ] `state.save`: unwritable directory error path.
-- [ ] `delegateNode` (cluster/delegate.go): `NodeMeta` success and over-limit
-      error, no-op methods return nil.
-- [ ] `common.Node`: `String`, `EncodeMeta` over-limit error, `DecodeMeta` with
-      garbage input.
-- [ ] `etchosts.WriteEntries` end to end against a temp file: add, update,
-      remove entries, preserve unmanaged lines, preserve file mode, missing
-      hosts file error, `movePreservePerms` copy fallback (cross-device rename
-      failure is hard to trigger; at least cover the happy path and the nil
-      `Logger` case, which currently panics; see phase 3).
-- [ ] `wg.nodesToPeerConfigs` and `wg.addrToIPNet`: IPv4 and IPv6 nodes, bad
-      public key error.
-- [ ] `wg.State.assignOverlayAddr`: already well covered; add a `/32` prefix
-      and a mask-not-multiple-of-8 case to pin behaviour.
-
-Needs a real memberlist or network privileges:
-
-- [ ] `cluster.New` / `Join` / `Leave` / `Update` / `Members`: two in-process
-      memberlists on loopback with distinct ports. Covers the event loop and
-      state persistence on membership change.
-- [ ] **DECISION**: how to cover `wg.New`, `SetUpInterface`, `DownInterface`
-      (wireguard.go). Options: (a) introduce small interfaces over netlink and
-      wgctrl and mock them, (b) root-gated tests that run in a network
-      namespace and skip without `CAP_NET_ADMIN`, (c) rely on the docker e2e
-      suite only. Suggest (b) plus keeping (c); (a) adds indirection to 180
-      lines of code for little gain.
-- [ ] Make the e2e suite runnable locally: it depends on the external image
-      `docker.io/costela/wesher-test`; build it from `tests/Dockerfile` instead
-      and bump that Dockerfile off `golang:1.18`.
-- [ ] Add an e2e case for a node leaving (verifies peer removal and hosts
-      cleanup), which no current e2e test exercises.
+- [x] `loadState` (cluster/state.go): missing file, deprecated path fallback,
+      malformed JSON, unreadable file. Tests use `t.TempDir()`;
+      `deprecatedStatePath` became a var to allow overriding it.
+- [x] `state.save`: unwritable directory error path.
+- [x] `delegateNode` (cluster/delegate.go): `NodeMeta` success and over-limit,
+      no-op methods.
+- [x] `common.Node`: `String`, `EncodeMeta` over-limit, `DecodeMeta` garbage.
+- [x] `etchosts.WriteEntries` end to end against a temp file: add, update,
+      remove, preserve unmanaged lines, preserve mode, missing file, nil
+      `Logger` happy path, no leftover temp files. The rename-fallback branch
+      of `movePreservePerms` is still uncovered (needs a cross-device rename).
+- [x] `wg.nodesToPeerConfigs` and `wg.addrToIPNet`: IPv4 and IPv6, bad key,
+      empty list.
+- [x] `wg.State.assignOverlayAddr`: `/32` and non-byte-aligned mask cases.
 
 ## Phase 2: update dependencies with minimal code change
 
@@ -100,7 +79,43 @@ Needs a real memberlist or network privileges:
       `softprops/action-gh-release` to a current release. Add `govulncheck` and
       lint steps.
 
-## Phase 3: review and update the codebase
+## Phase 3: tests that require root or a live cluster
+
+Covers what phase 1 could not: memberlist integration and the netlink/wgctrl
+code. Root-gated tests skip without `CAP_NET_ADMIN`; the docker e2e suite stays
+as the end-to-end check.
+
+- [ ] `cluster.New` / `Join` / `Leave` / `Update` / `Members`: two in-process
+      memberlists on loopback with distinct ports. Covers the event loop and
+      state persistence on membership change.
+- [ ] `wg.New`, `SetUpInterface`, `DownInterface` (wireguard.go): root-gated
+      tests in a private network namespace, skipped without `CAP_NET_ADMIN`.
+      Decided 2026-09-07: root-gated here, testability seams in phase 4.
+- [ ] Make the e2e suite runnable locally: it depends on the external image
+      `docker.io/costela/wesher-test`; build it from `tests/Dockerfile` instead
+      and bump that Dockerfile off `golang:1.18`.
+- [ ] Add an e2e case for a node leaving (verifies peer removal and hosts
+      cleanup), which no current e2e test exercises.
+
+## Phase 4: adapt the code for automated testing
+
+Restructure so the privileged and external paths can be exercised without
+root, then adapt the phase 3 tests to use the seams.
+
+- [ ] **DECISION**: shape of the seams. Suggest small interfaces for the
+      netlink and wgctrl calls in `wg`, injected into `State`, with the real
+      implementations as the default. Keep `wg/netlink.go`-style shims out.
+- [ ] `AgentCmd.Run`: return errors instead of `Fatal`/`os.Exit` so the loop
+      body can be driven from a test.
+- [ ] `cluster`: allow injecting a memberlist config (bind to loopback, short
+      timers) and give `Members` a shutdown path.
+- [ ] `etchosts`: make the rename step overridable so the copy fallback is
+      testable.
+- [ ] Convert phase 3 tests to run unprivileged via the seams where that adds
+      coverage; keep the root-gated versions as integration checks.
+- [ ] Re-measure coverage; target near 100% for everything outside `main`.
+
+## Phase 5: review and update the codebase
 
 Correctness issues found during the initial read (verify each, then fix):
 
@@ -146,7 +161,7 @@ Hygiene:
 - [ ] **DECISION**: module path rename and README ownership (deferred from
       phase 0).
 
-## Phase 4: features
+## Phase 6: features
 
 Candidates, roughly by value-to-effort. Each is a **DECISION** to discuss
 before starting; none are committed yet.
@@ -156,7 +171,7 @@ before starting; none are committed yet.
 - [ ] Persistent keepalive option for peers behind NAT
       (`--persistent-keepalive`).
 - [ ] Remove stale routes and hosts entries when a peer leaves (overlaps with
-      the phase 3 route item; may fall out of that fix).
+      the phase 5 route item; may fall out of that fix).
 - [ ] Extra `AllowedIPs` per node so a node can route a subnet into the mesh
       (advertised via node metadata).
 - [ ] Static / seed nodes to mitigate split-brain (upstream roadmap item):

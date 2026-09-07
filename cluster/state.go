@@ -19,7 +19,7 @@ type state struct {
 
 var statePathTemplate = "/var/lib/wesher/%s.json"
 
-const deprecatedStatePath = "/var/lib/wesher/state.json"
+var deprecatedStatePath = "/var/lib/wesher/state.json"
 
 func (s *state) save(clusterName string) error {
 	statePath := fmt.Sprintf(statePathTemplate, clusterName)

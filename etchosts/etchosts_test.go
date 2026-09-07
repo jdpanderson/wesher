@@ -4,10 +4,14 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestEtcHosts_writeEntryWithBanner(t *testing.T) {
@@ -114,4 +118,86 @@ func TestEtcHosts_writeEntries(t *testing.T) {
 			}
 		})
 	}
+}
+
+func writeTempHosts(t *testing.T, content string, mode os.FileMode) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "hosts")
+	require.NoError(t, os.WriteFile(p, []byte(content), mode))
+	return p
+}
+
+func TestEtcHosts_WriteEntries(t *testing.T) {
+	const banner = "# ! test banner"
+	tests := []struct {
+		name string
+		orig string
+		ips  map[string][]string
+		want string
+	}{
+		{
+			"add to empty file",
+			"",
+			map[string][]string{"10.0.0.1": {"a"}},
+			"10.0.0.1\ta\t" + banner + "\n",
+		},
+		{
+			"preserve unmanaged and update managed",
+			"127.0.0.1 localhost\n10.0.0.1\told\t" + banner + "\n",
+			map[string][]string{"10.0.0.1": {"new"}},
+			"127.0.0.1 localhost\n10.0.0.1\tnew\t" + banner + "\n",
+		},
+		{
+			"remove managed entries with empty map",
+			"127.0.0.1 localhost\n10.0.0.1\ta\t" + banner + "\n",
+			map[string][]string{},
+			"127.0.0.1 localhost\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := writeTempHosts(t, tt.orig, 0o600)
+			eh := &EtcHosts{Banner: banner, Path: p, Logger: logrus.StandardLogger()}
+			require.NoError(t, eh.WriteEntries(tt.ips))
+
+			got, err := os.ReadFile(p)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, string(got))
+		})
+	}
+}
+
+func TestEtcHosts_WriteEntries_preservesMode(t *testing.T) {
+	p := writeTempHosts(t, "", 0o640)
+	eh := &EtcHosts{Path: p}
+	require.NoError(t, eh.WriteEntries(map[string][]string{"10.0.0.1": {"a"}}))
+
+	info, err := os.Stat(p)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o640), info.Mode().Perm())
+}
+
+func TestEtcHosts_WriteEntries_nilLogger(t *testing.T) {
+	p := writeTempHosts(t, "", 0o600)
+	eh := &EtcHosts{Path: p}
+	require.NoError(t, eh.WriteEntries(map[string][]string{"10.0.0.1": {"a"}}))
+}
+
+func TestEtcHosts_WriteEntries_missingFile(t *testing.T) {
+	eh := &EtcHosts{Path: filepath.Join(t.TempDir(), "nonexistent")}
+	err := eh.WriteEntries(map[string][]string{"10.0.0.1": {"a"}})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "could not open")
+}
+
+func TestEtcHosts_WriteEntries_noLeftoverTempFile(t *testing.T) {
+	p := writeTempHosts(t, "", 0o600)
+	eh := &EtcHosts{Path: p}
+	entries := map[string][]string{"10.0.0.1": {"a"}}
+	require.NoError(t, eh.WriteEntries(entries))
+
+	// no leftover tempfiles next to the hosts file
+	matches, err := filepath.Glob(filepath.Join(filepath.Dir(p), "etchosts*"))
+	require.NoError(t, err)
+	assert.Empty(t, matches)
 }
