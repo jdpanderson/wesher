@@ -56,28 +56,28 @@ Pure logic, no privileges needed (done 2026-09-07; total coverage 17.4% -> 41.1%
 
 ## Phase 2: update dependencies with minimal code change
 
-- [ ] Bump `go.mod` Go directive (suggest 1.24 or 1.25: recent, but not the
-      bleeding edge our CI runners may lack). Replace deprecated `io/ioutil`
-      calls (cluster/state.go, etchosts/etchosts.go) with `os` equivalents.
-- [ ] `golang.org/x/crypto` 0.21 -> latest and `golang.org/x/net` 0.23 -> latest
-      (indirect, but both old enough to carry published CVEs; do these first
-      and run `govulncheck`).
-- [ ] `github.com/hashicorp/memberlist` 0.5.1 -> 0.6.0. Read the changelog:
-      this is the one most likely to change behaviour (gossip, encryption).
-- [ ] `golang.zx2c4.com/wireguard/wgctrl` 2022-05 -> 2024-12 (pulls newer
-      `mdlayher/netlink`, `genetlink`, `socket`).
-- [ ] `github.com/vishvananda/netlink` 1.3.0 -> 1.3.1, then check whether the
-      upstream `Wireguard` link type now exists so `wg/netlink.go` shim can go.
-- [ ] `github.com/alecthomas/kong` 1.4.0 -> 1.16.1. Check `default:"withargs"`
-      and `BeforeApply`/`AfterApply` hook semantics still match.
-- [ ] `logrus` 1.9.3 -> 1.10.2, `testify` 1.9.0 -> 1.12.1, `go-isatty`,
-      `backoff/v4` (already latest v4; note v5 exists, skip for now).
-- [ ] `go mod tidy`, re-run unit tests, race tests, and e2e. Re-measure
-      coverage to confirm nothing regressed.
-- [ ] CI: bump `actions/checkout`, `setup-go`, `upload-artifact` to current
-      majors; Go matrix to two supported versions; pin
-      `softprops/action-gh-release` to a current release. Add `govulncheck` and
-      lint steps.
+Done 2026-09-07, one commit per bump. Only code change: `io/ioutil` -> `os`
+and dropping the `wg/netlink.go` shim.
+
+- [x] Go directive 1.18 -> 1.26 (latest x/crypto requires 1.26). `io/ioutil`
+      replaced with `os` equivalents.
+- [x] `golang.org/x/crypto`, `x/net`, `x/sys`, `x/sync` -> latest. govulncheck:
+      36 -> 1 unreached module vulnerabilities; the remaining one is the
+      unmaintained `x/crypto/openpgp` package, not imported here, no fix.
+- [x] `hashicorp/memberlist` 0.5.1 -> 0.6.0. Reviewed the source diff: atomics,
+      keyring locking fix, push-pull size cap, lowercased errors. No API or
+      wire change.
+- [x] `wgctrl` 2022-05 -> 2024-12.
+- [x] `vishvananda/netlink` 1.3.0 -> 1.3.1; `netlink.Wireguard` now exists, so
+      `wg/netlink.go` is gone.
+- [x] `kong` 1.4.0 -> 1.16.1. Verified `--version`, `--help`, `Validate` and
+      `AfterApply` ordering behave identically by running both binaries.
+- [x] `logrus`, `go-isatty`, `testify`, and all indirect deps of built
+      packages (`go get -u ./...`). `backoff/v4` already latest; v5 skipped.
+- [x] `go mod tidy`; unit and race tests pass; coverage unchanged at 41.1%.
+      e2e not run here: it needs the test image fix, which is a phase 3 item.
+- [x] CI: Go matrix 1.26.x/1.27.x; checkout v7, setup-go v7, upload-artifact
+      v7, download-artifact v8, action-gh-release v3.
 
 ## Phase 3: tests that require root or a live cluster
 

@@ -3,18 +3,18 @@ on: [push, pull_request]
 jobs:
   test:
     env:
-      LATEST_GO: 1.19.x # version used for release
+      LATEST_GO: 1.27.x # version used for release
     strategy:
       matrix:
-        go: [ 1.18.x, 1.19.x ]
+        go: [ 1.26.x, 1.27.x ]
         os: [ ubuntu-latest ]
     name: ${{ matrix.os }}/go${{ matrix.go }}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
 
       - name: Setup go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v7
         with:
           go-version: ${{ matrix.go }}
 
@@ -25,7 +25,7 @@ jobs:
       - run: make release GOARCHES="amd64 arm arm64 mips mipsle mips64 mips64le"
 
       - name: Upload binary artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v7
         if: matrix.go == env.LATEST_GO
         with:
           name: binaries
@@ -37,8 +37,8 @@ jobs:
     name: vulncheck/lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v3
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
       - run: make vulncheck
@@ -51,11 +51,11 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/') && github.repository == 'costela/wesher'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: binaries
 
-      - uses: softprops/action-gh-release@v0.1.14
+      - uses: softprops/action-gh-release@v3
         with:
           fail_on_unmatched_files: true
           files: |
