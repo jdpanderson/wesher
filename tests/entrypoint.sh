@@ -18,4 +18,4 @@ if [ ! -e /dev/net/tun ]; then
 fi
 
 wireguard ${iface:-wgoverlay}
-/app/wesher --log-level debug --cluster-key 'ILICZ3yBMCGAWNIq5Pn0bewBVimW3Q2yRVJ/Be+b1Uc=' "${args[@]}"
+exec /app/wesher --log-level debug --cluster-key 'ILICZ3yBMCGAWNIq5Pn0bewBVimW3Q2yRVJ/Be+b1Uc=' "${args[@]}"

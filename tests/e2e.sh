@@ -129,7 +129,32 @@ test_multiple_clusters_restart() {
     stop_test_container test1-orig
 }
 
-for test_func in $(declare -F | grep -Eo '\<test_.*$'); do
+test_node_leave() {
+    run_test_container test1-orig test1 --init
+    run_test_container test2-orig test2 --join test1-orig
+
+    sleep 3
+
+    docker exec test1-orig ping -c1 -W1 test2 || (docker logs test1-orig; docker logs test2-orig; false)
+
+    docker stop test2-orig # SIGTERM: clean leave
+
+    sleep 3
+
+    if docker exec test1-orig grep -q test2 /etc/hosts; then
+        echo "stale hosts entry for test2"; docker logs test1-orig; false
+    fi
+
+    stop_test_container test2-orig
+    stop_test_container test1-orig
+}
+
+# run the named tests, or all of them
+tests=("$@")
+if [ ${#tests[@]} -eq 0 ]; then
+    tests=($(declare -F | grep -Eo '\<test_.*$'))
+fi
+for test_func in "${tests[@]}"; do
     echo "--- Running $test_func:"
     $test_func
     echo "--- OK"

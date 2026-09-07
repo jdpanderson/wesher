@@ -92,11 +92,13 @@ as the end-to-end check.
       without `CAP_NET_ADMIN`. `make test-privileged` runs the suite under
       `unshare -r`, which is enough. wg coverage 39% -> 85% privileged;
       remaining lines are netlink error branches (phase 4 seams).
-- [ ] Make the e2e suite runnable locally: it depends on the external image
-      `docker.io/costela/wesher-test`; build it from `tests/Dockerfile` instead
-      and bump that Dockerfile off `golang:1.18`.
-- [ ] Add an e2e case for a node leaving (verifies peer removal and hosts
-      cleanup), which no current e2e test exercises.
+- [x] e2e suite builds its image from `tests/Dockerfile` (golang:1.27) and
+      runs locally. All 5 original scenarios pass on the phase 2 dependencies.
+- [x] e2e `test_node_leave`: clean SIGTERM leave removes the peer's hosts
+      entry. `tests/e2e.sh <name>...` runs selected cases.
+
+Privileged coverage after phase 3: 67.8% total (cluster 92%, common 92%,
+etchosts 66%, wg 85%, main 25%).
 
 ## Phase 4: adapt the code for automated testing
 
