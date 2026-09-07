@@ -27,6 +27,15 @@ type EtcHosts struct {
 	Path string
 	// Logger is an optional logrus.StdLogger interface, used for debugging.
 	Logger logrus.StdLogger
+
+	// rename replaces the hosts file with the temp file; nil means os.Rename.
+	rename func(oldpath, newpath string) error
+}
+
+func (eh *EtcHosts) logf(format string, args ...any) {
+	if eh.Logger != nil {
+		eh.Logger.Printf(format, args...)
+	}
 }
 
 // WriteEntries is used to write the hosts entries to EtcHosts.Path
@@ -56,9 +65,7 @@ func (eh *EtcHosts) WriteEntries(ipsToNames map[string][]string) error {
 	defer func(file *os.File) {
 		file.Close()
 		if err := os.Remove(file.Name()); err != nil && !os.IsNotExist(err) {
-			if eh.Logger != nil {
-				eh.Logger.Printf("unexpected error trying to remove temp file %s: %s", file.Name(), err)
-			}
+			eh.logf("unexpected error trying to remove temp file %s: %s", file.Name(), err)
 		}
 	}(tmp)
 
@@ -113,9 +120,7 @@ func (eh *EtcHosts) writeEntries(orig io.Reader, dest io.Writer, ipsToNames map[
 
 func (eh *EtcHosts) writeEntryWithBanner(tmp io.Writer, banner, ip string, names []string) error {
 	if ip != "" && len(names) > 0 {
-		if eh.Logger != nil {
-			eh.Logger.Printf("writing entry for %s (%s)", ip, names)
-		}
+		eh.logf("writing entry for %s (%s)", ip, names)
 		if _, err := fmt.Fprintf(tmp, "%s\t%s\t%s\n", ip, strings.Join(names, " "), banner); err != nil {
 			return fmt.Errorf("error writing entry for %s: %w", ip, err)
 		}
@@ -133,8 +138,12 @@ func (eh *EtcHosts) movePreservePerms(src, dst *os.File) error {
 		return fmt.Errorf("could not stat %s: %w", dst.Name(), err)
 	}
 
-	if err = os.Rename(src.Name(), dst.Name()); err != nil {
-		eh.Logger.Printf("could not rename to %s; falling back to copy (%s)", dst.Name(), err)
+	rename := eh.rename
+	if rename == nil {
+		rename = os.Rename
+	}
+	if err = rename(src.Name(), dst.Name()); err != nil {
+		eh.logf("could not rename to %s; falling back to copy (%s)", dst.Name(), err)
 
 		if _, err := src.Seek(0, io.SeekStart); err != nil {
 			return err

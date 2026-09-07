@@ -2,6 +2,7 @@ package etchosts
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -200,4 +201,19 @@ func TestEtcHosts_WriteEntries_noLeftoverTempFile(t *testing.T) {
 	matches, err := filepath.Glob(filepath.Join(filepath.Dir(p), "etchosts*"))
 	require.NoError(t, err)
 	assert.Empty(t, matches)
+}
+
+func TestEtcHosts_WriteEntries_renameFallback(t *testing.T) {
+	for _, logger := range []logrus.StdLogger{nil, logrus.StandardLogger()} {
+		orig := "127.0.0.1 localhost\n10.0.0.1\told\t" + DefaultBanner + "\n"
+		p := writeTempHosts(t, orig, 0o600)
+		eh := &EtcHosts{Path: p, Logger: logger, rename: func(_, _ string) error {
+			return errors.New("cross-device link")
+		}}
+		require.NoError(t, eh.WriteEntries(map[string][]string{}))
+
+		got, err := os.ReadFile(p)
+		require.NoError(t, err)
+		assert.Equal(t, "127.0.0.1 localhost\n", string(got), "copy fallback must truncate")
+	}
 }
