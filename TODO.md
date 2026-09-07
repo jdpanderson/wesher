@@ -102,45 +102,51 @@ etchosts 66%, wg 85%, main 25%).
 
 ## Phase 4: adapt the code for automated testing
 
-Restructure so the privileged and external paths can be exercised without
-root, then adapt the phase 3 tests to use the seams.
+Done 2026-09-07. Seams are unexported and injected; public API unchanged.
 
-- [ ] **DECISION**: shape of the seams. Suggest small interfaces for the
-      netlink and wgctrl calls in `wg`, injected into `State`, with the real
-      implementations as the default. Keep `wg/netlink.go`-style shims out.
-- [ ] `AgentCmd.Run`: return errors instead of `Fatal`/`os.Exit` so the loop
-      body can be driven from a test.
-- [ ] `cluster`: allow injecting a memberlist config (bind to loopback, short
-      timers) and give `Members` a shutdown path.
-- [ ] `etchosts`: make the rename step overridable so the copy fallback is
-      testable.
-- [ ] Convert phase 3 tests to run unprivileged via the seams where that adds
-      coverage; keep the root-gated versions as integration checks.
-- [ ] Re-measure coverage; target near 100% for everything outside `main`.
+- [x] **DECISION** (taken as proposed, open to revision): `wg.State` holds the
+      subsets of `*netlink.Handle` and `*wgctrl.Client` it uses as two small
+      interfaces; `New` wires the real ones, `newState` takes fakes.
+- [x] `AgentCmd.Run` returns errors; `loop` and `apply` take
+      `clusterController`/`wgController`/`hostsWriter` interfaces and are
+      driven by fakes. Termination returns nil instead of `os.Exit(0)`.
+- [x] `cluster`: `Leave` closes a `done` channel that stops the `Members`
+      goroutine and closes its channel; `Leave` is idempotent (memberlist
+      panics on a second leave). `newMemberlistConfig` package var lets tests
+      use fast timers; added a failed-node detection test.
+- [x] `etchosts`: unexported `rename` hook; copy fallback now tested. Logging
+      goes through a nil-safe helper (the fallback path dereferenced a nil
+      `Logger`).
+- [x] Netns-gated wg tests kept as integration checks; fakes cover the error
+      branches unprivileged.
+- [x] Coverage: 41.1% -> 79.7% privileged (main 50%, cluster 92%, common 92%,
+      etchosts 80%, wg 95%). Unprivileged: wg 91%, rest identical.
+      All 6 e2e scenarios pass.
+
+Remaining uncovered lines: `AgentCmd.Run` wiring (needs a real cluster and
+interface), `main`, kong hooks, and OS error branches in `Validate`,
+`state.save`, `computeClusterKey`.
 
 ## Phase 5: review and update the codebase
 
 Correctness issues found during the initial read (verify each, then fix):
 
-- [ ] `etchosts.movePreservePerms` dereferences `eh.Logger` without a nil check
-      in the rename-fallback path, unlike the rest of the package (panic when
-      `Logger` is unset and rename fails).
+- [x] `etchosts.movePreservePerms` nil `Logger` dereference in the rename
+      fallback. Fixed in phase 4.
 - [ ] `etchosts.writeEntries` deletes from the caller's map as a side effect.
       Copy it first.
-- [ ] `AgentCmd.Run` calls `logrus.Fatal` and `os.Exit(0)` instead of returning
-      errors, so deferred cleanup never runs and the function is untestable.
-      Return errors and let `main` exit.
+- [x] `AgentCmd.Run` `Fatal`/`os.Exit` replaced with returned errors. Fixed in
+      phase 4.
 - [ ] `Cluster.Update` installs the memberlist delegates after
       `memberlist.Create`; memberlist reads `Config.Delegate` during `Create`
       and on every gossip cycle, so this is a data race and the local node's
       metadata is only pushed by the `UpdateNode` call. Restructure so the
       node metadata is known before `Create`.
 - [ ] `Cluster.Name` dereferences `localNode`, nil until `Update` is called.
-- [ ] `Cluster.Members` starts a goroutine with no shutdown path and an
-      unbuffered result channel; the 100-slot events buffer is a documented
-      workaround for a memberlist deadlock. Give the loop a context.
-      (Data races between this goroutine and `Leave` on `state`, and on the
-      node slice handed to consumers, were fixed early in phase 3.)
+- [x] `Cluster.Members` goroutine now stops on `Leave` (phase 4); data races
+      with `Leave` on `state` and on the node slice fixed in phase 3.
+- [ ] The 100-slot events buffer remains a workaround for a memberlist
+      deadlock (hashicorp/memberlist#23); check whether 0.6.0 still needs it.
 - [ ] `SetUpInterface` adds a route per peer but never removes routes for
       peers that left; stale `/32` routes accumulate until the interface goes
       down. `ReplacePeers: true` already handles the wireguard side.

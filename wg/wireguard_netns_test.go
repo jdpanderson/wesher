@@ -33,8 +33,8 @@ func enterTestNetns(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = netns.Set(orig)
-		ns.Close()
-		orig.Close()
+		_ = ns.Close()
+		_ = orig.Close()
 		runtime.UnlockOSThread()
 	})
 }
