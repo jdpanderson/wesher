@@ -22,6 +22,14 @@ coverage:
 	CGO_ENABLED=1 go test -race -coverprofile=coverage.out ./...
 	go tool cover -func=coverage.out | tail -1
 
+# netns-gated tests need CAP_NET_ADMIN; a user namespace is enough
+test-privileged:
+	CGO_ENABLED=1 unshare -r go test -race ./...
+
+coverage-privileged:
+	CGO_ENABLED=1 unshare -r go test -race -coverprofile=coverage.out ./...
+	go tool cover -func=coverage.out | tail -1
+
 vulncheck:
 	$(GOVULNCHECK) ./...
 
@@ -34,4 +42,4 @@ e2e: build
 clean:
 	rm -f wesher wesher-* wesher.sha256sums coverage.out
 
-.PHONY: build release test coverage vulncheck lint e2e clean
+.PHONY: build release test coverage test-privileged coverage-privileged vulncheck lint e2e clean

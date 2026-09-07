@@ -85,12 +85,13 @@ Covers what phase 1 could not: memberlist integration and the netlink/wgctrl
 code. Root-gated tests skip without `CAP_NET_ADMIN`; the docker e2e suite stays
 as the end-to-end check.
 
-- [ ] `cluster.New` / `Join` / `Leave` / `Update` / `Members`: two in-process
-      memberlists on loopback with distinct ports. Covers the event loop and
-      state persistence on membership change.
-- [ ] `wg.New`, `SetUpInterface`, `DownInterface` (wireguard.go): root-gated
-      tests in a private network namespace, skipped without `CAP_NET_ADMIN`.
-      Decided 2026-09-07: root-gated here, testability seams in phase 4.
+- [x] `cluster.New` / `Join` / `Leave` / `Update` / `Members`: two in-process
+      memberlists on loopback. Exposed two real data races on `state` (fixed
+      in their own commit, see phase 5 list). Cluster coverage 36% -> 92%.
+- [x] `wg.New`, `SetUpInterface`, `DownInterface`: netns-gated tests, skipped
+      without `CAP_NET_ADMIN`. `make test-privileged` runs the suite under
+      `unshare -r`, which is enough. wg coverage 39% -> 85% privileged;
+      remaining lines are netlink error branches (phase 4 seams).
 - [ ] Make the e2e suite runnable locally: it depends on the external image
       `docker.io/costela/wesher-test`; build it from `tests/Dockerfile` instead
       and bump that Dockerfile off `golang:1.18`.
@@ -136,6 +137,8 @@ Correctness issues found during the initial read (verify each, then fix):
 - [ ] `Cluster.Members` starts a goroutine with no shutdown path and an
       unbuffered result channel; the 100-slot events buffer is a documented
       workaround for a memberlist deadlock. Give the loop a context.
+      (Data races between this goroutine and `Leave` on `state`, and on the
+      node slice handed to consumers, were fixed early in phase 3.)
 - [ ] `SetUpInterface` adds a route per peer but never removes routes for
       peers that left; stale `/32` routes accumulate until the interface goes
       down. `ReplacePeers: true` already handles the wireguard side.
