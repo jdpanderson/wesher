@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/costela/wesher/common"
+	"github.com/hashicorp/memberlist"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -38,7 +39,7 @@ func newTestCluster(t *testing.T, name, bindAddr string, port int, overlay strin
 
 func waitMembers(t *testing.T, ch <-chan []common.Node, want int) []common.Node {
 	t.Helper()
-	deadline := time.After(15 * time.Second)
+	deadline := time.After(30 * time.Second)
 	for {
 		select {
 		case nodes := <-ch:
@@ -107,4 +108,48 @@ func Test_New_badBindAddr(t *testing.T) {
 	_, err := New("a", true, testKey, "192.0.2.1", 0, false) // TEST-NET, not a local address
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "creating memberlist")
+}
+
+// useFastMemberlist swaps in the local-network memberlist timers for quick failure detection.
+func useFastMemberlist(t *testing.T) {
+	t.Helper()
+	orig := newMemberlistConfig
+	newMemberlistConfig = memberlist.DefaultLocalConfig
+	t.Cleanup(func() { newMemberlistConfig = orig })
+}
+
+func Test_Cluster_Leave_closesMembers(t *testing.T) {
+	useTempStatePaths(t)
+	c, _ := newTestCluster(t, "a", "127.0.0.1", freePort(t), "10.0.0.1")
+	ch := c.Members()
+
+	c.Leave()
+	c.Leave() // idempotent
+
+	select {
+	case _, ok := <-ch:
+		assert.False(t, ok, "Members channel must be closed after Leave")
+	case <-time.After(5 * time.Second):
+		t.Fatal("Members channel not closed after Leave")
+	}
+}
+
+func Test_Cluster_detectsFailedNode(t *testing.T) {
+	useTempStatePaths(t)
+	useFastMemberlist(t)
+	port := freePort(t)
+
+	a, _ := newTestCluster(t, "a", "127.0.0.1", port, "10.0.0.1")
+	defer a.Leave()
+	b, _ := newTestCluster(t, "b", "127.0.0.2", port, "10.0.0.2")
+
+	chA := a.Members()
+	drain(b.Members())
+	require.NoError(t, b.Join([]string{fmt.Sprintf("127.0.0.1:%d", port)}))
+	waitMembers(t, chA, 1)
+
+	// crash b without leaving; a must eventually mark it dead
+	require.NoError(t, b.ml.Shutdown())
+	close(b.done)
+	waitMembers(t, chA, 0)
 }

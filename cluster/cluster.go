@@ -28,7 +28,12 @@ type Cluster struct {
 	state     *state
 	stateMu   sync.Mutex // guards state.Nodes and state.save
 	events    chan memberlist.NodeEvent
+	done      chan struct{} // closed by Leave
+	leaveOnce sync.Once
 }
+
+// newMemberlistConfig builds the base memberlist config; tests swap in faster timers.
+var newMemberlistConfig = memberlist.DefaultWANConfig
 
 // New is used to create a new Cluster instance
 // The returned instance is ready to be updated with the local node settings then joined
@@ -43,7 +48,7 @@ func New(name string, init bool, clusterKey []byte, bindAddr string, bindPort in
 		return nil, fmt.Errorf("computing cluster key: %w", err)
 	}
 
-	mlConfig := memberlist.DefaultWANConfig()
+	mlConfig := newMemberlistConfig()
 	mlConfig.LogOutput = logrus.StandardLogger().WriterLevel(logrus.DebugLevel)
 	mlConfig.SecretKey = clusterKey
 	mlConfig.BindAddr = bindAddr
@@ -66,6 +71,7 @@ func New(name string, init bool, clusterKey []byte, bindAddr string, bindPort in
 		// The big channel buffer is a work-around for https://github.com/hashicorp/memberlist/issues/23
 		// More than this many simultaneous events will deadlock cluster.members()
 		events: make(chan memberlist.NodeEvent, 100),
+		done:   make(chan struct{}),
 		state:  state,
 	}
 
@@ -98,13 +104,16 @@ func (c *Cluster) Join(addrs []string) error {
 	return nil
 }
 
-// Leave saves the current state before leaving, then leaves the cluster
+// Leave saves the current state, leaves the cluster and stops Members. Safe to call more than once.
 func (c *Cluster) Leave() {
-	c.stateMu.Lock()
-	c.state.save(c.name) // nolint: errcheck // opportunistic
-	c.stateMu.Unlock()
-	c.ml.Leave(10 * time.Second)
-	c.ml.Shutdown() // nolint: errcheck
+	c.leaveOnce.Do(func() {
+		c.stateMu.Lock()
+		c.state.save(c.name) // nolint: errcheck // opportunistic
+		c.stateMu.Unlock()
+		c.ml.Leave(10 * time.Second) // nolint: errcheck
+		c.ml.Shutdown()              // nolint: errcheck
+		close(c.done)
+	})
 }
 
 // Update gossips the local node configuration, propagating any change
@@ -121,11 +130,19 @@ func (c *Cluster) Update(localNode *common.Node) {
 // Members provides a channel notifying of cluster changes
 // Everytime a change happens inside the cluster (except for local changes),
 // the updated list of cluster nodes is pushed to the channel.
+// The channel is closed after Leave.
 func (c *Cluster) Members() <-chan []common.Node {
 	changes := make(chan []common.Node)
 
 	go func() {
-		for event := range c.events {
+		defer close(changes)
+		for {
+			var event memberlist.NodeEvent
+			select {
+			case <-c.done:
+				return
+			case event = <-c.events:
+			}
 			if event.Node.Name == c.LocalName {
 				// ignore events about ourselves
 				continue
@@ -154,7 +171,11 @@ func (c *Cluster) Members() <-chan []common.Node {
 			c.state.Nodes = nodes
 			c.state.save(c.name) // nolint: errcheck // opportunistic
 			c.stateMu.Unlock()
-			changes <- slices.Clone(nodes) // consumer decodes meta in place
+			select {
+			case changes <- slices.Clone(nodes): // consumer decodes meta in place
+			case <-c.done:
+				return
+			}
 		}
 	}()
 
