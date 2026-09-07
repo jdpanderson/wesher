@@ -33,6 +33,18 @@ jobs:
             wesher-*
             wesher.sha256sums
     
+  check:
+    name: vulncheck/lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v3
+        with:
+          go-version: stable
+      - run: make vulncheck
+      - run: make lint
+        continue-on-error: true # findings tracked in TODO.md phases 2 and 3
+
   release:
     name: release
     needs: test
