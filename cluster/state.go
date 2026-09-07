@@ -3,7 +3,6 @@ package cluster
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 
@@ -32,17 +31,17 @@ func (s *state) save(clusterName string) error {
 		return err
 	}
 
-	return ioutil.WriteFile(statePath, stateOut, 0600)
+	return os.WriteFile(statePath, stateOut, 0600)
 }
 
 func loadState(cs *state, clusterName string) {
 	statePath := fmt.Sprintf(statePathTemplate, clusterName)
-	content, err := ioutil.ReadFile(statePath)
+	content, err := os.ReadFile(statePath)
 	if err != nil {
 		// try the deprecated pre 0.3 state path, it will later
 		// be saved to the proper path
 		if os.IsNotExist(err) {
-			content, err = ioutil.ReadFile(deprecatedStatePath)
+			content, err = os.ReadFile(deprecatedStatePath)
 		}
 
 		if err != nil {

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 	"strings"
@@ -48,7 +47,7 @@ func (eh *EtcHosts) WriteEntries(ipsToNames map[string][]string) error {
 
 	// create tmpfile in same folder as the hosts file
 	// TODO: replace with github.com/google/renameio
-	tmp, err := ioutil.TempFile(path.Dir(hostsPath), "etchosts")
+	tmp, err := os.CreateTemp(path.Dir(hostsPath), "etchosts")
 	if err != nil {
 		return fmt.Errorf("could not create tempfile: %w", err)
 	}

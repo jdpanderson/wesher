@@ -1,6 +1,6 @@
 module github.com/costela/wesher
 
-go 1.18
+go 1.25
 
 require (
 	github.com/alecthomas/kong v1.4.0
