@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"slices"
+	"sync"
 	"time"
 
 	"github.com/costela/wesher/common"
@@ -24,6 +26,7 @@ type Cluster struct {
 	localNode *common.Node
 	LocalName string
 	state     *state
+	stateMu   sync.Mutex // guards state.Nodes and state.save
 	events    chan memberlist.NodeEvent
 }
 
@@ -97,7 +100,9 @@ func (c *Cluster) Join(addrs []string) error {
 
 // Leave saves the current state before leaving, then leaves the cluster
 func (c *Cluster) Leave() {
+	c.stateMu.Lock()
 	c.state.save(c.name) // nolint: errcheck // opportunistic
+	c.stateMu.Unlock()
 	c.ml.Leave(10 * time.Second)
 	c.ml.Shutdown() // nolint: errcheck
 }
@@ -145,9 +150,11 @@ func (c *Cluster) Members() <-chan []common.Node {
 					Meta: n.Meta,
 				})
 			}
+			c.stateMu.Lock()
 			c.state.Nodes = nodes
-			changes <- nodes
 			c.state.save(c.name) // nolint: errcheck // opportunistic
+			c.stateMu.Unlock()
+			changes <- slices.Clone(nodes) // consumer decodes meta in place
 		}
 	}()
 
