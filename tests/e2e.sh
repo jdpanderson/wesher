@@ -13,6 +13,8 @@ cleanup() {
     docker network rm wesher_test
 }
 
+docker build -t wesher-test "$(dirname "$0")"
+
 docker network create wesher_test
 trap cleanup EXIT
 
@@ -22,7 +24,7 @@ run_test_container() {
     shift
     local hostname=$1
     shift
-    docker run -d --cap-add=NET_ADMIN --name ${name} --hostname ${hostname} -v $(pwd):/app --network=wesher_test docker.io/costela/wesher-test "$@"
+    docker run -d --cap-add=NET_ADMIN --name ${name} --hostname ${hostname} -v $(pwd):/app --network=wesher_test wesher-test "$@"
     started_containers[$name]=$name
 }
 
