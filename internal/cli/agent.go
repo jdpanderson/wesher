@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"context"
@@ -15,15 +15,15 @@ import (
 
 	"github.com/cenkalti/backoff/v6"
 	"github.com/jdpanderson/cheesecloth/cluster"
-	"github.com/jdpanderson/cheesecloth/common"
 	"github.com/jdpanderson/cheesecloth/control"
 	"github.com/jdpanderson/cheesecloth/enroll"
 	"github.com/jdpanderson/cheesecloth/etchosts"
 	"github.com/jdpanderson/cheesecloth/trust"
 	"github.com/jdpanderson/cheesecloth/wg"
-	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
+// AgentCmd is the long-running daemon: it joins the cluster and keeps the
+// wireguard interface and /etc/hosts in step with the membership.
 type AgentCmd struct {
 	Join          []string     `help:"comma separated list of hostnames or IP addresses of existing cluster members; if not provided, will attempt resuming any known state or otherwise wait for further members."`
 	JoinKey       string       `help:"invitation token from 'cheesecloth invite' on a member, needed only the first time this node joins"`
@@ -61,120 +61,6 @@ func (a *AgentCmd) Validate() error {
 	}
 
 	return nil
-}
-
-// validateNode rejects peer metadata we would not want to install: an overlay
-// address outside our overlay net or an unparseable wireguard public key.
-func (a *AgentCmd) validateNode(node *common.Node) error {
-	if node.Name == "" {
-		return errors.New("empty node name")
-	}
-	if !a.OverlayNet.Contains(node.OverlayAddr) {
-		return fmt.Errorf("overlay address %s is outside %s", node.OverlayAddr, a.OverlayNet)
-	}
-	if _, err := wgtypes.ParseKey(node.PubKey); err != nil {
-		return fmt.Errorf("public key: %w", err)
-	}
-	return nil
-}
-
-// advertiseAddr is the address peers use to reach this node for cluster
-// membership: the bind address itself, or, for a wildcard, an address of the
-// same family on one of this host's interfaces other than the overlay one.
-func (a *AgentCmd) advertiseAddr() (netip.Addr, error) {
-	if !a.BindAddr.IsUnspecified() {
-		return a.BindAddr, nil
-	}
-	addr, ok := pickAdvertiseAddr(a.BindAddr, upInterfaceAddrs(a.Interface))
-	if !ok {
-		family := "IPv4"
-		if a.BindAddr.Is6() {
-			family = "IPv6"
-		}
-		return netip.Addr{}, fmt.Errorf("no %s address found to advertise for cluster membership; set --bind-addr to a specific address", family)
-	}
-	return addr, nil
-}
-
-// pickAdvertiseAddr chooses, among addrs, an address in the family of wildcard:
-// public first, then any global unicast (private ranges included).
-func pickAdvertiseAddr(wildcard netip.Addr, addrs []net.Addr) (netip.Addr, bool) {
-	inFamily := func(want func(netip.Addr) bool) func(netip.Addr) bool {
-		return func(x netip.Addr) bool { return x.Is4() == wildcard.Is4() && want(x) }
-	}
-	if addr, ok := firstAddr(addrs, inFamily(isPublic)); ok {
-		return addr, true
-	}
-	return firstAddr(addrs, inFamily(netip.Addr.IsGlobalUnicast))
-}
-
-// firstAddr returns the first address in addrs accepted by want, with IPv4-mapped addresses unmapped.
-func firstAddr(addrs []net.Addr, want func(netip.Addr) bool) (netip.Addr, bool) {
-	for _, na := range addrs {
-		var ip net.IP
-		switch v := na.(type) {
-		case *net.IPNet:
-			ip = v.IP
-		case *net.IPAddr:
-			ip = v.IP
-		default:
-			continue
-		}
-		addr, ok := netip.AddrFromSlice(ip)
-		if !ok {
-			continue
-		}
-		addr = addr.Unmap()
-		if want(addr) {
-			return addr, true
-		}
-	}
-	return netip.Addr{}, false
-}
-
-// sharedAddressSpace is RFC 6598 carrier-grade NAT space, private for our purposes.
-var sharedAddressSpace = netip.MustParsePrefix("100.64.0.0/10")
-
-// isPublic reports whether addr is a globally routable unicast address
-// (excludes RFC 1918, RFC 6598 and IPv6 unique local addresses).
-func isPublic(addr netip.Addr) bool {
-	return addr.IsGlobalUnicast() && !addr.IsPrivate() && !sharedAddressSpace.Contains(addr)
-}
-
-// upInterfaceAddrs returns the addresses of all up, non-loopback interfaces
-// except the one named skip, in interface order.
-func upInterfaceAddrs(skip string) []net.Addr {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return nil
-	}
-	var addrs []net.Addr
-	for _, iface := range ifaces {
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 || iface.Name == skip {
-			continue
-		}
-		if ifAddrs, err := iface.Addrs(); err == nil {
-			addrs = append(addrs, ifAddrs...)
-		}
-	}
-	return addrs
-}
-
-// clusterController, wgController and hostsWriter are the parts of the
-// cluster, wg and etchosts packages the agent loop drives; they exist so the
-// loop can be tested with fakes.
-type clusterController interface {
-	Members() <-chan []common.Node
-	Leave()
-}
-
-type wgController interface {
-	SetUpInterface([]common.Node) error
-	DownInterface() error
-}
-
-type hostsWriter interface {
-	WriteEntries(map[string][]string) error
 }
 
 // Run wires up cluster, wireguard and /etc/hosts, joins the cluster and runs the agent loop until SIGTERM/SIGINT.
@@ -291,60 +177,4 @@ func (a *AgentCmd) enrol(ctx context.Context, id *trust.Identity, name string) (
 		slog.Warn("enrolment attempt failed", "member", addr, "err", err)
 	}
 	return nil, trust.PublicKey{}, lastErr
-}
-
-// loop applies each membership update until ctx is done, then leaves and tears down.
-func (a *AgentCmd) loop(ctx context.Context, nodec <-chan []common.Node, cl clusterController, wgstate wgController, hosts hostsWriter) error {
-	slog.Debug("waiting for cluster events")
-	for {
-		select {
-		case rawNodes, ok := <-nodec:
-			if !ok {
-				return errors.New("cluster membership channel closed")
-			}
-			a.apply(rawNodes, wgstate, hosts)
-		case <-ctx.Done():
-			slog.Info("terminating")
-			cl.Leave()
-			if !a.NoEtcHosts {
-				if err := hosts.WriteEntries(map[string][]string{}); err != nil {
-					slog.Error("could not remove stale hosts entries", "err", err)
-				}
-			}
-			if err := wgstate.DownInterface(); err != nil {
-				return fmt.Errorf("downing interface: %w", err)
-			}
-			return nil
-		}
-	}
-}
-
-// apply pushes one membership snapshot to wireguard and /etc/hosts; nodes with undecodable or invalid metadata are skipped.
-func (a *AgentCmd) apply(rawNodes []common.Node, wgstate wgController, hosts hostsWriter) {
-	nodes := make([]common.Node, 0, len(rawNodes))
-	hostEntries := make(map[string][]string, len(rawNodes))
-	for _, node := range rawNodes {
-		if err := node.DecodeMeta(); err != nil {
-			slog.Warn("could not decode node metadata, skipping", "addr", node.Addr, "err", err)
-			continue
-		}
-		if err := a.validateNode(&node); err != nil {
-			slog.Warn("invalid node metadata, skipping", "name", node.Name, "addr", node.Addr, "err", err)
-			continue
-		}
-		slog.Info("cluster member", "addr", node.Addr, "overlay", node.OverlayAddr, "pubkey", node.PubKey)
-		nodes = append(nodes, node)
-		hostEntries[node.OverlayAddr.String()] = []string{node.Name}
-	}
-	if err := wgstate.SetUpInterface(nodes); err != nil {
-		slog.Error("could not up interface", "err", err)
-		if err := wgstate.DownInterface(); err != nil {
-			slog.Warn("could not down interface after failed setup", "err", err)
-		}
-	}
-	if !a.NoEtcHosts {
-		if err := hosts.WriteEntries(hostEntries); err != nil {
-			slog.Error("could not write hosts entries", "err", err)
-		}
-	}
 }

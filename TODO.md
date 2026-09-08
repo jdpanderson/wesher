@@ -201,6 +201,11 @@ Hygiene:
 - [x] logrus -> `log/slog` (logrus is in maintenance mode). memberlist logs
       through `slog.NewLogLogger` at debug; `etchosts.Logger` is a
       `*slog.Logger`; messages are structured key/value pairs.
+- [x] Source layout (2026-09-08): the entry point is `cmd/cheesecloth/main.go`;
+      the command implementations live in `internal/cli`, one file per purpose
+      (root parser, config file, log level, agent command, agent loop,
+      bind-address selection, control adapter, invite, revoke, status command,
+      status rendering). Library packages stay at the top level.
 - [x] Simplification pass (2026-09-07, one commit each): kong's built-in
       `VersionFlag`; `key` is a byte slice validated on parse;
       `wg.overlayAddr` is a pure function; `DownInterface` asks netlink only;

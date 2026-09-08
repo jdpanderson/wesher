@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"net/netip"
@@ -19,10 +19,10 @@ func writeConfig(t *testing.T, body string) string {
 }
 
 // parse runs the real parser with configPath as the default config file.
-func parse(t *testing.T, configPath string, args ...string) (*cli, error) {
+func parse(t *testing.T, configPath string, args ...string) (*CLI, error) {
 	t.Helper()
-	c := &cli{}
-	k, err := parser(c, configPath)
+	c := &CLI{}
+	k, err := Parser(c, configPath, "test")
 	if err != nil { // a broken default config file is reported at construction
 		return c, err
 	}

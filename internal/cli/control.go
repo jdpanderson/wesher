@@ -1,9 +1,8 @@
-package main
+package cli
 
 import (
 	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/jdpanderson/cheesecloth/cluster"
@@ -22,38 +21,6 @@ func (c *controlFlags) socket() string {
 		return c.ControlSocket
 	}
 	return control.DefaultSocket(c.Interface)
-}
-
-// InviteCmd mints an enrolment token on the running agent.
-type InviteCmd struct {
-	controlFlags
-	TTL  time.Duration `help:"how long the token stays valid" default:"10m"`
-	Uses int           `help:"how many nodes may enrol with the token" default:"1"`
-}
-
-func (c *InviteCmd) Run() error {
-	resp, err := control.Call(c.socket(), control.Request{Op: "invite", TTL: c.TTL.String(), Uses: c.Uses})
-	if err != nil {
-		return err
-	}
-	fmt.Println(resp.Token)
-	fmt.Fprintf(os.Stderr, "valid for %s, %d use(s). On the new node:\n  cheesecloth --join <this host> --join-key %s\n", c.TTL, c.Uses, resp.Token)
-	return nil
-}
-
-// RevokeCmd removes a node from the membership.
-type RevokeCmd struct {
-	controlFlags
-	Target string `arg:"" help:"node name or identity to revoke"`
-}
-
-func (c *RevokeCmd) Run() error {
-	resp, err := control.Call(c.socket(), control.Request{Op: "revoke", Target: c.Target})
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(os.Stderr, "revoked %s (%s)\n", c.Target, resp.Identity)
-	return nil
 }
 
 // agentControl adapts a Cluster to the control.Handler interface.

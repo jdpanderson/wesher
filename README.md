@@ -115,7 +115,7 @@ This builds a bit-by-bit identical binary to the released ones, assuming the sam
 
 Alternatively, without a checkout (`--version` will then report `dev` rather than a tag):
 ```
-$ go install github.com/jdpanderson/cheesecloth@latest
+$ go install github.com/jdpanderson/cheesecloth/cmd/cheesecloth@latest
 ```
 
 ## Features

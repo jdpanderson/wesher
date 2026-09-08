@@ -10,7 +10,7 @@ GOVULNCHECK := go run golang.org/x/vuln/cmd/govulncheck@v1.7.0
 GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
 
 build:
-	$(foreach GOARCH,$(GOARCHES),GOARCH=$(GOARCH) go build ${GOFLAGS} -o cheesecloth$(if $(filter-out $(GOARCH), $(GOARCHES)),-$(GOARCH));)
+	$(foreach GOARCH,$(GOARCHES),GOARCH=$(GOARCH) go build ${GOFLAGS} -o cheesecloth$(if $(filter-out $(GOARCH), $(GOARCHES)),-$(GOARCH)) ./cmd/cheesecloth;)
 
 release: build
 	sha256sum cheesecloth-* | tee cheesecloth.sha256sums

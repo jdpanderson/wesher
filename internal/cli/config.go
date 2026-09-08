@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"errors"
@@ -10,6 +10,9 @@ import (
 	"github.com/alecthomas/kong"
 	"go.yaml.in/yaml/v3"
 )
+
+// Configuration file support: a YAML file keyed by flag name, applied as
+// kong resolver defaults so command-line flags override it.
 
 // DefaultConfigPath is read when it exists; --config names another file.
 const DefaultConfigPath = "/etc/cheesecloth/config.yaml"
@@ -85,16 +88,4 @@ func (c *configResolver) Resolve(_ *kong.Context, _ *kong.Path, flag *kong.Flag)
 		return nil, fmt.Errorf("config: %q cannot be set in the config file: %s", flag.Name, reason)
 	}
 	return v, nil
-}
-
-// parser builds the command-line parser; configPath is the file read when present.
-func parser(cli *cli, configPath string) (*kong.Kong, error) {
-	return kong.New(cli,
-		kong.Name("cheesecloth"),
-		kong.Description("mesh overlay network manager. Settings may come from a YAML config file ("+DefaultConfigPath+
-			" or --config) keyed by flag name; command-line flags override it."),
-		kong.UsageOnError(),
-		kong.Vars{"version": version, "default_config": DefaultConfigPath},
-		kong.Configuration(configLoader, configPath),
-	)
 }
