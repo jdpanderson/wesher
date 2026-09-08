@@ -62,16 +62,15 @@ func newState(iface string, port int, prefix netip.Prefix, name string, client w
 	pubKey := privKey.PublicKey()
 
 	state := State{
-		iface:   iface,
-		client:  client,
-		nl:      nl,
-		Port:    port,
-		PrivKey: privKey,
-		PubKey:  pubKey,
+		iface:       iface,
+		client:      client,
+		nl:          nl,
+		OverlayAddr: overlayAddr(prefix, name),
+		Port:        port,
+		PrivKey:     privKey,
+		PubKey:      pubKey,
 	}
-	if err := state.assignOverlayAddr(prefix, name); err != nil {
-		return nil, nil, fmt.Errorf("assigning overlay address: %w", err)
-	}
+	logrus.Debugf("assigned overlay address: %s", state.OverlayAddr)
 
 	node := &common.Node{}
 	node.OverlayAddr = state.OverlayAddr
@@ -80,12 +79,9 @@ func newState(iface string, port int, prefix netip.Prefix, name string, client w
 	return &state, node, nil
 }
 
-// assignOverlayAddr assigns a new address to the interface.
-// The address is assigned inside the provided network and depends on the
-// provided name deterministically.
-// Currently, the address is assigned by hashing the name and mapping that
-// hash in the target network space.
-func (s *State) assignOverlayAddr(prefix netip.Prefix, name string) error {
+// overlayAddr picks the address for name inside prefix deterministically:
+// the host bits are the tail of an FNV-1a 128 hash of the name.
+func overlayAddr(prefix netip.Prefix, name string) netip.Addr {
 	ip := prefix.Addr().AsSlice()
 
 	h := fnv.New128a()
@@ -96,16 +92,8 @@ func (s *State) assignOverlayAddr(prefix netip.Prefix, name string) error {
 		ip[len(ip)-i] = hb[len(hb)-i]
 	}
 
-	addr, ok := netip.AddrFromSlice(ip)
-	if !ok {
-		return fmt.Errorf("could not create IP from %q", ip)
-	}
-
-	logrus.Debugf("assigned overlay address: %s", addr)
-
-	s.OverlayAddr = addr
-
-	return nil
+	addr, _ := netip.AddrFromSlice(ip) // ip is a valid 4- or 16-byte slice
+	return addr
 }
 
 // DownInterface shuts down the associated network interface.

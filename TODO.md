@@ -52,7 +52,7 @@ Pure logic, no privileges needed (done 2026-09-07; total coverage 17.4% -> 41.1%
       of `movePreservePerms` is still uncovered (needs a cross-device rename).
 - [x] `wg.nodesToPeerConfigs` and `wg.addrToIPNet`: IPv4 and IPv6, bad key,
       empty list.
-- [x] `wg.State.assignOverlayAddr`: `/32` and non-byte-aligned mask cases.
+- [x] `wg.overlayAddr`: `/32` and non-byte-aligned mask cases.
 
 ## Phase 2: update dependencies with minimal code change
 

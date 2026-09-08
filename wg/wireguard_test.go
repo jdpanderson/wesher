@@ -11,7 +11,7 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
-func Test_State_AssignOverlayAddr(t *testing.T) {
+func Test_overlayAddr(t *testing.T) {
 	type args struct {
 		prefix   netip.Prefix
 		hostname string
@@ -39,60 +39,29 @@ func Test_State_AssignOverlayAddr(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &State{}
-			err := s.assignOverlayAddr(tt.args.prefix, tt.args.hostname)
-			require.NoError(t, err)
-
-			assert.Equal(t, tt.want, s.OverlayAddr.String())
+			assert.Equal(t, tt.want, overlayAddr(tt.args.prefix, tt.args.hostname).String())
 		})
 	}
 }
 
 // This is just to ensure - if we ever change the hashing function - that it spreads the results in a way that at least
 // avoids the most obvious collisions.
-func Test_State_AssignOverlayAddr_no_obvious_collisions(t *testing.T) {
+func Test_overlayAddr_no_obvious_collisions(t *testing.T) {
 	prefix := netip.MustParsePrefix("10.0.0.0/24")
 	assignments := make(map[string]string)
 	for _, n := range []string{"test", "test1", "test2", "1test", "2test"} {
-		s := &State{}
-		err := s.assignOverlayAddr(prefix, n)
-		require.NoError(t, err)
-
-		assert.NotContainsf(t, assignments, s.OverlayAddr.String(), "IP assignment collision for hostname %q", n)
-
-		assignments[s.OverlayAddr.String()] = n
+		addr := overlayAddr(prefix, n).String()
+		assert.NotContainsf(t, assignments, addr, "IP assignment collision for hostname %q", n)
+		assignments[addr] = n
 	}
 }
 
-// This should ensure the obvious fact that the same name should map to the same IP if called twice.
-func Test_State_AssignOverlayAddr_consistent(t *testing.T) {
+func Test_overlayAddr_deterministic(t *testing.T) {
 	prefix := netip.MustParsePrefix("10.0.0.0/8")
-	s1 := &State{}
-	err := s1.assignOverlayAddr(prefix, "test")
-	require.NoError(t, err)
-
-	s2 := &State{}
-	err = s2.assignOverlayAddr(prefix, "test")
-	require.NoError(t, err)
-
-	assert.Equal(t, s1.OverlayAddr.String(), s2.OverlayAddr.String())
+	assert.Equal(t, overlayAddr(prefix, "test"), overlayAddr(prefix, "test"))
 }
 
-func Test_State_AssignOverlayAddr_repeatable(t *testing.T) {
-	prefix := netip.MustParsePrefix("10.0.0.0/8")
-	s := &State{}
-	err := s.assignOverlayAddr(prefix, "test")
-	require.NoError(t, err)
-	gen1 := s.OverlayAddr.String()
-
-	err = s.assignOverlayAddr(prefix, "test")
-	require.NoError(t, err)
-	gen2 := s.OverlayAddr.String()
-
-	assert.Equal(t, gen1, gen2)
-}
-
-func Test_State_AssignOverlayAddr_edgeMasks(t *testing.T) {
+func Test_overlayAddr_edgeMasks(t *testing.T) {
 	tests := []struct {
 		name   string
 		prefix string
@@ -105,9 +74,7 @@ func Test_State_AssignOverlayAddr_edgeMasks(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &State{}
-			require.NoError(t, s.assignOverlayAddr(netip.MustParsePrefix(tt.prefix), "test"))
-			assert.Equal(t, tt.want, s.OverlayAddr.String())
+			assert.Equal(t, tt.want, overlayAddr(netip.MustParsePrefix(tt.prefix), "test").String())
 		})
 	}
 }
