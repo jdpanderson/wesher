@@ -218,8 +218,10 @@ Hygiene:
       `.golangci.yml`: standard set plus misspell, unconvert, unparam,
       gocritic, govet shadow, gofmt. Nine findings fixed; the CI lint job is
       now blocking.
-- [ ] Update README: configuration table, CI badge, and the "future version"
-      promises to reflect what we actually plan.
+- [x] Update README: configuration table, CI badge, and the "future version"
+      promises to reflect what we actually plan. Table and promises done; the
+      badge and the release job's repository check follow the module-path
+      DECISION below.
 - [ ] **DECISION**: module path rename and README ownership (deferred from
       phase 0).
 
