@@ -43,9 +43,18 @@ func New(name string, init bool, clusterKey []byte, bindAddr string, bindPort in
 		state = loadState(name)
 	}
 
-	clusterKey, err := computeClusterKey(state, clusterKey)
+	clusterKey, generated, err := computeClusterKey(state, clusterKey)
 	if err != nil {
 		return nil, fmt.Errorf("computing cluster key: %w", err)
+	}
+	if generated {
+		// Print the key only on a terminal so it does not end up in logs; otherwise say where it is.
+		if isatty.IsTerminal(os.Stdout.Fd()) {
+			fmt.Printf("new cluster key generated: %s\n", base64.StdEncoding.EncodeToString(clusterKey))
+		} else {
+			slog.Warn("new cluster key generated; not printing because stdout is not a terminal",
+				"hint", "grep ClusterKey "+statePath(name))
+		}
 	}
 
 	// memberlist delivers events while holding its node lock, so the receiver must never
@@ -190,25 +199,19 @@ func (c *Cluster) Members() <-chan []common.Node {
 	return changes
 }
 
-func computeClusterKey(state *state, clusterKey []byte) ([]byte, error) {
+// computeClusterKey settles on the provided key, else the stored one, else a
+// fresh random key, and records it in state. generated reports the last case.
+func computeClusterKey(state *state, clusterKey []byte) (key []byte, generated bool, err error) {
 	if len(clusterKey) == 0 {
 		clusterKey = state.ClusterKey
 	}
-
 	if len(clusterKey) == 0 {
 		clusterKey = make([]byte, KeyLen)
-
 		if _, err := rand.Read(clusterKey); err != nil {
-			return nil, fmt.Errorf("reading random source: %w", err)
+			return nil, false, fmt.Errorf("reading random source: %w", err)
 		}
-
-		// TODO: refactor this into subcommand ("showkey"?)
-		if isatty.IsTerminal(os.Stdout.Fd()) {
-			fmt.Printf("new cluster key generated: %s\n", base64.StdEncoding.EncodeToString(clusterKey))
-		}
+		generated = true
 	}
-
 	state.ClusterKey = clusterKey
-
-	return clusterKey, nil
+	return clusterKey, generated, nil
 }

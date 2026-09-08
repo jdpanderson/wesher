@@ -176,9 +176,11 @@ Correctness issues found during the initial read (verify each, then fix):
       same helper with a public-address predicate, replacing
       `go-sockaddr.GetPublicIP` (direct dependency dropped; memberlist still
       pulls it in).
-- [ ] `computeClusterKey` prints the generated key only when stdout is a TTY,
+- [x] `computeClusterKey` prints the generated key only when stdout is a TTY,
       so a systemd-started first node never reveals its key (upstream TODO
-      suggests a `showkey` subcommand).
+      suggests a `showkey` subcommand). Minimal fix: off a terminal it now
+      logs a warning naming the state file to grep. `showkey` stays a phase 6
+      candidate; `computeClusterKey` is pure and reports whether it generated.
 - [ ] `common.Node.DecodeMeta` trusts peer metadata blindly (upstream TODO).
       At minimum validate that `OverlayAddr` is inside the configured overlay
       net and `PubKey` parses, and log-and-skip otherwise.

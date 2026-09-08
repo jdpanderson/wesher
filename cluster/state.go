@@ -18,8 +18,13 @@ type state struct {
 
 var statePathTemplate = "/var/lib/wesher/%s.json"
 
+// statePath is where the state for clusterName is persisted.
+func statePath(clusterName string) string {
+	return fmt.Sprintf(statePathTemplate, clusterName)
+}
+
 func (s *state) save(clusterName string) error {
-	statePath := fmt.Sprintf(statePathTemplate, clusterName)
+	statePath := statePath(clusterName)
 	if err := os.MkdirAll(filepath.Dir(statePath), 0700); err != nil {
 		return err
 	}
@@ -35,7 +40,7 @@ func (s *state) save(clusterName string) error {
 // loadState reads the persisted state for clusterName; missing or unreadable
 // state yields an empty state.
 func loadState(clusterName string) *state {
-	statePath := fmt.Sprintf(statePathTemplate, clusterName)
+	statePath := statePath(clusterName)
 	content, err := os.ReadFile(statePath)
 	if err != nil {
 		if !os.IsNotExist(err) {
