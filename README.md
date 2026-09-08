@@ -125,15 +125,14 @@ connections between all nodes, thus forming a full mesh VPN.
 This approach may not scale for hundreds of nodes (benchmarks accepted 😉), but is sufficiently performant to join
 several nodes across multiple cloud providers, or simply to secure inter-node comunication in a single public-cloud.
 
-### Automatic Key management
+### Automatic key management
 
-The wireguard private keys are created on startup for each node and the respective public keys are then broadcast
-across the cluster.
+Each node has a persisted identity, created on its first start. The wireguard private key is created fresh on every
+start and its public key is gossiped across the cluster, signed by the node's identity.
 
-The control-plane cluster communication is secured with a pre-shared AES-256 key. This key can be be automatically
-created during startup of the first node in a cluster, or it can be provided (see [configuration](#configuration-options)).
-The cluster key must then be sent to other nodes via a out-of-band secure channel (e.g. ssh, cloud-init, etc).
-Once set, the cluster key is saved locally and reused on the next startup.
+Cluster communication is encrypted and authenticated per pair of nodes with keys derived from their identities; there
+is no shared cluster key. New nodes are admitted with a short-lived invitation token minted on an existing member (see
+[Quickstart](#quickstart)).
 
 ### Automatic IP address management
 
@@ -219,8 +218,6 @@ It cannot decrypt traffic between other nodes, and it cannot admit new nodes wit
 
 Node metadata received over the cluster is validated before use: peers whose metadata is not signed by a valid member,
 whose overlay address falls outside `--overlay-net` or whose wireguard key does not parse are logged and ignored.
-
-This membership model is not compatible with upstream wesher's shared cluster key; a cluster is migrated by recreating it.
 
 ## Current known limitations
 

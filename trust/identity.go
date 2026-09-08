@@ -1,5 +1,5 @@
 // Package trust implements node identities, signed admission records and the
-// validity rules that replace wesher's shared cluster key. See docs/membership.md.
+// validity rules that decide cluster membership. See docs/membership.md.
 package trust
 
 import (

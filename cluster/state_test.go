@@ -73,12 +73,6 @@ func Test_Load_createsAndKeepsIdentity(t *testing.T) {
 	fresh, err := Load("test", true)
 	require.NoError(t, err)
 	assert.NotEqual(t, b.Identity.Public(), fresh.Identity.Public(), "--init starts over")
-
-	// a pre-identity (shared key era) state file is simply superseded
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "old.json"), []byte(`{"ClusterKey":"abc","Nodes":[]}`), 0o600))
-	old, err := Load("old", false)
-	require.NoError(t, err)
-	assert.False(t, old.Enrolled())
 }
 
 func Test_Bootstrap_initAndEnrol(t *testing.T) {

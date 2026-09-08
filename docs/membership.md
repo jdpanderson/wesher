@@ -1,7 +1,6 @@
 # Identity-based membership
 
-Status: design accepted 2026-09-08, implementation in progress. Supersedes the
-shared cluster key inherited from upstream wesher.
+Status: design accepted and implemented 2026-09-08.
 
 ## Goals
 
@@ -10,7 +9,8 @@ shared cluster key inherited from upstream wesher.
   token is then gone from every machine.
 - A stolen node yields one revocable identity, not the cluster.
 - Nodes restart unattended, including all of them at once.
-- Old (shared-key) and new nodes fail closed against each other.
+- Protocol versions are explicit (enrolment message, packet version byte,
+  TLS ALPN) so mismatched nodes fail closed rather than half-working.
 
 ## Roles of the two key layers
 
@@ -153,14 +153,6 @@ can be revoked.
   socket `/run/wesher/<interface>.sock`).
 - `wesher revoke NAME|IDENTITY`: sign and broadcast a revocation.
 - `wesher status`: peers now show identity fingerprints.
-
-Removed: `--cluster-key`, `WESHER_CLUSTER_KEY`, `wesher showkey`.
-
-## Compatibility
-
-None with shared-key wesher. Old nodes cannot decrypt the new packets and are
-rejected on TLS; new nodes reject old packets at the version byte. A cluster
-is migrated by recreating it.
 
 ## Out of scope for now
 
