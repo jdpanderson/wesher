@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jdpanderson/wesher/common"
+	"github.com/jdpanderson/cheesecloth/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vishvananda/netlink"

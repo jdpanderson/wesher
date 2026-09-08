@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/jdpanderson/wesher/common"
+	"github.com/jdpanderson/cheesecloth/common"
 	"github.com/vishvananda/netlink"
 	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
@@ -48,7 +48,7 @@ type Config struct {
 	PersistentKeepalive time.Duration
 }
 
-// State holds the configured state of a Wesher Wireguard interface.
+// State holds the configured state of a Cheesecloth Wireguard interface.
 type State struct {
 	iface       string
 	mtu         int
@@ -62,7 +62,7 @@ type State struct {
 	PubKey      wgtypes.Key
 }
 
-// New creates a new Wesher Wireguard state.
+// New creates a new Cheesecloth Wireguard state.
 // The Wireguard keys are generated for every new interface.
 // The interface must later be setup using SetUpInterface.
 func New(cfg Config) (*State, *common.Node, error) {

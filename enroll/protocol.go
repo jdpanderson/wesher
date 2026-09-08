@@ -15,7 +15,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/jdpanderson/wesher/trust"
+	"github.com/jdpanderson/cheesecloth/trust"
 )
 
 // Version identifies this exchange format; a mismatch fails closed.
@@ -25,8 +25,8 @@ const (
 	nonceLen     = 32
 	maxFrame     = 1 << 20 // records for a large cluster fit comfortably
 	exchangeTime = 15 * time.Second
-	kdfInfo      = "wesher/enroll/v1"
-	welcomeAD    = "wesher/enroll/welcome/v1"
+	kdfInfo      = "cheesecloth/enroll/v1"
+	welcomeAD    = "cheesecloth/enroll/welcome/v1"
 	labelMember  = "member"
 	labelJoiner  = "joiner"
 )

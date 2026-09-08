@@ -6,15 +6,15 @@ import (
 	"os"
 	"time"
 
-	"github.com/jdpanderson/wesher/cluster"
-	"github.com/jdpanderson/wesher/control"
-	"github.com/jdpanderson/wesher/trust"
+	"github.com/jdpanderson/cheesecloth/cluster"
+	"github.com/jdpanderson/cheesecloth/control"
+	"github.com/jdpanderson/cheesecloth/trust"
 )
 
 // controlFlags are shared by the commands that talk to a running agent.
 type controlFlags struct {
-	Interface     string `env:"WESHER_INTERFACE" help:"wireguard interface of the agent to talk to" default:"wgoverlay"`
-	ControlSocket string `env:"WESHER_CONTROL_SOCKET" help:"agent control socket (default /run/wesher/<interface>.sock)"`
+	Interface     string `env:"CHEESECLOTH_INTERFACE" help:"wireguard interface of the agent to talk to" default:"wgoverlay"`
+	ControlSocket string `env:"CHEESECLOTH_CONTROL_SOCKET" help:"agent control socket (default /run/cheesecloth/<interface>.sock)"`
 }
 
 func (c *controlFlags) socket() string {
@@ -37,7 +37,7 @@ func (c *InviteCmd) Run() error {
 		return err
 	}
 	fmt.Println(resp.Token)
-	fmt.Fprintf(os.Stderr, "valid for %s, %d use(s). On the new node:\n  wesher --join <this host> --join-key %s\n", c.TTL, c.Uses, resp.Token)
+	fmt.Fprintf(os.Stderr, "valid for %s, %d use(s). On the new node:\n  cheesecloth --join <this host> --join-key %s\n", c.TTL, c.Uses, resp.Token)
 	return nil
 }
 

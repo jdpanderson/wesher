@@ -18,4 +18,4 @@ if [ ! -e /dev/net/tun ]; then
 fi
 
 wireguard ${iface:-wgoverlay}
-exec /app/wesher --log-level debug "${args[@]}"
+exec /app/cheesecloth --log-level debug "${args[@]}"

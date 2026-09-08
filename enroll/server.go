@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jdpanderson/wesher/trust"
+	"github.com/jdpanderson/cheesecloth/trust"
 )
 
 // Server admits joiners who prove knowledge of a pending token.

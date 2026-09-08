@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jdpanderson/wesher/common"
+	"github.com/jdpanderson/cheesecloth/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"

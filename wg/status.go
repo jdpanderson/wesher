@@ -10,7 +10,7 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
-// Report is a snapshot of a wesher wireguard interface.
+// Report is a snapshot of a cheesecloth wireguard interface.
 type Report struct {
 	Interface  string         `json:"interface"`
 	PublicKey  string         `json:"publicKey"`

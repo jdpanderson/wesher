@@ -90,7 +90,7 @@ func IdentityFromSeed(seed []byte) (*Identity, error) {
 	if len(seed) != SeedLen {
 		return nil, fmt.Errorf("identity seed must be %d bytes, got %d", SeedLen, len(seed))
 	}
-	dhSeed, err := hkdf.Key(sha256.New, seed, nil, "wesher/dh/v1", 32)
+	dhSeed, err := hkdf.Key(sha256.New, seed, nil, "cheesecloth/dh/v1", 32)
 	if err != nil {
 		return nil, fmt.Errorf("deriving dh key: %w", err)
 	}

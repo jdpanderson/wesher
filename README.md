@@ -1,14 +1,14 @@
-[![Build Status](https://github.com/jdpanderson/wesher/actions/workflows/main.yaml/badge.svg)](https://github.com/jdpanderson/wesher/actions/workflows/main.yaml)
+[![Build Status](https://github.com/jdpanderson/cheesecloth/actions/workflows/main.yaml/badge.svg)](https://github.com/jdpanderson/cheesecloth/actions/workflows/main.yaml)
 
-This is a maintained fork of [costela/wesher](https://github.com/costela/wesher).
+# cheesecloth
 
-# wesher
-
-<img src="./dist/wesher.svg" width="300"/>
-
-`wesher` creates and manages an encrypted mesh overlay network across a group of nodes, using [wireguard](https://www.wireguard.com/).
+`cheesecloth` creates and manages an encrypted mesh overlay network across a group of nodes, using [wireguard](https://www.wireguard.com/).
 
 Its main use-case is adding low-maintenance security to public-cloud networks or connecting different cloud providers.
+
+cheesecloth began as a fork of [costela/wesher](https://github.com/costela/wesher) and keeps its overall shape, but
+shares no wire protocol, state or key model with it: membership is decided by per-node identities and invitation
+tokens rather than a shared cluster key.
 
 **Note**: mesh membership is decided by signed admission records and invitation tokens rather than a shared key; see
 [security considerations](#security-considerations) below for what a compromised node can and cannot do.
@@ -25,23 +25,23 @@ Its main use-case is adding low-maintenance security to public-cloud networks or
 1. Download the latest release for your architecture:
 
    ```
-   $ wget -O wesher https://github.com/jdpanderson/wesher/releases/latest/download/wesher-$(go env GOARCH)
-   $ chmod a+x wesher
+   $ wget -O cheesecloth https://github.com/jdpanderson/cheesecloth/releases/latest/download/cheesecloth-$(go env GOARCH)
+   $ chmod a+x cheesecloth
    ```
 
 2. On the first node, start a new cluster:
    ```
-   # ./wesher --init
+   # ./cheesecloth --init
    ```
 
    This starts the daemon in the foreground. The node generates its identity and becomes the cluster's root.
 
 3. Still on that node (or any node already in the cluster), mint an invitation for the node you want to add:
    ```
-   # wesher invite
+   # cheesecloth invite
    7xk3...
    valid for 10m0s, 1 use(s). On the new node:
-     wesher --join <this host> --join-key 7xk3...
+     cheesecloth --join <this host> --join-key 7xk3...
    ```
 
    The token lives only in the inviting node's memory until it is used or expires. `--uses N` lets one token enrol
@@ -49,22 +49,22 @@ Its main use-case is adding low-maintenance security to public-cloud networks or
 
 4. On the new node:
    ```
-   # wesher --join x.x.x.x --join-key 7xk3...
+   # cheesecloth --join x.x.x.x --join-key 7xk3...
    ```
 
    Where `x.x.x.x` is the hostname or IP of the node that minted the token. The two nodes prove to each other that
    they know the token, the new node is admitted, and the token is discarded on both sides. From then on the node
-   restarts with plain `wesher`; its identity and the membership records are kept in `/var/lib/wesher/`.
+   restarts with plain `cheesecloth`; its identity and the membership records are kept in `/var/lib/cheesecloth/`.
 
-   To remove a node again, on any member: `wesher revoke NAME`.
+   To remove a node again, on any member: `cheesecloth revoke NAME`.
 
 ### Permissions 
 
-Note that `wireguard` - and therefore `wesher` - need root access to work properly.
+Note that `wireguard` - and therefore `cheesecloth` - need root access to work properly.
 
-It is also possible to give the `wesher` binary enough capabilities to manage the `wireguard` interface via:
+It is also possible to give the `cheesecloth` binary enough capabilities to manage the `wireguard` interface via:
 ```
-# setcap cap_net_admin=eip wesher
+# setcap cap_net_admin=eip cheesecloth
 ```
 This will enable running as an unprivileged user, but some functionality (like automatic adding peer entries to
 `/etc/hosts`; see [configuration options](#configuration-options) below) will not work.
@@ -73,24 +73,24 @@ This will enable running as an unprivileged user, but some functionality (like a
 
 A minimal `systemd` unit file is provided under the `dist` folder and can be copied to `/etc/systemd/system`:
 ```
-# wget -O /etc/systemd/system/wesher.service https://raw.githubusercontent.com/jdpanderson/wesher/main/dist/wesher.service
+# wget -O /etc/systemd/system/cheesecloth.service https://raw.githubusercontent.com/jdpanderson/cheesecloth/main/dist/cheesecloth.service
 # systemctl daemon-reload
-# systemctl enable wesher
+# systemctl enable cheesecloth
 ```
-The provided unit file assumes `wesher` is installed to `/usr/local/sbin`.
+The provided unit file assumes `cheesecloth` is installed to `/usr/local/sbin`.
 
-For an unattended first start, put `WESHER_JOIN=x.x.x.x` and `WESHER_JOIN_KEY=...` in `/etc/default/wesher`
+For an unattended first start, put `CHEESECLOTH_JOIN=x.x.x.x` and `CHEESECLOTH_JOIN_KEY=...` in `/etc/default/cheesecloth`
 (see [configuration options](#configuration-options) below). Once the node is enrolled the key is ignored on later
 starts and can be removed from the file.
 
 ## Checking on a node
 
-`wesher status` shows the wireguard interface and its peers, with the last handshake age and traffic counters, naming
+`cheesecloth status` shows the wireguard interface and its peers, with the last handshake age and traffic counters, naming
 peers from the persisted cluster state. Add `--json` for machine-readable output and `--interface` if not using the
 default. It needs the same privileges as the agent.
 
 ```
-# wesher status
+# cheesecloth status
 interface: wgoverlay
 address:   10.171.249.28/32
 port:      51820
@@ -102,25 +102,25 @@ test2  10.171.252.205  10.89.0.3:51820  12s ago    1.5 KiB  3.0 KiB
 test3  10.171.251.146  10.89.0.4:51820  never      0 B      0 B
 ```
 
-`wesher invite` and `wesher revoke NAME` manage membership through the running agent (see [Quickstart](#quickstart)).
+`cheesecloth invite` and `cheesecloth revoke NAME` manage membership through the running agent (see [Quickstart](#quickstart)).
 
 ## Installing from source
 
 ```
-$ git clone https://github.com/jdpanderson/wesher.git
-$ cd wesher
+$ git clone https://github.com/jdpanderson/cheesecloth.git
+$ cd cheesecloth
 $ make
 ```
 This builds a bit-by-bit identical binary to the released ones, assuming the same go version is used to build its respective git tag.
 
 Alternatively, without a checkout (`--version` will then report `dev` rather than a tag):
 ```
-$ go install github.com/jdpanderson/wesher@latest
+$ go install github.com/jdpanderson/cheesecloth@latest
 ```
 
 ## Features
 
-The `wesher` tool builds a cluster and manages the configuration of wireguard on each node to create peer-to-peer
+The `cheesecloth` tool builds a cluster and manages the configuration of wireguard on each node to create peer-to-peer
 connections between all nodes, thus forming a full mesh VPN.
 This approach may not scale for hundreds of nodes (benchmarks accepted 😉), but is sufficiently performant to join
 several nodes across multiple cloud providers, or simply to secure inter-node comunication in a single public-cloud.
@@ -146,7 +146,7 @@ to identify nodes and must therefore be unique in the cluster.
 
 ### Automatic /etc/hosts management
 
-To ease intra-node communication, `wesher` also adds entries to `/etc/hosts` for each peer in the mesh. This enables using the nodes' hostnames to ensure communication over the secured overlay network (assuming `files` is the first entry for `hosts` in `/etc/nsswitch.conf`).
+To ease intra-node communication, `cheesecloth` also adds entries to `/etc/hosts` for each peer in the mesh. This enables using the nodes' hostnames to ensure communication over the secured overlay network (assuming `files` is the first entry for `hosts` in `/etc/nsswitch.conf`).
 
 See [configuration](#configuration-options) below for how to disable this behavior.
 
@@ -161,19 +161,19 @@ All options can be passed either as command-line flags or environment variables:
 
 | Option | Env | Description | Default |
 |---|---|---|---|
-| `--join HOST,...` | WESHER_JOIN | comma separated list of hostnames or IP addresses of existing cluster members; if not provided, will attempt resuming any known state or otherwise wait for further members |  |
-| `--join-key TOKEN` | WESHER_JOIN_KEY | invitation token from `wesher invite` on a member; needed only the first time this node joins, ignored afterwards |  |
-| `--init` | WESHER_INIT | start a new cluster with this node as its root; any known state from previous runs will be forgotten | `false` |
-| `--control-socket PATH` | WESHER_CONTROL_SOCKET | unix socket used by `wesher invite` and `wesher revoke` | `/run/wesher/<interface>.sock` |
-| `--bind-addr ADDR` | WESHER_BIND_ADDR | address to bind for cluster membership; `0.0.0.0` or `::` binds every interface of that family and advertises one of its addresses (public preferred). The family decides whether the cluster runs over IPv4 or IPv6, see [IPv4 and IPv6](#ipv4-and-ipv6) | `0.0.0.0` |
-| `--cluster-port PORT` | WESHER_CLUSTER_PORT | port used for membership gossip traffic (both TCP and UDP); must be the same across cluster | `7946` |
-| `--wireguard-port PORT` | WESHER_WIREGUARD_PORT | port used for wireguard traffic (UDP); must be the same across cluster | `51820` |
-| `--overlay-net ADDR/MASK` | WESHER_OVERLAY_NET | the network in which to allocate addresses for the overlay mesh network (CIDR format); smaller networks increase the chance of IP collision | `10.0.0.0/8` |
-| `--interface DEV` | WESHER_INTERFACE | name of the wireguard interface to create and manage | `wgoverlay` |
-| `--mtu MTU` | WESHER_MTU | MTU of the wireguard interface | `1420` |
-| `--persistent-keepalive DURATION` | WESHER_PERSISTENT_KEEPALIVE | interval at which peers send keepalives, to keep NAT mappings open (e.g. `25s`); `0` disables | `0` |
-| `--no-etc-hosts` | WESHER_NO_ETC_HOSTS | whether to skip writing hosts entries for each node in mesh | `false` |
-| `--log-level LEVEL` | WESHER_LOG_LEVEL | set the verbosity (one of debug/info/warn/error) | `warn` |
+| `--join HOST,...` | CHEESECLOTH_JOIN | comma separated list of hostnames or IP addresses of existing cluster members; if not provided, will attempt resuming any known state or otherwise wait for further members |  |
+| `--join-key TOKEN` | CHEESECLOTH_JOIN_KEY | invitation token from `cheesecloth invite` on a member; needed only the first time this node joins, ignored afterwards |  |
+| `--init` | CHEESECLOTH_INIT | start a new cluster with this node as its root; any known state from previous runs will be forgotten | `false` |
+| `--control-socket PATH` | CHEESECLOTH_CONTROL_SOCKET | unix socket used by `cheesecloth invite` and `cheesecloth revoke` | `/run/cheesecloth/<interface>.sock` |
+| `--bind-addr ADDR` | CHEESECLOTH_BIND_ADDR | address to bind for cluster membership; `0.0.0.0` or `::` binds every interface of that family and advertises one of its addresses (public preferred). The family decides whether the cluster runs over IPv4 or IPv6, see [IPv4 and IPv6](#ipv4-and-ipv6) | `0.0.0.0` |
+| `--cluster-port PORT` | CHEESECLOTH_CLUSTER_PORT | port used for membership gossip traffic (both TCP and UDP); must be the same across cluster | `7946` |
+| `--wireguard-port PORT` | CHEESECLOTH_WIREGUARD_PORT | port used for wireguard traffic (UDP); must be the same across cluster | `51820` |
+| `--overlay-net ADDR/MASK` | CHEESECLOTH_OVERLAY_NET | the network in which to allocate addresses for the overlay mesh network (CIDR format); smaller networks increase the chance of IP collision | `10.0.0.0/8` |
+| `--interface DEV` | CHEESECLOTH_INTERFACE | name of the wireguard interface to create and manage | `wgoverlay` |
+| `--mtu MTU` | CHEESECLOTH_MTU | MTU of the wireguard interface | `1420` |
+| `--persistent-keepalive DURATION` | CHEESECLOTH_PERSISTENT_KEEPALIVE | interval at which peers send keepalives, to keep NAT mappings open (e.g. `25s`); `0` disables | `0` |
+| `--no-etc-hosts` | CHEESECLOTH_NO_ETC_HOSTS | whether to skip writing hosts entries for each node in mesh | `false` |
+| `--log-level LEVEL` | CHEESECLOTH_LOG_LEVEL | set the verbosity (one of debug/info/warn/error) | `warn` |
 
 ## IPv4 and IPv6
 
@@ -186,13 +186,13 @@ Any address option accepts either family. Two independent choices are made per c
 - **Overlay** (the mesh addresses): the family of `--overlay-net`, independent of the underlay. An IPv6 overlay such
   as `fd00:10::/64` over an IPv4 underlay works, and so does the reverse.
 
-With a wildcard bind address, wesher advertises one of the host's addresses of that family to the cluster, preferring
+With a wildcard bind address, cheesecloth advertises one of the host's addresses of that family to the cluster, preferring
 a public one, then any global unicast address (RFC 1918 and unique local addresses included). Link-local addresses and
-addresses on the wesher interface itself are never chosen. Set a specific `--bind-addr` to control it.
+addresses on the cheesecloth interface itself are never chosen. Set a specific `--bind-addr` to control it.
 
 ## Running multiple clusters
 
-To make a node be a member of multiple clusters, simply start multiple wesher instances.  
+To make a node be a member of multiple clusters, simply start multiple cheesecloth instances.  
 Each instance **must** have different values for the following settings:
 - `--interface`
 - either `--cluster-port` or `--bind-addr`
@@ -210,7 +210,7 @@ encrypted and authenticated per pair of nodes with keys derived from their ident
 wireguard key only if the peer's identity is a valid member and signed its metadata. The design is described in
 [`docs/membership.md`](docs/membership.md).
 
-Compromise of a node yields that node's identity, which any member can revoke with `wesher revoke`. Until revoked, an
+Compromise of a node yields that node's identity, which any member can revoke with `cheesecloth revoke`. Until revoked, an
 attacker holding it can:
 - access services exposed on the overlay network
 - impersonate that node and disrupt traffic to and from it
@@ -237,5 +237,5 @@ However, this does mean longer connection loss between any two parts of the clus
 different cloud providers) can lead to a split-brain scenario where each side thinks the other side is simply "gone".
 
 There is currently no clean solution for this problem, but one could work around it by designating edge nodes which
-periodically restart `wesher` with the `--join` option pointing to the other side.
+periodically restart `cheesecloth` with the `--join` option pointing to the other side.
 Static seed nodes that are re-joined periodically are a candidate for future work.

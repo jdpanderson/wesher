@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/hashicorp/memberlist"
-	"github.com/jdpanderson/wesher/common"
-	"github.com/jdpanderson/wesher/enroll"
-	"github.com/jdpanderson/wesher/trust"
+	"github.com/jdpanderson/cheesecloth/common"
+	"github.com/jdpanderson/cheesecloth/enroll"
+	"github.com/jdpanderson/cheesecloth/trust"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

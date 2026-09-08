@@ -27,9 +27,9 @@ type Revocation struct {
 }
 
 const (
-	admissionDomain  = "wesher/admission/v1"
-	revocationDomain = "wesher/revocation/v1"
-	metaDomain       = "wesher/meta/v1"
+	admissionDomain  = "cheesecloth/admission/v1"
+	revocationDomain = "cheesecloth/revocation/v1"
+	metaDomain       = "cheesecloth/meta/v1"
 )
 
 // canonical builds the signed bytes: domain, then each field length-prefixed.

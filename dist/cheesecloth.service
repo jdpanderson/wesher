@@ -1,0 +1,12 @@
+[Unit]
+Description=cheesecloth - wireguard mesh builder
+After=network-online.target
+
+[Service]
+EnvironmentFile=-/etc/default/cheesecloth
+ExecStart=/usr/local/sbin/cheesecloth
+Restart=on-failure
+Type=simple
+
+[Install]
+WantedBy = multi-user.target

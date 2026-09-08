@@ -1,4 +1,4 @@
-module github.com/jdpanderson/wesher
+module github.com/jdpanderson/cheesecloth
 
 go 1.26.0
 

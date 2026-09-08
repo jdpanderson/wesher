@@ -13,7 +13,7 @@ import (
 )
 
 // DefaultSocket is where the agent for iface listens.
-func DefaultSocket(iface string) string { return filepath.Join("/run/wesher", iface+".sock") }
+func DefaultSocket(iface string) string { return filepath.Join("/run/cheesecloth", iface+".sock") }
 
 // Request is an operator command.
 type Request struct {

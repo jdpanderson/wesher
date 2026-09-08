@@ -10,18 +10,18 @@ cleanup() {
         docker container rm -f ${started_containers[@]}
     fi
     echo "Removing shared networks"
-    docker network rm wesher_test wesher_test6
+    docker network rm cheesecloth_test cheesecloth_test6
 }
 
-docker build -t wesher-test "$(dirname "$0")"
+docker build -t cheesecloth-test "$(dirname "$0")"
 
 # The underlay must not overlap the default overlay net (10.0.0.0/8), so pick the subnet explicitly.
-docker network create --subnet 172.30.0.0/24 wesher_test
-docker network create --ipv6 --subnet fd00:57::/64 wesher_test6
+docker network create --subnet 172.30.0.0/24 cheesecloth_test
+docker network create --ipv6 --subnet fd00:57::/64 cheesecloth_test6
 trap cleanup EXIT
 
 # network the next containers join; tests switch it for the IPv6 cases
-network=wesher_test
+network=cheesecloth_test
 
 run_test_container() {
     local name=$1
@@ -29,7 +29,7 @@ run_test_container() {
     shift
     local hostname=$1
     shift
-    docker run -d --cap-add=NET_ADMIN --cap-add=NET_RAW --device /dev/net/tun --security-opt label=disable --name ${name} --hostname ${hostname} -v $(pwd):/app --network=${network} wesher-test "$@"
+    docker run -d --cap-add=NET_ADMIN --cap-add=NET_RAW --device /dev/net/tun --security-opt label=disable --name ${name} --hostname ${hostname} -v $(pwd):/app --network=${network} cheesecloth-test "$@"
     started_containers[$name]=$name
 }
 
@@ -39,14 +39,14 @@ stop_test_container() {
     unset started_containers[$1]
 }
 
-# invite <container> <uses> [wesher flags...]: mint an enrolment token on a running
+# invite <container> <uses> [cheesecloth flags...]: mint an enrolment token on a running
 # member, retrying while its agent is still starting. Prints the token.
 invite() {
     local container=$1 uses=$2
     shift 2
     local token
     for _ in $(seq 1 30); do
-        if token=$(docker exec "$container" /app/wesher invite --ttl 5m --uses "$uses" "$@" 2>/dev/null) && [ -n "$token" ]; then
+        if token=$(docker exec "$container" /app/cheesecloth invite --ttl 5m --uses "$uses" "$@" 2>/dev/null) && [ -n "$token" ]; then
             echo "$token"
             return 0
         fi
@@ -171,19 +171,19 @@ test_multiple_clusters_restart() {
 
 # IPv6 underlay (gossip, enrolment and wireguard endpoints over fd00:57::/64) and IPv6 overlay
 test_ipv6_cluster() {
-    network=wesher_test6
+    network=cheesecloth_test6
     local v6='--bind-addr :: --overlay-net fd00:10::/64'
     run_test_container test1-orig test1 --init $v6
     token=$(invite test1-orig 2)
     run_test_container test2-orig test2 --join test1-orig --join-key "$token" $v6
     run_test_container test3-orig test3 --join test1-orig --join-key "$token" $v6
-    network=wesher_test
+    network=cheesecloth_test
 
     sleep 3
 
     ping_ok test1-orig test2 test2-orig
     ping_ok test3-orig test1 test1-orig
-    docker exec test1-orig /app/wesher status | grep -q '^address: *fd00:10:' || (docker exec test1-orig /app/wesher status; false)
+    docker exec test1-orig /app/cheesecloth status | grep -q '^address: *fd00:10:' || (docker exec test1-orig /app/cheesecloth status; false)
 
     stop_test_container test3-orig
     stop_test_container test2-orig
@@ -236,14 +236,14 @@ test_revoke() {
     sleep 3
 
     ping_ok test1-orig test3 test3-orig
-    docker exec test1-orig /app/wesher revoke test3
+    docker exec test1-orig /app/cheesecloth revoke test3
 
     sleep 3
 
     if docker exec test1-orig grep -q test3 /etc/hosts; then
         echo "revoked node still in test1's hosts"; docker logs test1-orig; false
     fi
-    docker exec test1-orig /app/wesher status | grep -q test3 && { echo "revoked node still a wireguard peer"; false; }
+    docker exec test1-orig /app/cheesecloth status | grep -q test3 && { echo "revoked node still a wireguard peer"; false; }
     # the revocation also reached test2, which never talked to the operator
     for _ in $(seq 1 20); do
         docker exec test2-orig grep -q test3 /etc/hosts || break

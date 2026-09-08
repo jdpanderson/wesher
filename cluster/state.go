@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/jdpanderson/wesher/common"
-	"github.com/jdpanderson/wesher/trust"
+	"github.com/jdpanderson/cheesecloth/common"
+	"github.com/jdpanderson/cheesecloth/trust"
 )
 
 // state is what a node persists: its identity seed, the membership it trusts
@@ -20,7 +20,7 @@ type state struct {
 	Nodes   []common.Node    `json:"nodes"`
 }
 
-var statePathTemplate = "/var/lib/wesher/%s.json"
+var statePathTemplate = "/var/lib/cheesecloth/%s.json"
 
 // statePath is where the state for clusterName is persisted.
 func statePath(clusterName string) string {

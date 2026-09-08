@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/memberlist"
-	"github.com/jdpanderson/wesher/trust"
+	"github.com/jdpanderson/cheesecloth/trust"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

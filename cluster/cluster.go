@@ -16,9 +16,9 @@ import (
 	"time"
 
 	"github.com/hashicorp/memberlist"
-	"github.com/jdpanderson/wesher/common"
-	"github.com/jdpanderson/wesher/enroll"
-	"github.com/jdpanderson/wesher/trust"
+	"github.com/jdpanderson/cheesecloth/common"
+	"github.com/jdpanderson/cheesecloth/enroll"
+	"github.com/jdpanderson/cheesecloth/trust"
 )
 
 // Config is what New needs; the agent assembles it from a Bootstrap.

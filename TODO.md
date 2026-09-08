@@ -1,4 +1,4 @@
-# wesher adoption TODO
+# cheesecloth (formerly wesher) TODO
 
 Working list for evaluating and adopting wesher. Ordered by priority; we work
 through it top to bottom, one item at a time, and check items off as we go.
@@ -297,7 +297,13 @@ transport. Not compatible with shared-key wesher.
 - [x] e2e: enrol via `invite`, restart without token, spent token rejected,
       simultaneous joiners on one multi-use token, revoke reaching a third node;
       README quickstart and security section rewritten.
-- [ ] **DECISION**: rename the project. It now forks the concept, not just
+- [x] **DECISION**: rename the project. It now forks the concept, not just
       the code: no compatibility with wesher's wire protocol, state, flags or
-      key model remains. Needs a name, then module path, binary, interface
-      default, state directory, control socket path, env prefix, README.
+      key model remains. Decided 2026-09-08: **cheesecloth** (a mesh that
+      strains). Renamed: module path `github.com/jdpanderson/cheesecloth`,
+      binary, `CHEESECLOTH_*` env prefix, `/var/lib/cheesecloth`,
+      `/run/cheesecloth`, crypto domain strings, systemd unit, e2e image and
+      networks, README, docs. Kept: default interface `wgoverlay` (it names
+      what the interface is, not who made it). Dropped the old logo and the
+      upstream deepsource config. GitHub repository rename is the user's step;
+      the old URL redirects.

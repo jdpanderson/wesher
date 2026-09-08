@@ -1,4 +1,4 @@
-package main // import "github.com/jdpanderson/wesher"
+package main // import "github.com/jdpanderson/cheesecloth"
 
 import (
 	"fmt"
@@ -11,10 +11,10 @@ import (
 var version = "dev"
 
 type cli struct {
-	LogLevel LogLevelFlag     `env:"WESHER_LOG_LEVEL" help:"set the verbosity (debug/info/warn/error)" default:"warn"`
+	LogLevel LogLevelFlag     `env:"CHEESECLOTH_LOG_LEVEL" help:"set the verbosity (debug/info/warn/error)" default:"warn"`
 	Version  kong.VersionFlag `help:"display current version and exit"`
 
-	Agent  AgentCmd  `cmd:"" default:"withargs" help:"start the wesher agent (default when no command specified)"`
+	Agent  AgentCmd  `cmd:"" default:"withargs" help:"start the cheesecloth agent (default when no command specified)"`
 	Status StatusCmd `cmd:"" help:"show the wireguard interface and its peers"`
 	Invite InviteCmd `cmd:"" help:"mint an enrolment token for a new node (talks to the running agent)"`
 	Revoke RevokeCmd `cmd:"" help:"revoke a node's membership (talks to the running agent)"`
@@ -23,7 +23,7 @@ type cli struct {
 func main() {
 	cli := &cli{}
 	ktx := kong.Parse(cli,
-		kong.Name("wesher"),
+		kong.Name("cheesecloth"),
 		kong.Description("mesh overlay network manager"),
 		kong.UsageOnError(),
 		kong.Vars{"version": version},

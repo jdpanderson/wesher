@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/jdpanderson/wesher/trust"
+	"github.com/jdpanderson/cheesecloth/trust"
 )
 
 // addrBook maps gossip addresses (ip:port) to node identities, so the

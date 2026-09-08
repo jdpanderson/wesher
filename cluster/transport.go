@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/memberlist"
-	"github.com/jdpanderson/wesher/trust"
+	"github.com/jdpanderson/cheesecloth/trust"
 )
 
 // The gossip transport authenticates every message with node identities, so no
@@ -34,8 +34,8 @@ const (
 	nonceLen       = 12
 	tagLen         = 16
 	packetOverhead = 1 + identityLen + nonceLen + tagLen
-	gossipKDFInfo  = "wesher/gossip/v1"
-	alpn           = "wesher-gossip/1"
+	gossipKDFInfo  = "cheesecloth/gossip/v1"
+	alpn           = "cheesecloth-gossip/1"
 	handshakeTime  = 10 * time.Second
 )
 
@@ -225,7 +225,7 @@ func (t *secureTransport) readPackets() {
 // openPacket authenticates and decrypts an incoming packet, returning the sender.
 func (t *secureTransport) openPacket(buf []byte) ([]byte, trust.PublicKey, error) {
 	if len(buf) < packetOverhead || buf[0] != packetVersion {
-		return nil, trust.PublicKey{}, errors.New("not a wesher gossip packet")
+		return nil, trust.PublicKey{}, errors.New("not a cheesecloth gossip packet")
 	}
 	var sender trust.PublicKey
 	copy(sender[:], buf[1:1+identityLen])

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jdpanderson/wesher/trust"
-	"github.com/jdpanderson/wesher/wg"
+	"github.com/jdpanderson/cheesecloth/trust"
+	"github.com/jdpanderson/cheesecloth/wg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

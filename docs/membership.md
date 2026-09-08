@@ -29,7 +29,7 @@ in its state file (mode 0600). Two keys derive from it:
 | Key | Derivation | Used for |
 |---|---|---|
 | signing key (Ed25519) | `ed25519.NewKeyFromSeed(seed)` | signing admission records and node metadata; TLS certificate for gossip streams |
-| DH key (X25519) | `HKDF-SHA256(seed, info="wesher/dh/v1")` | pairwise keys for gossip packets and the enrolment exchange |
+| DH key (X25519) | `HKDF-SHA256(seed, info="cheesecloth/dh/v1")` | pairwise keys for gossip packets and the enrolment exchange |
 
 A node's **identity** is its Ed25519 public key. The DH public key travels
 inside the node's admission record, so it is bound to the identity by the
@@ -45,7 +45,7 @@ Revocation { Identity, Revoker, IssuedAt, Signature }
 ```
 
 `Signature` is Ed25519 over a fixed canonical encoding with a domain-separation
-prefix (`wesher/admission/v1`, `wesher/revocation/v1`).
+prefix (`cheesecloth/admission/v1`, `cheesecloth/revocation/v1`).
 
 - The founding node signs its own admission (`Admitter == Identity`). That
   record is the **root**. Every other node pins the root's identity in its
@@ -67,8 +67,8 @@ The join token is an invitation minted by a running member, not a long-lived
 cluster secret:
 
 ```
-member$  wesher invite [--ttl 10m] [--uses 1]     -> prints TOKEN
-newnode$ wesher --join member --join-key TOKEN
+member$  cheesecloth invite [--ttl 10m] [--uses 1]     -> prints TOKEN
+newnode$ cheesecloth --join member --join-key TOKEN
 ```
 
 The member keeps the 32-byte token only in memory, with its expiry and
@@ -83,7 +83,7 @@ DH public keys, and `K` the token:
    `TokenID = SHA-256(K)[:8]` lets the member pick the pending token without
    revealing it.
 2. Both derive `ss = X25519(own DH private, other DH public)` and
-   `kMac, kEnc = HKDF-SHA256(ss || K, salt = nJ || nM, info="wesher/enroll/v1")`.
+   `kMac, kEnc = HKDF-SHA256(ss || K, salt = nJ || nM, info="cheesecloth/enroll/v1")`.
    Member -> Joiner: `M, Md, nM, HMAC(kMac, "member" || transcript)`.
 3. Joiner verifies; it now knows the member holds `K`. Joiner -> Member:
    `HMAC(kMac, "joiner" || transcript)`.
@@ -103,14 +103,14 @@ PAKE is unnecessary.
 
 ## Gossip transport
 
-memberlist's own encryption is disabled; wesher supplies a `Transport` that
+memberlist's own encryption is disabled; cheesecloth supplies a `Transport` that
 wraps memberlist's `NetTransport` and authenticates every message with node
 identities.
 
 **Packets (UDP)**: `0x01 || sender identity (32) || nonce (12) || AES-256-GCM(
 key = pairKey, ad = header || recipient identity, plaintext)`. `pairKey =
 HKDF-SHA256(X25519(sender DH, recipient DH), salt = sorted identities,
-info="wesher/gossip/v1")`, cached per peer. A receiver drops packets from
+info="cheesecloth/gossip/v1")`, cached per peer. A receiver drops packets from
 identities that are not valid members. The 61-byte overhead is subtracted
 from memberlist's UDP buffer size.
 
@@ -130,7 +130,7 @@ gossip round, by which time the streamed push/pull has populated the book.
 
 Gossiped per node (memberlist limit 512 bytes):
 `{ OverlayAddr, WGPubKey, Identity, Signature }` with
-`Signature = Ed25519(identity, "wesher/meta/v1" || Name || OverlayAddr || WGPubKey)`.
+`Signature = Ed25519(identity, "cheesecloth/meta/v1" || Name || OverlayAddr || WGPubKey)`.
 A node installs a peer's WireGuard key only if the identity is a valid member
 and the signature verifies. This binds each node's ephemeral WireGuard key to
 its persisted identity without persisting the WireGuard key.
@@ -146,13 +146,13 @@ can be revoked.
 
 ## Operations
 
-- `wesher --init`: create identity and root; start the cluster.
-- `wesher --join HOST --join-key TOKEN`: first start of a new node.
-- `wesher --join HOST` or bare `wesher`: restart of an admitted node.
-- `wesher invite [--ttl] [--uses]`: mint a token on a member (via the control
-  socket `/run/wesher/<interface>.sock`).
-- `wesher revoke NAME|IDENTITY`: sign and broadcast a revocation.
-- `wesher status`: peers now show identity fingerprints.
+- `cheesecloth --init`: create identity and root; start the cluster.
+- `cheesecloth --join HOST --join-key TOKEN`: first start of a new node.
+- `cheesecloth --join HOST` or bare `cheesecloth`: restart of an admitted node.
+- `cheesecloth invite [--ttl] [--uses]`: mint a token on a member (via the control
+  socket `/run/cheesecloth/<interface>.sock`).
+- `cheesecloth revoke NAME|IDENTITY`: sign and broadcast a revocation.
+- `cheesecloth status`: peers now show identity fingerprints.
 
 ## Out of scope for now
 
