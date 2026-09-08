@@ -214,7 +214,10 @@ Hygiene:
       useful (state save failures are worth a warning). Done: state save,
       memberlist leave/shutdown and the post-failure interface down all log a
       warning; test deferred closes use `_ =`.
-- [ ] Wire up `golangci-lint` with a modest config and fix what it reports.
+- [x] Wire up `golangci-lint` with a modest config and fix what it reports.
+      `.golangci.yml`: standard set plus misspell, unconvert, unparam,
+      gocritic, govet shadow, gofmt. Nine findings fixed; the CI lint job is
+      now blocking.
 - [ ] Update README: configuration table, CI badge, and the "future version"
       promises to reflect what we actually plan.
 - [ ] **DECISION**: module path rename and README ownership (deferred from

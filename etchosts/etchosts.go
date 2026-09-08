@@ -53,7 +53,7 @@ func (eh *EtcHosts) WriteEntries(ipsToNames map[string][]string) error {
 	if err != nil {
 		return fmt.Errorf("could not open %s for reading: %w", hostsPath, err)
 	}
-	defer etcHosts.Close()
+	defer func() { _ = etcHosts.Close() }()
 
 	// Temp file in the same directory so the rename is atomic. A library like renameio
 	// would not do: /etc/hosts is a bind mount in containers and needs the copy fallback below.
@@ -64,7 +64,7 @@ func (eh *EtcHosts) WriteEntries(ipsToNames map[string][]string) error {
 
 	// remove tempfile; this might fail if we managed to move it, which is ok
 	defer func(file *os.File) {
-		file.Close()
+		_ = file.Close()
 		if err := os.Remove(file.Name()); err != nil && !os.IsNotExist(err) {
 			eh.log(slog.LevelWarn, "could not remove temp file", "path", file.Name(), "err", err)
 		}
@@ -92,7 +92,7 @@ func (eh *EtcHosts) writeEntries(orig io.Reader, dest io.Writer, ipsToNames map[
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasSuffix(strings.TrimSpace(line), strings.TrimSpace(banner)) {
-			fmt.Fprintln(w, line) // unmanaged line, keep as is
+			_, _ = fmt.Fprintln(w, line) // unmanaged line, keep as is; w keeps the error for Flush
 			continue
 		}
 		tokens := strings.Fields(line)
@@ -126,7 +126,7 @@ func (eh *EtcHosts) writeEntryWithBanner(w *bufio.Writer, banner, ip string, nam
 		return
 	}
 	eh.log(slog.LevelDebug, "writing hosts entry", "ip", ip, "names", names)
-	fmt.Fprintf(w, "%s\t%s\t%s\n", ip, strings.Join(names, " "), banner)
+	_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n", ip, strings.Join(names, " "), banner) // w keeps the error for Flush
 }
 
 func (eh *EtcHosts) movePreservePerms(src, dst *os.File) error {
@@ -139,7 +139,7 @@ func (eh *EtcHosts) movePreservePerms(src, dst *os.File) error {
 		return fmt.Errorf("could not stat %s: %w", dst.Name(), err)
 	}
 	// CreateTemp made src 0600; match the hosts file before it becomes the hosts file
-	if err := src.Chmod(etcHostsInfo.Mode()); err != nil {
+	if err = src.Chmod(etcHostsInfo.Mode()); err != nil {
 		return fmt.Errorf("could not chmod %s: %w", src.Name(), err)
 	}
 
@@ -150,13 +150,13 @@ func (eh *EtcHosts) movePreservePerms(src, dst *os.File) error {
 	if err = rename(src.Name(), dst.Name()); err != nil {
 		eh.log(slog.LevelInfo, "could not rename over hosts file, falling back to copy", "path", dst.Name(), "err", err)
 
-		if _, err := src.Seek(0, io.SeekStart); err != nil {
+		if _, err = src.Seek(0, io.SeekStart); err != nil {
 			return err
 		}
-		if _, err := dst.Seek(0, io.SeekStart); err != nil {
+		if _, err = dst.Seek(0, io.SeekStart); err != nil {
 			return err
 		}
-		if err := dst.Truncate(0); err != nil {
+		if err = dst.Truncate(0); err != nil {
 			return err
 		}
 		_, err = io.Copy(dst, src)

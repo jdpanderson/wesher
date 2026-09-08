@@ -154,7 +154,7 @@ type hostsWriter interface {
 }
 
 // Run wires up cluster, wireguard and /etc/hosts, joins the cluster and runs the agent loop until SIGTERM/SIGINT.
-func (a *AgentCmd) Run(cli *cli) error {
+func (a *AgentCmd) Run() error {
 	hostname, err := os.Hostname()
 	if err != nil {
 		return fmt.Errorf("getting hostname: %w", err)

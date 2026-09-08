@@ -123,7 +123,7 @@ func (s *State) SetUpInterface(nodes []common.Node) error {
 	if err != nil {
 		return fmt.Errorf("converting received node information to wireguard format: %w", err)
 	}
-	if err := s.client.ConfigureDevice(s.iface, wgtypes.Config{
+	if err = s.client.ConfigureDevice(s.iface, wgtypes.Config{
 		PrivateKey:   &s.PrivKey,
 		ListenPort:   &s.Port,
 		ReplacePeers: true,

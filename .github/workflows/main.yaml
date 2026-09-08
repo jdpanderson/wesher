@@ -43,7 +43,6 @@ jobs:
           go-version: stable
       - run: make vulncheck
       - run: make lint
-        continue-on-error: true # findings tracked in TODO.md phases 2 and 3
 
   release:
     name: release
