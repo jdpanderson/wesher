@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
+	"github.com/cenkalti/backoff/v6"
 	"github.com/costela/wesher/cluster"
 	"github.com/costela/wesher/common"
 	"github.com/costela/wesher/etchosts"
@@ -111,19 +111,23 @@ func (a *AgentCmd) Run(cli *cli) error {
 		Logger: logrus.StandardLogger(),
 	}
 
-	nodec := cluster.Members() // avoid deadlocks by starting before join
-	if err := backoff.RetryNotify(
-		func() error { return cluster.Join(a.Join) },
-		backoff.NewExponentialBackOff(),
-		func(err error, dur time.Duration) {
-			logrus.WithError(err).Errorf("could not join cluster, retrying in %s", dur)
-		},
-	); err != nil {
-		return fmt.Errorf("joining cluster: %w", err)
-	}
-
 	ctx, cancelSignals := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer cancelSignals()
+
+	nodec := cluster.Members() // avoid deadlocks by starting before join
+	if _, err := backoff.Retry(ctx,
+		func() (struct{}, error) { return struct{}{}, cluster.Join(a.Join) },
+		backoff.WithNotify(func(err error, dur time.Duration) {
+			logrus.WithError(err).Errorf("could not join cluster, retrying in %s", dur)
+		}),
+	); err != nil {
+		if ctx.Err() != nil {
+			logrus.Info("terminating...")
+			cluster.Leave()
+			return nil
+		}
+		return fmt.Errorf("joining cluster: %w", err)
+	}
 
 	return a.loop(ctx, nodec, cluster, wgstate, hostsFile)
 }
