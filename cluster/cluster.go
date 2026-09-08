@@ -28,7 +28,8 @@ type Cluster struct {
 	state     *state
 	stateMu   sync.Mutex // guards state.Nodes and state.save
 	events    chan memberlist.NodeEvent
-	done      chan struct{} // closed by Leave
+	done      chan struct{}  // closed by Leave
+	members   sync.WaitGroup // Members goroutines; Leave waits for them
 	leaveOnce sync.Once
 }
 
@@ -105,6 +106,7 @@ func (c *Cluster) Leave() {
 		c.ml.Leave(10 * time.Second) // nolint: errcheck
 		c.ml.Shutdown()              // nolint: errcheck
 		close(c.done)
+		c.members.Wait()
 	})
 }
 
@@ -126,7 +128,9 @@ func (c *Cluster) Update(localNode *common.Node) {
 func (c *Cluster) Members() <-chan []common.Node {
 	changes := make(chan []common.Node)
 
+	c.members.Add(1)
 	go func() {
+		defer c.members.Done()
 		defer close(changes)
 		for {
 			var event memberlist.NodeEvent

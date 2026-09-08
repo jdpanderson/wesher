@@ -159,5 +159,6 @@ func Test_Cluster_detectsFailedNode(t *testing.T) {
 	// crash b without leaving; a must eventually mark it dead
 	require.NoError(t, b.ml.Shutdown())
 	close(b.done)
+	b.members.Wait()
 	waitMembers(t, chA, 0)
 }

@@ -147,7 +147,8 @@ Correctness issues found during the initial read (verify each, then fix):
       Removed: it had no callers, and in production returned "" because
       `wg.New` never sets the node name.
 - [x] `Cluster.Members` goroutine now stops on `Leave` (phase 4); data races
-      with `Leave` on `state` and on the node slice fixed in phase 3.
+      with `Leave` on `state` and on the node slice fixed in phase 3. `Leave`
+      now also waits for the goroutine to exit (it could still be mid-save).
 - [ ] The 100-slot events buffer remains a workaround for a memberlist
       deadlock (hashicorp/memberlist#23); check whether 0.6.0 still needs it.
 - [ ] `SetUpInterface` adds a route per peer but never removes routes for
