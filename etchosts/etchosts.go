@@ -55,8 +55,8 @@ func (eh *EtcHosts) WriteEntries(ipsToNames map[string][]string) error {
 	}
 	defer etcHosts.Close()
 
-	// create tmpfile in same folder as the hosts file
-	// TODO: replace with github.com/google/renameio
+	// Temp file in the same directory so the rename is atomic. A library like renameio
+	// would not do: /etc/hosts is a bind mount in containers and needs the copy fallback below.
 	tmp, err := os.CreateTemp(filepath.Dir(hostsPath), "etchosts")
 	if err != nil {
 		return fmt.Errorf("could not create tempfile: %w", err)
