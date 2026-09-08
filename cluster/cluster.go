@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"os"
 	"slices"
 	"sync"
@@ -37,7 +38,8 @@ var newMemberlistConfig = memberlist.DefaultWANConfig
 
 // New creates a Cluster that gossips localNode's name and metadata; it is ready to be joined.
 // name identifies the persisted state (the wireguard interface name in practice).
-func New(name string, init bool, clusterKey []byte, bindAddr string, bindPort int, localNode *common.Node) (*Cluster, error) {
+// bindAddr may be a wildcard; advertiseAddr is what other nodes are told to reach us at.
+func New(name string, init bool, clusterKey []byte, bindAddr, advertiseAddr netip.Addr, bindPort int, localNode *common.Node) (*Cluster, error) {
 	state := &state{}
 	if !init {
 		state = loadState(name)
@@ -67,8 +69,9 @@ func New(name string, init bool, clusterKey []byte, bindAddr string, bindPort in
 	mlConfig.Name = localNode.Name
 	mlConfig.Logger = slog.NewLogLogger(slog.Default().Handler(), slog.LevelDebug)
 	mlConfig.SecretKey = clusterKey
-	mlConfig.BindAddr = bindAddr
+	mlConfig.BindAddr = bindAddr.String()
 	mlConfig.BindPort = bindPort
+	mlConfig.AdvertiseAddr = advertiseAddr.String()
 	mlConfig.AdvertisePort = bindPort
 	mlConfig.Delegate = delegate
 	mlConfig.Conflict = delegate

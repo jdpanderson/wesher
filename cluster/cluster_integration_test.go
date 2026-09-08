@@ -31,7 +31,8 @@ func newTestCluster(t *testing.T, name, bindAddr string, port int, overlay strin
 	node := &common.Node{Name: name}
 	node.OverlayAddr = netip.MustParseAddr(overlay)
 	node.PubKey = "pubkey-" + name
-	c, err := New(name, true, testKey, bindAddr, port, node)
+	bind := netip.MustParseAddr(bindAddr)
+	c, err := New(name, true, testKey, bind, bind, port, node)
 	require.NoError(t, err)
 	return c, node
 }
@@ -100,7 +101,8 @@ func Test_Cluster_joinFailure(t *testing.T) {
 
 func Test_New_badBindAddr(t *testing.T) {
 	useTempStatePaths(t)
-	_, err := New("a", true, testKey, "192.0.2.1", 0, &common.Node{Name: "a"}) // TEST-NET, not a local address
+	bad := netip.MustParseAddr("192.0.2.1") // TEST-NET, not a local address
+	_, err := New("a", true, testKey, bad, bad, 0, &common.Node{Name: "a"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "creating memberlist")
 }
