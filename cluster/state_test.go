@@ -36,9 +36,7 @@ func Test_state_save_load(t *testing.T) {
 	s := testState()
 	require.NoError(t, s.save("test"))
 
-	loaded := &state{}
-	loadState(loaded, "test")
-	assert.Equal(t, s, loaded)
+	assert.Equal(t, s, loadState("test"))
 }
 
 func Test_state_save_unwritableDir(t *testing.T) {
@@ -52,18 +50,14 @@ func Test_state_save_unwritableDir(t *testing.T) {
 
 func Test_loadState_missing(t *testing.T) {
 	useTempStatePaths(t)
-	loaded := &state{}
-	loadState(loaded, "test")
-	assert.Equal(t, &state{}, loaded)
+	assert.Equal(t, &state{}, loadState("test"))
 }
 
 func Test_loadState_malformed(t *testing.T) {
 	dir := useTempStatePaths(t)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.json"), []byte("{not json"), 0o600))
 
-	loaded := &state{ClusterKey: []byte("keep")}
-	loadState(loaded, "test")
-	assert.Equal(t, []byte("keep"), loaded.ClusterKey, "malformed state must not clobber existing state")
+	assert.Equal(t, &state{}, loadState("test"), "malformed state must yield an empty state")
 }
 
 func Test_loadState_unreadable(t *testing.T) {
@@ -73,7 +67,5 @@ func Test_loadState_unreadable(t *testing.T) {
 	dir := useTempStatePaths(t)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.json"), []byte("{}"), 0o000))
 
-	loaded := &state{ClusterKey: []byte("keep")}
-	loadState(loaded, "test")
-	assert.Equal(t, []byte("keep"), loaded.ClusterKey)
+	assert.Equal(t, &state{}, loadState("test"))
 }

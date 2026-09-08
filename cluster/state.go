@@ -32,21 +32,22 @@ func (s *state) save(clusterName string) error {
 	return os.WriteFile(statePath, stateOut, 0600)
 }
 
-func loadState(cs *state, clusterName string) {
+// loadState reads the persisted state for clusterName; missing or unreadable
+// state yields an empty state.
+func loadState(clusterName string) *state {
 	statePath := fmt.Sprintf(statePathTemplate, clusterName)
 	content, err := os.ReadFile(statePath)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			logrus.Warnf("could not open state in %s: %s", statePath, err)
 		}
-		return
+		return &state{}
 	}
 
-	// avoid partially unmarshalled content by using a temp var
-	csTmp := &state{}
-	if err := json.Unmarshal(content, csTmp); err != nil {
+	s := &state{}
+	if err := json.Unmarshal(content, s); err != nil {
 		logrus.Warnf("could not decode state: %s", err)
-	} else {
-		*cs = *csTmp
+		return &state{}
 	}
+	return s
 }

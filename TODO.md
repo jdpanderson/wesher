@@ -171,6 +171,11 @@ Hygiene:
 - [x] Drop the pre-0.3 `/var/lib/wesher/state.json` read fallback
       (`deprecatedStatePath`); state has been keyed by interface name since
       2020-05. README pointed at the old path; now names the per-interface file.
+- [x] Simplification pass (2026-09-07, one commit each): kong's built-in
+      `VersionFlag`; `key` is a byte slice validated on parse;
+      `wg.overlayAddr` is a pure function; `DownInterface` asks netlink only;
+      `path` -> `path/filepath`; `Validate` bind selection as a switch;
+      `loadState` returns the state.
 - [x] Remove the hidden `--ip-as-name` flag (PoC-era local-testing aid that
       set the memberlist node name to the bind IP and broke `/etc/hosts`
       entries). The integration tests now name nodes via the

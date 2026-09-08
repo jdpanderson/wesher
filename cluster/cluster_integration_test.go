@@ -94,9 +94,7 @@ func Test_Cluster_joinAndLeave(t *testing.T) {
 
 	// state persisted for both sides
 	for _, name := range []string{"a", "b"} {
-		s := &state{}
-		loadState(s, name)
-		assert.Equal(t, testKey, s.ClusterKey, name)
+		assert.Equal(t, testKey, loadState(name).ClusterKey, name)
 	}
 }
 

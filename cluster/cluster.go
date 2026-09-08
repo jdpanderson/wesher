@@ -41,7 +41,7 @@ var newMemberlistConfig = memberlist.DefaultWANConfig
 func New(name string, init bool, clusterKey []byte, bindAddr string, bindPort int) (*Cluster, error) {
 	state := &state{}
 	if !init {
-		loadState(state, name)
+		state = loadState(name)
 	}
 
 	clusterKey, err := computeClusterKey(state, clusterKey)
