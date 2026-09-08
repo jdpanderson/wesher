@@ -180,8 +180,11 @@ func (s *State) SetUpInterface(nodes []common.Node) error {
 	return s.removeStaleRoutes(link, wanted)
 }
 
-// removeStaleRoutes deletes host routes to overlay addresses on link that no current peer owns.
+// removeStaleRoutes deletes host routes to overlay addresses on link that no
+// current peer owns. The route to our own address (the kernel adds one for
+// IPv6 /128 addresses) is left alone.
 func (s *State) removeStaleRoutes(link netlink.Link, wanted map[netip.Addr]bool) error {
+	wanted[s.OverlayAddr] = true
 	routes, err := s.nl.RouteList(link, netlink.FAMILY_ALL)
 	if err != nil {
 		return fmt.Errorf("listing routes on %s: %w", s.iface, err)

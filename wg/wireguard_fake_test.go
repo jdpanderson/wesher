@@ -148,13 +148,14 @@ func Test_State_SetUpInterface_fake_removesStaleRoutes(t *testing.T) {
 	p1 := testPeer(t, "p1", "192.0.2.1", "10.99.0.1")
 	p2 := testPeer(t, "p2", "192.0.2.2", "10.99.0.2")
 
-	// a host route outside the overlay net and a non-host route are not ours to touch
+	// a host route outside the overlay net, a non-host route, and the kernel's route to
+	// our own address are not ours to touch
 	_, foreign, _ := net.ParseCIDR("192.0.2.9/32")
 	_, wide, _ := net.ParseCIDR("10.99.0.0/24")
-	nl.routes = append(nl.routes, &netlink.Route{Dst: foreign}, &netlink.Route{Dst: wide})
+	nl.routes = append(nl.routes, &netlink.Route{Dst: foreign}, &netlink.Route{Dst: wide}, &netlink.Route{Dst: addrToIPNet(s.OverlayAddr)})
 
 	require.NoError(t, s.SetUpInterface([]common.Node{p1, p2}))
-	require.Len(t, nl.routes, 4)
+	require.Len(t, nl.routes, 5)
 
 	nl.calls = nil
 	require.NoError(t, s.SetUpInterface([]common.Node{p1}))
@@ -163,7 +164,7 @@ func Test_State_SetUpInterface_fake_removesStaleRoutes(t *testing.T) {
 	for _, r := range nl.routes {
 		dsts = append(dsts, r.Dst.String())
 	}
-	assert.ElementsMatch(t, []string{"192.0.2.9/32", "10.99.0.0/24", "10.99.0.1/32"}, dsts)
+	assert.ElementsMatch(t, []string{"192.0.2.9/32", "10.99.0.0/24", s.OverlayAddr.String() + "/32", "10.99.0.1/32"}, dsts)
 
 	// route del failure is reported
 	nl.errs = map[string]error{"RouteDel": errors.New("boom")}
