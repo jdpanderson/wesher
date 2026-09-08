@@ -94,6 +94,14 @@ func New(name string, init bool, clusterKey []byte, bindAddr string, bindPort in
 	return c, nil
 }
 
+// saveState persists the state, logging rather than failing on error: the
+// state only speeds up the next start. Callers hold stateMu.
+func (c *Cluster) saveState() {
+	if err := c.state.save(c.name); err != nil {
+		slog.Warn("could not save cluster state", "path", statePath(c.name), "err", err)
+	}
+}
+
 // forwardEvents logs memberlist events about other nodes and coalesces them into changed.
 func (c *Cluster) forwardEvents() {
 	defer c.routines.Done()
@@ -147,10 +155,14 @@ func (c *Cluster) Join(addrs []string) error {
 func (c *Cluster) Leave() {
 	c.leaveOnce.Do(func() {
 		c.stateMu.Lock()
-		c.state.save(c.name) // nolint: errcheck // opportunistic
+		c.saveState()
 		c.stateMu.Unlock()
-		c.ml.Leave(10 * time.Second) // nolint: errcheck
-		c.ml.Shutdown()              // nolint: errcheck
+		if err := c.ml.Leave(10 * time.Second); err != nil {
+			slog.Warn("could not announce leave to the cluster", "err", err)
+		}
+		if err := c.ml.Shutdown(); err != nil {
+			slog.Warn("could not shut down memberlist", "err", err)
+		}
 		close(c.done)
 		c.routines.Wait()
 	})
@@ -186,7 +198,7 @@ func (c *Cluster) Members() <-chan []common.Node {
 			}
 			c.stateMu.Lock()
 			c.state.Nodes = nodes
-			c.state.save(c.name) // nolint: errcheck // opportunistic
+			c.saveState()
 			c.stateMu.Unlock()
 			select {
 			case changes <- slices.Clone(nodes): // consumer decodes meta in place

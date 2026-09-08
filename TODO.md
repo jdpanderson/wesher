@@ -210,8 +210,10 @@ Hygiene:
       set the memberlist node name to the bind IP and broke `/etc/hosts`
       entries). The integration tests now name nodes via the
       `newMemberlistConfig` hook instead.
-- [ ] Replace `nolint: errcheck` sites with explicit logging where the error is
-      useful (state save failures are worth a warning).
+- [x] Replace `nolint: errcheck` sites with explicit logging where the error is
+      useful (state save failures are worth a warning). Done: state save,
+      memberlist leave/shutdown and the post-failure interface down all log a
+      warning; test deferred closes use `_ =`.
 - [ ] Wire up `golangci-lint` with a modest config and fix what it reports.
 - [ ] Update README: configuration table, CI badge, and the "future version"
       promises to reflect what we actually plan.

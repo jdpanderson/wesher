@@ -115,7 +115,7 @@ func Test_State_SetUpInterface_badPeerKey(t *testing.T) {
 	enterTestNetns(t)
 	s, _, err := New("wgtest0", 51820, netip.MustParsePrefix(testPrefix), "test")
 	require.NoError(t, err)
-	defer s.DownInterface() // nolint: errcheck
+	defer func() { _ = s.DownInterface() }()
 
 	bad := testPeer(t, "bad", "192.0.2.1", "10.99.0.1")
 	bad.PubKey = "not a key"

@@ -242,7 +242,9 @@ func (a *AgentCmd) apply(rawNodes []common.Node, wgstate wgController, hosts hos
 	}
 	if err := wgstate.SetUpInterface(nodes); err != nil {
 		slog.Error("could not up interface", "err", err)
-		wgstate.DownInterface() // nolint: errcheck // opportunistic
+		if err := wgstate.DownInterface(); err != nil {
+			slog.Warn("could not down interface after failed setup", "err", err)
+		}
 	}
 	if !a.NoEtcHosts {
 		if err := hosts.WriteEntries(hostEntries); err != nil {
