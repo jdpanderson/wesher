@@ -96,6 +96,13 @@ as the end-to-end check.
       runs locally. All 5 original scenarios pass on the phase 2 dependencies.
 - [x] e2e `test_node_leave`: clean SIGTERM leave removes the peer's hosts
       entry. `tests/e2e.sh <name>...` runs selected cases.
+- [x] e2e runs under rootless podman (`docker` aliased to `podman`):
+      containers get `--cap-add=NET_RAW`, `--device /dev/net/tun` and
+      `--security-opt label=disable`; all no-ops under docker. Known gap:
+      `test_multiple_clusters_restart` fails under podman because the
+      restarted container gets a new IP and the non-PID-1 wesher instance is
+      killed without leaving, so memberlist sees a name conflict. Passes
+      under docker, where the IP is reused.
 
 Privileged coverage after phase 3: 67.8% total (cluster 92%, common 92%,
 etchosts 66%, wg 85%, main 25%).
