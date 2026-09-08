@@ -39,16 +39,46 @@ stop_test_container() {
     unset started_containers[$1]
 }
 
+# invite <container> <uses> [wesher flags...]: mint an enrolment token on a running
+# member, retrying while its agent is still starting. Prints the token.
+invite() {
+    local container=$1 uses=$2
+    shift 2
+    local token
+    for _ in $(seq 1 30); do
+        if token=$(docker exec "$container" /app/wesher invite --ttl 5m --uses "$uses" "$@" 2>/dev/null) && [ -n "$token" ]; then
+            echo "$token"
+            return 0
+        fi
+        sleep 0.5
+    done
+    echo "could not mint a token on $container" >&2
+    docker logs "$container" >&2
+    return 1
+}
+
+ping_ok() { # ping_ok <from-container> <to-host> [containers whose logs to dump on failure...]
+    local from=$1 to=$2
+    shift 2
+    docker exec "$from" ping -c1 -W1 "$to" || { for c in "$from" "$@"; do docker logs "$c"; done; false; }
+}
+
 test_3_node_up() {
     run_test_container test1-orig test1 --init
-    run_test_container test2-orig test2 --join test1-orig
-    run_test_container test3-orig test3 --join test1-orig
+    token=$(invite test1-orig 2)
+    run_test_container test2-orig test2 --join test1-orig --join-key "$token"
+    run_test_container test3-orig test3 --join test1-orig --join-key "$token"
 
     sleep 3
 
-    docker exec test1-orig ping -c1 -W1 test2 || (docker logs test1-orig; docker logs test2-orig; false)
-    docker exec test1-orig ping -c1 -W1 test3 || (docker logs test1-orig; docker logs test3-orig; false)
+    ping_ok test1-orig test2 test2-orig
+    ping_ok test1-orig test3 test3-orig
+    # the token is spent: a fourth node cannot use it
+    run_test_container test4-orig test4 --join test1-orig --join-key "$token"
+    if [ "$(docker wait test4-orig)" = 0 ]; then echo "spent token was accepted"; docker logs test4-orig; false; fi
+    docker logs test4-orig 2>&1 | grep -q "join key" || { docker logs test4-orig; false; }
 
+    stop_test_container test4-orig
     stop_test_container test3-orig
     stop_test_container test2-orig
     stop_test_container test1-orig
@@ -56,28 +86,24 @@ test_3_node_up() {
 
 test_5_node_up() {
     run_test_container test1-orig test1 --init
-    run_test_container test2-orig test2 --join test1-orig
-    run_test_container test3-orig test3 --join test1-orig
-    run_test_container test4-orig test4 --join test1-orig
-    run_test_container test5-orig test5 --join test1-orig
+    token=$(invite test1-orig 4)
+    for n in 2 3 4 5; do
+        run_test_container test$n-orig test$n --join test1-orig --join-key "$token"
+    done
 
     sleep 5
 
-    docker exec test1-orig ping -c1 -W1 test2 || (docker logs test1-orig; docker logs test2-orig; false)
-    docker exec test1-orig ping -c1 -W1 test3 || (docker logs test1-orig; docker logs test3-orig; false)
-    docker exec test1-orig ping -c1 -W1 test4 || (docker logs test1-orig; docker logs test4-orig; false)
-    docker exec test1-orig ping -c1 -W1 test5 || (docker logs test1-orig; docker logs test5-orig; false)
+    for n in 2 3 4 5; do ping_ok test1-orig test$n test$n-orig; done
 
-    stop_test_container test5-orig
-    stop_test_container test4-orig
-    stop_test_container test3-orig
-    stop_test_container test2-orig
-    stop_test_container test1-orig
+    for n in 5 4 3 2 1; do stop_test_container test$n-orig; done
 }
 
+# a restarted node rejoins from its persisted identity; the stale --join-key on
+# its command line is ignored
 test_node_restart() {
     run_test_container test1-orig test1 --init
-    run_test_container test2-orig test2 --join test1-orig
+    token=$(invite test1-orig 1)
+    run_test_container test2-orig test2 --join test1-orig --join-key "$token"
 
     sleep 3
 
@@ -86,21 +112,28 @@ test_node_restart() {
 
     sleep 3
 
-    docker exec test1-orig ping -c1 -W1 test2 || (docker logs test1-orig; docker logs test2-orig; false)
+    ping_ok test1-orig test2 test2-orig
+    docker logs test2-orig 2>&1 | grep -q "ignoring --join-key" || { docker logs test2-orig; false; }
 
     stop_test_container test2-orig
     stop_test_container test1-orig
 }
 
+# joiners started at the same time with a shared multi-use token
 test_cluster_simultaneous_start() {
-    run_test_container test1-orig test1 --join test2-orig,test3-orig
-    run_test_container test2-orig test2 --join test1-orig,test3-orig
-    run_test_container test3-orig test3 --join test1-orig,test2-orig
+    run_test_container test1-orig test1 --init
+    token=$(invite test1-orig 2)
+    run_test_container test2-orig test2 --join test1-orig --join-key "$token" &
+    run_test_container test3-orig test3 --join test1-orig --join-key "$token" &
+    wait
+    started_containers[test2-orig]=test2-orig
+    started_containers[test3-orig]=test3-orig
 
     sleep 3
 
-    docker exec test1-orig ping -c1 -W1 test2 || (docker logs test1-orig; docker logs test2-orig; false)
-    docker exec test1-orig ping -c1 -W1 test3 || (docker logs test1-orig; docker logs test3-orig; false)
+    ping_ok test1-orig test2 test2-orig
+    ping_ok test1-orig test3 test3-orig
+    ping_ok test2-orig test3 test3-orig
 
     stop_test_container test3-orig
     stop_test_container test2-orig
@@ -110,43 +143,46 @@ test_cluster_simultaneous_start() {
 test_multiple_clusters_restart() {
     cluster1='--cluster-port 7946 --wireguard-port 51820 --interface wg1 --overlay-net 10.10.0.0/16'
     cluster2='--cluster-port 7947 --wireguard-port 51821 --interface wg2 --overlay-net 10.11.0.0/16'
-    
+
     run_test_container test1-orig test1 --init $cluster1
     run_test_container test2-orig test2 --init $cluster2
-    run_test_container test3-orig test3 --join test1-orig $cluster1
-    docker exec -d test3-orig bash -c "/entrypoint.sh --join test2-orig $cluster2"
-    
+    token1=$(invite test1-orig 1 --interface wg1)
+    token2=$(invite test2-orig 1 --interface wg2)
+    run_test_container test3-orig test3 --join test1-orig --join-key "$token1" $cluster1
+    docker exec -d test3-orig bash -c "/entrypoint.sh --join test2-orig --join-key $token2 $cluster2"
+
     sleep 3
 
     docker stop test3-orig
     docker start test3-orig
-    docker exec -d test3-orig bash -c "/entrypoint.sh $cluster2"
+    docker exec -d test3-orig bash -c "/entrypoint.sh $cluster2" # rejoins from state, no token
 
     sleep 3
 
-    docker exec test3-orig ping -c1 -W1 test1 || (docker logs test1-orig; docker logs test3-orig; false)
-    docker exec test3-orig ping -c1 -W1 test2 || (docker logs test2-orig; docker logs test3-orig; false)
-    docker exec test1-orig ping -c1 -W1 test3 || (docker logs test1-orig; docker logs test3-orig; false)
-    docker exec test2-orig ping -c1 -W1 test3 || (docker logs test2-orig; docker logs test3-orig; false)
+    ping_ok test3-orig test1 test1-orig
+    ping_ok test3-orig test2 test2-orig
+    ping_ok test1-orig test3 test3-orig
+    ping_ok test2-orig test3 test3-orig
 
     stop_test_container test3-orig
     stop_test_container test2-orig
     stop_test_container test1-orig
 }
 
-# IPv6 underlay (gossip and wireguard endpoints over fd00:57::/64) and IPv6 overlay
+# IPv6 underlay (gossip, enrolment and wireguard endpoints over fd00:57::/64) and IPv6 overlay
 test_ipv6_cluster() {
     network=wesher_test6
     local v6='--bind-addr :: --overlay-net fd00:10::/64'
     run_test_container test1-orig test1 --init $v6
-    run_test_container test2-orig test2 --join test1-orig $v6
-    run_test_container test3-orig test3 --join test1-orig $v6
+    token=$(invite test1-orig 2)
+    run_test_container test2-orig test2 --join test1-orig --join-key "$token" $v6
+    run_test_container test3-orig test3 --join test1-orig --join-key "$token" $v6
     network=wesher_test
 
     sleep 3
 
-    docker exec test1-orig ping -c1 -W1 test2 || (docker logs test1-orig; docker logs test2-orig; false)
-    docker exec test3-orig ping -c1 -W1 test1 || (docker logs test1-orig; docker logs test3-orig; false)
+    ping_ok test1-orig test2 test2-orig
+    ping_ok test3-orig test1 test1-orig
     docker exec test1-orig /app/wesher status | grep -q '^address: *fd00:10:' || (docker exec test1-orig /app/wesher status; false)
 
     stop_test_container test3-orig
@@ -157,12 +193,13 @@ test_ipv6_cluster() {
 # IPv6 overlay over the IPv4 underlay
 test_ipv6_overlay() {
     run_test_container test1-orig test1 --init --overlay-net fd00:10::/64
-    run_test_container test2-orig test2 --join test1-orig --overlay-net fd00:10::/64
+    token=$(invite test1-orig 1)
+    run_test_container test2-orig test2 --join test1-orig --join-key "$token" --overlay-net fd00:10::/64
 
     sleep 3
 
-    docker exec test1-orig ping -c1 -W1 test2 || (docker logs test1-orig; docker logs test2-orig; false)
-    docker exec test2-orig ping -c1 -W1 test1 || (docker logs test1-orig; docker logs test2-orig; false)
+    ping_ok test1-orig test2 test2-orig
+    ping_ok test2-orig test1 test1-orig
 
     stop_test_container test2-orig
     stop_test_container test1-orig
@@ -170,11 +207,12 @@ test_ipv6_overlay() {
 
 test_node_leave() {
     run_test_container test1-orig test1 --init
-    run_test_container test2-orig test2 --join test1-orig
+    token=$(invite test1-orig 1)
+    run_test_container test2-orig test2 --join test1-orig --join-key "$token"
 
     sleep 3
 
-    docker exec test1-orig ping -c1 -W1 test2 || (docker logs test1-orig; docker logs test2-orig; false)
+    ping_ok test1-orig test2 test2-orig
 
     docker stop test2-orig # SIGTERM: clean leave
 
@@ -184,6 +222,39 @@ test_node_leave() {
         echo "stale hosts entry for test2"; docker logs test1-orig; false
     fi
 
+    stop_test_container test2-orig
+    stop_test_container test1-orig
+}
+
+# a revoked node is dropped by its peers and can no longer talk to them
+test_revoke() {
+    run_test_container test1-orig test1 --init
+    token=$(invite test1-orig 2)
+    run_test_container test2-orig test2 --join test1-orig --join-key "$token"
+    run_test_container test3-orig test3 --join test1-orig --join-key "$token"
+
+    sleep 3
+
+    ping_ok test1-orig test3 test3-orig
+    docker exec test1-orig /app/wesher revoke test3
+
+    sleep 3
+
+    if docker exec test1-orig grep -q test3 /etc/hosts; then
+        echo "revoked node still in test1's hosts"; docker logs test1-orig; false
+    fi
+    docker exec test1-orig /app/wesher status | grep -q test3 && { echo "revoked node still a wireguard peer"; false; }
+    # the revocation also reached test2, which never talked to the operator
+    for _ in $(seq 1 20); do
+        docker exec test2-orig grep -q test3 /etc/hosts || break
+        sleep 0.5
+    done
+    if docker exec test2-orig grep -q test3 /etc/hosts; then
+        echo "revocation did not reach test2"; docker logs test2-orig; false
+    fi
+    ping_ok test1-orig test2 test2-orig
+
+    stop_test_container test3-orig
     stop_test_container test2-orig
     stop_test_container test1-orig
 }

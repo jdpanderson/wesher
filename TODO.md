@@ -294,8 +294,9 @@ transport. Not compatible with shared-key wesher.
       a bare start rejoins from state. `--cluster-key` and `showkey` removed.
 - [x] Control socket (`/run/wesher/<iface>.sock`, owner-only, JSON request and
       response) and `invite` / `revoke` subcommands. `status` shows identities.
-- [ ] e2e: enrol via `invite`, restart without token, revoke; README security
-      section rewritten.
+- [x] e2e: enrol via `invite`, restart without token, spent token rejected,
+      simultaneous joiners on one multi-use token, revoke reaching a third node;
+      README quickstart and security section rewritten.
 - [ ] **DECISION**: rename the project. It now forks the concept, not just
       the code: no compatibility with wesher's wire protocol, state, flags or
       key model remains. Needs a name, then module path, binary, interface

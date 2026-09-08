@@ -10,8 +10,8 @@ This is a maintained fork of [costela/wesher](https://github.com/costela/wesher)
 
 Its main use-case is adding low-maintenance security to public-cloud networks or connecting different cloud providers.
 
-**⚠ WARNING**: since mesh membership is controlled by a mesh-wide pre-shared key, this effectively downgrades some of the
-security benefits from wireguard. See [security considerations](#security-considerations) below for more details.
+**Note**: mesh membership is decided by signed admission records and invitation tokens rather than a shared key; see
+[security considerations](#security-considerations) below for what a compromised node can and cannot do.
 
 ## Quickstart
 
@@ -19,8 +19,8 @@ security benefits from wireguard. See [security considerations](#security-consid
    1. make sure the [wireguard](https://www.wireguard.com/) kernel module is available on all nodes. It is bundled with linux newer than 5.6 and can otherwise be installed following the instructions [here](https://www.wireguard.com/install/).
 
    2. The following ports must be accessible between all nodes (see [configuration options](#configuration-options) to change these):
-      - 51820 UDP
-      - 7946 UDP and TCP
+      - 51820 UDP (wireguard) and TCP (enrolment of new nodes)
+      - 7946 UDP and TCP (cluster gossip)
 
 1. Download the latest release for your architecture:
 
@@ -29,24 +29,34 @@ security benefits from wireguard. See [security considerations](#security-consid
    $ chmod a+x wesher
    ```
 
-2. On the first node:
+2. On the first node, start a new cluster:
    ```
-   # ./wesher
-   ```
-
-   This will start the wesher daemon in the foreground and - when running on a terminal - will currently output a generated cluster key as follows:
-   ```
-   new cluster key generated: XXXXX
+   # ./wesher --init
    ```
 
-   **Note**: to avoid accidentally leaking it in the logs, the created key is _only_ printed when running on a terminal. When started via other means (e.g.: an init system), wesher logs a warning instead and the key can be retrieved with `wesher showkey` (add `--interface` if not using the default).
+   This starts the daemon in the foreground. The node generates its identity and becomes the cluster's root.
 
-3. Lastly, on any further node:
+3. Still on that node (or any node already in the cluster), mint an invitation for the node you want to add:
    ```
-   # wesher --cluster-key XXXXX --join x.x.x.x
+   # wesher invite
+   7xk3...
+   valid for 10m0s, 1 use(s). On the new node:
+     wesher --join <this host> --join-key 7xk3...
    ```
 
-   Where `XXXXX` is the base64 encoded 256 bit key printed by the step above, and `x.x.x.x` is the hostname or IP of any of the nodes already joined to the mesh cluster.
+   The token lives only in the inviting node's memory until it is used or expires. `--uses N` lets one token enrol
+   several nodes, for example when a group of machines boots together.
+
+4. On the new node:
+   ```
+   # wesher --join x.x.x.x --join-key 7xk3...
+   ```
+
+   Where `x.x.x.x` is the hostname or IP of the node that minted the token. The two nodes prove to each other that
+   they know the token, the new node is admitted, and the token is discarded on both sides. From then on the node
+   restarts with plain `wesher`; its identity and the membership records are kept in `/var/lib/wesher/`.
+
+   To remove a node again, on any member: `wesher revoke NAME`.
 
 ### Permissions 
 
@@ -69,8 +79,9 @@ A minimal `systemd` unit file is provided under the `dist` folder and can be cop
 ```
 The provided unit file assumes `wesher` is installed to `/usr/local/sbin`.
 
-Note that, as mentioned above, the initial cluster key will not be displayed in the journal.
-It can either be initialized by running `wesher` manually once, or by pre-seeding via `/etc/default/wesher` as the `WESHER_CLUSTER_KEY` environment var (see [configuration options](#configuration-options) below).
+For an unattended first start, put `WESHER_JOIN=x.x.x.x` and `WESHER_JOIN_KEY=...` in `/etc/default/wesher`
+(see [configuration options](#configuration-options) below). Once the node is enrolled the key is ignored on later
+starts and can be removed from the file.
 
 ## Checking on a node
 
@@ -91,7 +102,7 @@ test2  10.171.252.205  10.89.0.3:51820  12s ago    1.5 KiB  3.0 KiB
 test3  10.171.251.146  10.89.0.4:51820  never      0 B      0 B
 ```
 
-`wesher showkey` prints the persisted cluster key (see the note in [Quickstart](#quickstart)).
+`wesher invite` and `wesher revoke NAME` manage membership through the running agent (see [Quickstart](#quickstart)).
 
 ## Installing from source
 
@@ -142,8 +153,8 @@ See [configuration](#configuration-options) below for how to disable this behavi
 
 ### Seamless restarts
 
-If a node in the cluster is restarted, it will attempt to re-join the last-known nodes using the same cluster key.
-This means a restart requires no manual intervention.
+If a node in the cluster is restarted, it re-joins the last-known nodes using its persisted identity.
+This means a restart requires no manual intervention, even if every node restarts at once.
 
 ## Configuration options
 
@@ -151,9 +162,10 @@ All options can be passed either as command-line flags or environment variables:
 
 | Option | Env | Description | Default |
 |---|---|---|---|
-| `--cluster-key KEY` | WESHER_CLUSTER_KEY | shared key for cluster membership; must be 32 bytes base64 encoded; will be generated if not provided | autogenerated/loaded |
-| `--join HOST,...` | WESHER_JOIN | comma separated list of hostnames or IP addresses to existing cluster members; if not provided, will attempt resuming any known state or otherwise wait for further members |  |
-| `--init` | WESHER_INIT | whether to explicitly (re)initialize the cluster; any known state from previous runs will be forgotten | `false` |
+| `--join HOST,...` | WESHER_JOIN | comma separated list of hostnames or IP addresses of existing cluster members; if not provided, will attempt resuming any known state or otherwise wait for further members |  |
+| `--join-key TOKEN` | WESHER_JOIN_KEY | invitation token from `wesher invite` on a member; needed only the first time this node joins, ignored afterwards |  |
+| `--init` | WESHER_INIT | start a new cluster with this node as its root; any known state from previous runs will be forgotten | `false` |
+| `--control-socket PATH` | WESHER_CONTROL_SOCKET | unix socket used by `wesher invite` and `wesher revoke` | `/run/wesher/<interface>.sock` |
 | `--bind-addr ADDR` | WESHER_BIND_ADDR | address to bind for cluster membership; `0.0.0.0` or `::` binds every interface of that family and advertises one of its addresses (public preferred). The family decides whether the cluster runs over IPv4 or IPv6, see [IPv4 and IPv6](#ipv4-and-ipv6) | `0.0.0.0` |
 | `--cluster-port PORT` | WESHER_CLUSTER_PORT | port used for membership gossip traffic (both TCP and UDP); must be the same across cluster | `7946` |
 | `--wireguard-port PORT` | WESHER_WIREGUARD_PORT | port used for wireguard traffic (UDP); must be the same across cluster | `51820` |
@@ -189,22 +201,26 @@ Each instance **must** have different values for the following settings:
 
 The following settings are not required to be unique, but recommended:
 - `--overlay-net` (to reduce the chance of node address conflicts; see [Overlay IP collisions](#overlay-ip-collisions))
-- `--cluster-key` (as a sensible security measure)
 
 ## Security considerations
 
-The decision of whom to allow in the mesh is made by [memberlist](https://github.com/hashicorp/memberlist) and is secured by a
-cluster-wide pre-shared key.
-Compromise of this key will allow an attacker to:
+There is no cluster-wide secret. Each node has a persisted identity (an Ed25519 key), and membership is a set of
+signed admission records rooted at the node that ran `--init`. A new node is admitted when it and an existing member
+prove to each other that they know an invitation token; the token exists only during that exchange. Cluster gossip is
+encrypted and authenticated per pair of nodes with keys derived from their identities, and a node installs a peer's
+wireguard key only if the peer's identity is a valid member and signed its metadata. The design is described in
+[`docs/membership.md`](docs/membership.md).
+
+Compromise of a node yields that node's identity, which any member can revoke with `wesher revoke`. Until revoked, an
+attacker holding it can:
 - access services exposed on the overlay network
-- impersonate and/or disrupt traffic to/from other nodes
-It will not, however, allow the attacker access to decrypt the traffic between other nodes.
+- impersonate that node and disrupt traffic to and from it
+It cannot decrypt traffic between other nodes, and it cannot admit new nodes without also minting a token on a member.
 
-This pre-shared key is static, set up during cluster bootstrapping. Key rotation is not implemented; it is a
-candidate for future work (see `TODO.md`), not a commitment.
+Node metadata received over the cluster is validated before use: peers whose metadata is not signed by a valid member,
+whose overlay address falls outside `--overlay-net` or whose wireguard key does not parse are logged and ignored.
 
-Node metadata received over the cluster is validated before use: peers whose overlay address falls outside
-`--overlay-net` or whose wireguard key does not parse are logged and ignored.
+This membership model is not compatible with upstream wesher's shared cluster key; a cluster is migrated by recreating it.
 
 ## Current known limitations
 
