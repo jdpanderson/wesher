@@ -38,9 +38,10 @@ func (a *AgentCmd) Validate() error {
 		return fmt.Errorf("unsupported overlay network size; net mask must be multiple of 8, got %d", a.OverlayNet.Bits())
 	}
 
-	if a.BindAddr != "" && a.BindIface != "" {
+	switch {
+	case a.BindAddr != "" && a.BindIface != "":
 		return fmt.Errorf("setting both bind address and bind interface is not supported")
-	} else if a.BindIface != "" {
+	case a.BindIface != "":
 		// Compute the actual bind address based on the provided interface
 		iface, err := net.InterfaceByName(a.BindIface)
 		if err != nil {
@@ -55,8 +56,9 @@ func (a *AgentCmd) Validate() error {
 				a.BindAddr = addr.IP.String()
 			}
 		}
-	} else if a.BindAddr == "" && a.BindIface == "" {
-		// FIXME: this is a workaround for memberlist refusing to listen on public IPs if BindAddr==0.0.0.0
+	case a.BindAddr == "":
+		// memberlist refuses to listen on 0.0.0.0 unless it can find a private IP to advertise,
+		// so detect a public one first
 		detectedBindAddr, err := sockaddr.GetPublicIP()
 		if err != nil {
 			return err
