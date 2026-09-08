@@ -26,8 +26,9 @@ type Cluster struct {
 	state     *state
 	stateMu   sync.Mutex // guards state.Nodes and state.save
 	events    chan memberlist.NodeEvent
+	changed   chan struct{}  // one-slot signal that the member list changed
 	done      chan struct{}  // closed by Leave
-	members   sync.WaitGroup // Members goroutines; Leave waits for them
+	routines  sync.WaitGroup // forwardEvents and Members goroutines; Leave waits for them
 	leaveOnce sync.Once
 }
 
@@ -47,9 +48,10 @@ func New(name string, init bool, clusterKey []byte, bindAddr string, bindPort in
 		return nil, fmt.Errorf("computing cluster key: %w", err)
 	}
 
-	// The big channel buffer is a work-around for https://github.com/hashicorp/memberlist/issues/23
-	// More than this many simultaneous events will deadlock cluster.members()
-	events := make(chan memberlist.NodeEvent, 100)
+	// memberlist delivers events while holding its node lock, so the receiver must never
+	// call back into memberlist: forwardEvents only logs and signals changed. The small
+	// buffer absorbs events still in flight after Leave stops the forwarder.
+	events := make(chan memberlist.NodeEvent, 16)
 
 	delegate := &delegateNode{localNode}
 	mlConfig := newMemberlistConfig()
@@ -68,14 +70,47 @@ func New(name string, init bool, clusterKey []byte, bindAddr string, bindPort in
 		return nil, fmt.Errorf("creating memberlist: %w", err)
 	}
 
-	return &Cluster{
+	c := &Cluster{
 		name:      name,
 		ml:        ml,
 		localName: localNode.Name,
 		events:    events,
+		changed:   make(chan struct{}, 1),
 		done:      make(chan struct{}),
 		state:     state,
-	}, nil
+	}
+	c.routines.Add(1)
+	go c.forwardEvents()
+
+	return c, nil
+}
+
+// forwardEvents logs memberlist events about other nodes and coalesces them into changed.
+func (c *Cluster) forwardEvents() {
+	defer c.routines.Done()
+	for {
+		var event memberlist.NodeEvent
+		select {
+		case <-c.done:
+			return
+		case event = <-c.events:
+		}
+		if event.Node.Name == c.localName {
+			continue
+		}
+		switch event.Event {
+		case memberlist.NodeJoin:
+			slog.Info("node joined", "name", event.Node.Name, "addr", event.Node.Addr)
+		case memberlist.NodeUpdate:
+			slog.Info("node updated", "name", event.Node.Name, "addr", event.Node.Addr)
+		case memberlist.NodeLeave:
+			slog.Info("node left", "name", event.Node.Name, "addr", event.Node.Addr)
+		}
+		select {
+		case c.changed <- struct{}{}:
+		default: // a signal is already pending
+		}
+	}
 }
 
 // Join tries to join the cluster by contacting provided addresses
@@ -108,39 +143,25 @@ func (c *Cluster) Leave() {
 		c.ml.Leave(10 * time.Second) // nolint: errcheck
 		c.ml.Shutdown()              // nolint: errcheck
 		close(c.done)
-		c.members.Wait()
+		c.routines.Wait()
 	})
 }
 
-// Members provides a channel notifying of cluster changes
-// Everytime a change happens inside the cluster (except for local changes),
-// the updated list of cluster nodes is pushed to the channel.
-// The channel is closed after Leave.
+// Members returns a channel that receives the current list of other nodes
+// whenever the membership changes; bursts of changes may be coalesced into
+// one snapshot. Call it at most once. The channel is closed after Leave.
 func (c *Cluster) Members() <-chan []common.Node {
 	changes := make(chan []common.Node)
 
-	c.members.Add(1)
+	c.routines.Add(1)
 	go func() {
-		defer c.members.Done()
+		defer c.routines.Done()
 		defer close(changes)
 		for {
-			var event memberlist.NodeEvent
 			select {
 			case <-c.done:
 				return
-			case event = <-c.events:
-			}
-			if event.Node.Name == c.localName {
-				// ignore events about ourselves
-				continue
-			}
-			switch event.Event {
-			case memberlist.NodeJoin:
-				slog.Info("node joined", "name", event.Node.Name, "addr", event.Node.Addr)
-			case memberlist.NodeUpdate:
-				slog.Info("node updated", "name", event.Node.Name, "addr", event.Node.Addr)
-			case memberlist.NodeLeave:
-				slog.Info("node left", "name", event.Node.Name, "addr", event.Node.Addr)
+			case <-c.changed:
 			}
 
 			nodes := make([]common.Node, 0, c.ml.NumMembers())

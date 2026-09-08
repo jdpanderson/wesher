@@ -158,8 +158,13 @@ Correctness issues found during the initial read (verify each, then fix):
 - [x] `Cluster.Members` goroutine now stops on `Leave` (phase 4); data races
       with `Leave` on `state` and on the node slice fixed in phase 3. `Leave`
       now also waits for the goroutine to exit (it could still be mid-save).
-- [ ] The 100-slot events buffer remains a workaround for a memberlist
+- [x] The 100-slot events buffer remains a workaround for a memberlist
       deadlock (hashicorp/memberlist#23); check whether 0.6.0 still needs it.
+      It did: memberlist 0.6.0 still calls the event delegate under its node
+      write-lock, and `Members` took that lock via `ml.Members()`. Events now go
+      to a forwarder that only logs and sets a one-slot "changed" signal;
+      `Members` rebuilds the list from that signal. Buffer reduced to 16, only
+      to absorb events in flight during shutdown.
 - [ ] `SetUpInterface` adds a route per peer but never removes routes for
       peers that left; stale `/32` routes accumulate until the interface goes
       down. `ReplacePeers: true` already handles the wireguard side.
