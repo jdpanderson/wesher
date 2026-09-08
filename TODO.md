@@ -164,6 +164,9 @@ Correctness issues found during the initial read (verify each, then fix):
 
 Hygiene:
 
+- [x] Drop the pre-0.3 `/var/lib/wesher/state.json` read fallback
+      (`deprecatedStatePath`); state has been keyed by interface name since
+      2020-05. README pointed at the old path; now names the per-interface file.
 - [ ] Replace `nolint: errcheck` sites with explicit logging where the error is
       useful (state save failures are worth a warning).
 - [ ] Wire up `golangci-lint` with a modest config and fix what it reports.

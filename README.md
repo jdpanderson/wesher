@@ -38,7 +38,7 @@ security benefits from wireguard. See [security considerations](#security-consid
    new cluster key generated: XXXXX
    ```
 
-   **Note**: to avoid accidentally leaking it in the logs, the created key will _only_ be displayed if running on a terminal. When started via other means (e.g.: desktop session manager or init system), the key can be retreived with `grep ClusterKey /var/lib/wesher/state.json`.
+   **Note**: to avoid accidentally leaking it in the logs, the created key will _only_ be displayed if running on a terminal. When started via other means (e.g.: desktop session manager or init system), the key can be retrieved with `grep ClusterKey /var/lib/wesher/wgoverlay.json` (the file is named after the interface, see `--interface`).
 
 3. Lastly, on any further node:
    ```

@@ -11,16 +11,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// useTempStatePaths points both state paths at a fresh temp dir for the test.
+// useTempStatePaths points the state path template at a fresh temp dir for the test.
 func useTempStatePaths(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	origTemplate, origDeprecated := statePathTemplate, deprecatedStatePath
+	origTemplate := statePathTemplate
 	statePathTemplate = filepath.Join(dir, "%s.json")
-	deprecatedStatePath = filepath.Join(dir, "state.json")
-	t.Cleanup(func() {
-		statePathTemplate, deprecatedStatePath = origTemplate, origDeprecated
-	})
+	t.Cleanup(func() { statePathTemplate = origTemplate })
 	return dir
 }
 
@@ -58,16 +55,6 @@ func Test_loadState_missing(t *testing.T) {
 	loaded := &state{}
 	loadState(loaded, "test")
 	assert.Equal(t, &state{}, loaded)
-}
-
-func Test_loadState_deprecatedPath(t *testing.T) {
-	useTempStatePaths(t)
-	s := testState()
-	require.NoError(t, s.save("state")) // writes to <dir>/state.json, the deprecated path
-
-	loaded := &state{}
-	loadState(loaded, "test")
-	assert.Equal(t, s, loaded)
 }
 
 func Test_loadState_malformed(t *testing.T) {
