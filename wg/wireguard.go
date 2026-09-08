@@ -33,6 +33,7 @@ type netlinker interface {
 	RouteAdd(*netlink.Route) error
 	RouteDel(*netlink.Route) error
 	RouteList(netlink.Link, int) ([]netlink.Route, error)
+	AddrList(netlink.Link, int) ([]netlink.Addr, error)
 }
 
 // Config describes the wireguard interface a State manages.
@@ -205,6 +206,22 @@ func (s *State) removeStaleRoutes(link netlink.Link, wanted map[netip.Addr]bool)
 		}
 	}
 	return nil
+}
+
+// prefixFromIPNet converts a *net.IPNet to a netip.Prefix, unmapping IPv4-in-IPv6.
+func prefixFromIPNet(n *net.IPNet) (netip.Prefix, bool) {
+	if n == nil {
+		return netip.Prefix{}, false
+	}
+	addr, ok := netip.AddrFromSlice(n.IP)
+	if !ok {
+		return netip.Prefix{}, false
+	}
+	ones, bits := n.Mask.Size()
+	if bits == 128 && addr.Is4In6() {
+		ones -= 96
+	}
+	return netip.PrefixFrom(addr.Unmap(), ones), true
 }
 
 func addrToIPNet(addr netip.Addr) *net.IPNet {

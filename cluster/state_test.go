@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"testing"
@@ -63,6 +64,26 @@ func Test_LoadKey(t *testing.T) {
 	got, err := LoadKey("test")
 	require.NoError(t, err)
 	assert.Equal(t, s.ClusterKey, got)
+}
+
+func Test_KnownNodes(t *testing.T) {
+	useTempStatePaths(t)
+	assert.Empty(t, KnownNodes("test"))
+
+	good := common.Node{Name: "good", Addr: net.ParseIP("192.0.2.1")}
+	good.OverlayAddr = netip.MustParseAddr("10.0.0.1")
+	good.PubKey = "pk"
+	meta, err := good.EncodeMeta(512)
+	require.NoError(t, err)
+	good.Meta = meta
+	bad := common.Node{Name: "bad", Addr: net.ParseIP("192.0.2.2"), Meta: []byte("garbage")}
+	require.NoError(t, (&state{Nodes: []common.Node{good, bad}}).save("test"))
+
+	got := KnownNodes("test")
+	require.Len(t, got, 1)
+	assert.Equal(t, "good", got[0].Name)
+	assert.Equal(t, "10.0.0.1", got[0].OverlayAddr.String())
+	assert.Equal(t, "pk", got[0].PubKey)
 }
 
 func Test_loadState_malformed(t *testing.T) {

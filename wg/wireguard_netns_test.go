@@ -101,6 +101,13 @@ func Test_State_SetUpInterface_and_Down(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, routes, 2)
 
+	report, err := Status("wgtest0")
+	require.NoError(t, err)
+	assert.Equal(t, s.PubKey.String(), report.PublicKey)
+	assert.Equal(t, []netip.Prefix{netip.PrefixFrom(s.OverlayAddr, 32)}, report.Addrs)
+	require.Len(t, report.Peers, 2)
+	assert.Equal(t, 25*time.Second, report.Peers[0].PersistentKeepalive)
+
 	// idempotent: link and routes already exist
 	require.NoError(t, s.SetUpInterface([]common.Node{p1, p2}))
 

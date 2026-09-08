@@ -19,6 +19,7 @@ type fakeNL struct {
 	calls  []string
 	link   netlink.Link
 	mtu    int
+	addrs  []netlink.Addr
 	routes []*netlink.Route
 }
 
@@ -69,6 +70,12 @@ func (f *fakeNL) RouteDel(r *netlink.Route) error {
 	f.routes = kept
 	return nil
 }
+func (f *fakeNL) AddrList(netlink.Link, int) ([]netlink.Addr, error) {
+	if err := f.call("AddrList"); err != nil {
+		return nil, err
+	}
+	return f.addrs, nil
+}
 func (f *fakeNL) RouteList(netlink.Link, int) ([]netlink.Route, error) {
 	if err := f.call("RouteList"); err != nil {
 		return nil, err
@@ -81,11 +88,21 @@ func (f *fakeNL) RouteList(netlink.Link, int) ([]netlink.Route, error) {
 }
 
 type fakeWG struct {
-	cfgErr error
-	cfg    *wgtypes.Config
+	cfgErr    error
+	cfg       *wgtypes.Config
+	device    *wgtypes.Device // returned by Device when set
+	deviceErr error
 }
 
-func (f *fakeWG) Device(string) (*wgtypes.Device, error) { return &wgtypes.Device{}, nil }
+func (f *fakeWG) Device(string) (*wgtypes.Device, error) {
+	if f.deviceErr != nil {
+		return nil, f.deviceErr
+	}
+	if f.device != nil {
+		return f.device, nil
+	}
+	return &wgtypes.Device{}, nil
+}
 func (f *fakeWG) ConfigureDevice(_ string, cfg wgtypes.Config) error {
 	f.cfg = &cfg
 	return f.cfgErr

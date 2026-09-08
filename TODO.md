@@ -250,8 +250,9 @@ before starting; none are committed yet.
       the same address (upstream roadmap item).
 - [ ] Config file support (kong supports YAML/JSON loaders) alongside flags
       and env.
-- [ ] `status` subcommand or health endpoint listing peers, handshake age, and
-      overlay addresses.
+- [x] `status` subcommand listing peers, handshake age, and overlay addresses
+      (`wesher status [--interface DEV] [--json]`; names come from the
+      persisted cluster state). A health endpoint remains a separate candidate.
 - [ ] systemd `sd_notify` readiness and a `Type=notify` unit file.
 - [ ] Cluster key rotation (upstream roadmap item; largest effort, needs a
       protocol design).

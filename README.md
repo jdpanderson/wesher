@@ -72,6 +72,27 @@ The provided unit file assumes `wesher` is installed to `/usr/local/sbin`.
 Note that, as mentioned above, the initial cluster key will not be displayed in the journal.
 It can either be initialized by running `wesher` manually once, or by pre-seeding via `/etc/default/wesher` as the `WESHER_CLUSTER_KEY` environment var (see [configuration options](#configuration-options) below).
 
+## Checking on a node
+
+`wesher status` shows the wireguard interface and its peers, with the last handshake age and traffic counters, naming
+peers from the persisted cluster state. Add `--json` for machine-readable output and `--interface` if not using the
+default. It needs the same privileges as the agent.
+
+```
+# wesher status
+interface: wgoverlay
+address:   10.171.249.28/32
+port:      51820
+pubkey:    41p91phfnFloks55MFP1iZfRQ11VdEpTAufFwv8j810=
+peers:     2
+
+NAME   OVERLAY         ENDPOINT         HANDSHAKE  RX       TX
+test2  10.171.252.205  10.89.0.3:51820  12s ago    1.5 KiB  3.0 KiB
+test3  10.171.251.146  10.89.0.4:51820  never      0 B      0 B
+```
+
+`wesher showkey` prints the persisted cluster key (see the note in [Quickstart](#quickstart)).
+
 ## Installing from source
 
 ```

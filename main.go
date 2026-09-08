@@ -16,6 +16,7 @@ type cli struct {
 
 	Agent   AgentCmd   `cmd:"" default:"withargs" help:"start the wesher agent (default when no command specified)"`
 	ShowKey ShowKeyCmd `cmd:"" name:"showkey" help:"print the cluster key persisted for an interface"`
+	Status  StatusCmd  `cmd:"" help:"show the wireguard interface and its peers"`
 }
 
 func main() {

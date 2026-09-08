@@ -48,6 +48,20 @@ func LoadKey(clusterName string) ([]byte, error) {
 	return key, nil
 }
 
+// KnownNodes returns the peers persisted for clusterName with their metadata
+// decoded; nodes whose metadata does not decode are skipped.
+func KnownNodes(clusterName string) []common.Node {
+	nodes := loadState(clusterName).Nodes
+	out := make([]common.Node, 0, len(nodes))
+	for _, n := range nodes {
+		if err := n.DecodeMeta(); err != nil {
+			continue
+		}
+		out = append(out, n)
+	}
+	return out
+}
+
 func loadState(clusterName string) *state {
 	statePath := statePath(clusterName)
 	content, err := os.ReadFile(statePath)

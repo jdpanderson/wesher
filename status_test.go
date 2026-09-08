@@ -1,0 +1,78 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/netip"
+	"testing"
+	"time"
+
+	"github.com/costela/wesher/wg"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func statusFixture() (*wg.Report, map[string]string, time.Time) {
+	now := time.Date(2026, 9, 7, 12, 0, 0, 0, time.UTC)
+	r := &wg.Report{
+		Interface: "wgoverlay", PublicKey: "LOCALKEY", ListenPort: 51820,
+		Addrs: []netip.Prefix{netip.MustParsePrefix("10.0.0.1/32")},
+		Peers: []wg.PeerReport{
+			{PublicKey: "KEYB", Endpoint: "192.0.2.2:51820", AllowedIPs: []netip.Prefix{netip.MustParsePrefix("10.0.0.2/32")},
+				LastHandshake: now.Add(-42 * time.Second), ReceiveBytes: 1536, TransmitBytes: 3 * 1024 * 1024},
+			{PublicKey: "KEYUNKNOWN1234567890", AllowedIPs: []netip.Prefix{netip.MustParsePrefix("10.0.0.3/32")}},
+		},
+	}
+	return r, map[string]string{"KEYB": "b"}, now
+}
+
+func Test_renderStatus(t *testing.T) {
+	r, names, now := statusFixture()
+	var buf bytes.Buffer
+	require.NoError(t, renderStatus(&buf, r, names, now))
+	out := buf.String()
+
+	assert.Contains(t, out, "interface: wgoverlay\n")
+	assert.Contains(t, out, "address:   10.0.0.1/32\n")
+	assert.Contains(t, out, "peers:     2\n")
+	assert.Regexp(t, `KEYUNKNOWN12\.\.\.\s+10\.0\.0\.3\s+-\s+never\s+0 B\s+0 B`, out, "unknown peer: short key, no endpoint, never")
+	assert.Regexp(t, `\nb\s+10\.0\.0\.2\s+192\.0\.2\.2:51820\s+42s ago\s+1\.5 KiB\s+3\.0 MiB`, out)
+	assert.Less(t, bytes.Index(buf.Bytes(), []byte("\nKEYUNKNOWN")), bytes.Index(buf.Bytes(), []byte("\nb ")), "sorted by name")
+}
+
+func Test_renderStatus_noPeers(t *testing.T) {
+	r, names, now := statusFixture()
+	r.Peers = nil
+	var buf bytes.Buffer
+	require.NoError(t, renderStatus(&buf, r, names, now))
+	assert.Contains(t, buf.String(), "peers:     0\n")
+	assert.NotContains(t, buf.String(), "NAME")
+}
+
+func Test_renderStatusJSON(t *testing.T) {
+	r, names, _ := statusFixture()
+	var buf bytes.Buffer
+	require.NoError(t, renderStatusJSON(&buf, r, names))
+
+	var got struct {
+		Interface string `json:"interface"`
+		Peers     []struct {
+			Name      string `json:"name"`
+			PublicKey string `json:"publicKey"`
+			Endpoint  string `json:"endpoint"`
+		} `json:"peers"`
+	}
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &got))
+	assert.Equal(t, "wgoverlay", got.Interface)
+	require.Len(t, got.Peers, 2)
+	assert.Equal(t, "b", got.Peers[0].Name)
+	assert.Equal(t, "192.0.2.2:51820", got.Peers[0].Endpoint)
+	assert.Empty(t, got.Peers[1].Name)
+}
+
+func Test_humanBytes(t *testing.T) {
+	assert.Equal(t, "0 B", humanBytes(0))
+	assert.Equal(t, "1023 B", humanBytes(1023))
+	assert.Equal(t, "1.0 KiB", humanBytes(1024))
+	assert.Equal(t, "1.5 GiB", humanBytes(1536*1024*1024))
+}
