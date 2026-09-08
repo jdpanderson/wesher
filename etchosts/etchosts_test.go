@@ -1,6 +1,7 @@
 package etchosts
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
@@ -28,20 +29,18 @@ func TestEtcHosts_writeEntryWithBanner(t *testing.T) {
 		name    string
 		args    args
 		wantTmp string
-		wantErr bool
 	}{
-		{"do not write empty ip", args{DefaultBanner, "", []string{"somename", "someothername"}}, "", false},
-		{"do not write empty names", args{DefaultBanner, "1.2.3.4", []string{}}, "", false},
-		{"complete entry", args{DefaultBanner, "1.2.3.4", []string{"somename", "someothername"}}, fmt.Sprintf("1.2.3.4\tsomename someothername\t%s\n", DefaultBanner), false},
-		{"custom banner", args{"# somebanner", "1.2.3.4", []string{"somename", "someothername"}}, fmt.Sprintf("1.2.3.4\tsomename someothername\t%s\n", "# somebanner"), false},
+		{"do not write empty ip", args{DefaultBanner, "", []string{"somename", "someothername"}}, ""},
+		{"do not write empty names", args{DefaultBanner, "1.2.3.4", []string{}}, ""},
+		{"complete entry", args{DefaultBanner, "1.2.3.4", []string{"somename", "someothername"}}, fmt.Sprintf("1.2.3.4\tsomename someothername\t%s\n", DefaultBanner)},
+		{"custom banner", args{"# somebanner", "1.2.3.4", []string{"somename", "someothername"}}, fmt.Sprintf("1.2.3.4\tsomename someothername\t%s\n", "# somebanner")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tmp := &bytes.Buffer{}
-			if err := eh.writeEntryWithBanner(tmp, tt.args.banner, tt.args.ip, tt.args.names); (err != nil) != tt.wantErr {
-				t.Errorf("writeEntryWithBanner() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
+			w := bufio.NewWriter(tmp)
+			eh.writeEntryWithBanner(w, tt.args.banner, tt.args.ip, tt.args.names)
+			require.NoError(t, w.Flush())
 			if gotTmp := tmp.String(); gotTmp != tt.wantTmp {
 				t.Errorf("writeEntryWithBanner() got:\n%#v, want\n%#v", gotTmp, tt.wantTmp)
 			}
@@ -110,10 +109,12 @@ func TestEtcHosts_writeEntries(t *testing.T) {
 				Logger: tt.fields.Logger,
 			}
 			dest := &bytes.Buffer{}
+			wantLen := len(tt.args.ipsToNames)
 			if err := eh.writeEntries(tt.args.orig, dest, tt.args.ipsToNames); (err != nil) != tt.wantErr {
 				t.Errorf("EtcHosts.writeEntries() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
+			assert.Len(t, tt.args.ipsToNames, wantLen, "caller's map must not be modified")
 			if gotDest := dest.String(); gotDest != tt.wantDest {
 				t.Errorf("EtcHosts.writeEntries() = '%#v', want '%#v'", gotDest, tt.wantDest)
 			}

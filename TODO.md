@@ -133,8 +133,9 @@ Correctness issues found during the initial read (verify each, then fix):
 
 - [x] `etchosts.movePreservePerms` nil `Logger` dereference in the rename
       fallback. Fixed in phase 4.
-- [ ] `etchosts.writeEntries` deletes from the caller's map as a side effect.
-      Copy it first.
+- [x] `etchosts.writeEntries` deletes from the caller's map as a side effect.
+      Tracks written IPs in a local set instead; output now goes through a
+      `bufio.Writer` so write errors are checked once on `Flush`.
 - [x] `AgentCmd.Run` `Fatal`/`os.Exit` replaced with returned errors. Fixed in
       phase 4.
 - [ ] `Cluster.Update` installs the memberlist delegates after

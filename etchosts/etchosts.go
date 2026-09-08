@@ -76,56 +76,56 @@ func (eh *EtcHosts) WriteEntries(ipsToNames map[string][]string) error {
 	return eh.movePreservePerms(tmp, etcHosts)
 }
 
+// writeEntries copies orig to dest, rewriting managed lines whose IP is in
+// ipsToNames, dropping the other managed lines, and appending new entries.
+// Write errors surface once, on the final Flush.
 func (eh *EtcHosts) writeEntries(orig io.Reader, dest io.Writer, ipsToNames map[string][]string) error {
 	banner := eh.Banner
 	if banner == "" {
 		banner = DefaultBanner
 	}
+	w := bufio.NewWriter(dest)
+	written := make(map[string]bool, len(ipsToNames))
 
-	// go through file and update existing entries/prune nonexistent entries
 	scanner := bufio.NewScanner(orig)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasSuffix(strings.TrimSpace(line), strings.TrimSpace(banner)) {
-			tokens := strings.Fields(line)
-			if len(tokens) < 1 {
-				continue // remove empty managed line
-			}
-			ip := tokens[0]
-			if names, ok := ipsToNames[ip]; ok {
-				err := eh.writeEntryWithBanner(dest, banner, ip, names)
-				if err != nil {
-					return err
-				}
-				delete(ipsToNames, ip) // otherwise we'll append it again below
-			}
-		} else {
-			// keep original unmanaged line
-			fmt.Fprintf(dest, "%s\n", line)
+		if !strings.HasSuffix(strings.TrimSpace(line), strings.TrimSpace(banner)) {
+			fmt.Fprintln(w, line) // unmanaged line, keep as is
+			continue
+		}
+		tokens := strings.Fields(line)
+		if len(tokens) == 0 {
+			continue
+		}
+		ip := tokens[0]
+		if names, ok := ipsToNames[ip]; ok && !written[ip] {
+			eh.writeEntryWithBanner(w, banner, ip, names)
+			written[ip] = true
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("error reading hosts file: %w", err)
 	}
 
-	// append remaining entries to file
 	for ip, names := range ipsToNames {
-		if err := eh.writeEntryWithBanner(dest, banner, ip, names); err != nil {
-			return err
+		if !written[ip] {
+			eh.writeEntryWithBanner(w, banner, ip, names)
 		}
 	}
 
+	if err := w.Flush(); err != nil {
+		return fmt.Errorf("error writing hosts file: %w", err)
+	}
 	return nil
 }
 
-func (eh *EtcHosts) writeEntryWithBanner(tmp io.Writer, banner, ip string, names []string) error {
-	if ip != "" && len(names) > 0 {
-		eh.logf("writing entry for %s (%s)", ip, names)
-		if _, err := fmt.Fprintf(tmp, "%s\t%s\t%s\n", ip, strings.Join(names, " "), banner); err != nil {
-			return fmt.Errorf("error writing entry for %s: %w", ip, err)
-		}
+func (eh *EtcHosts) writeEntryWithBanner(w *bufio.Writer, banner, ip string, names []string) {
+	if ip == "" || len(names) == 0 {
+		return
 	}
-	return nil
+	eh.logf("writing entry for %s (%s)", ip, names)
+	fmt.Fprintf(w, "%s\t%s\t%s\n", ip, strings.Join(names, " "), banner)
 }
 
 func (eh *EtcHosts) movePreservePerms(src, dst *os.File) error {
