@@ -34,7 +34,7 @@ Target: every function that does not require `NET_ADMIN` reaches near 100%.
 Pure logic, no privileges needed (done 2026-09-07; total coverage 17.4% -> 41.1%):
 
 - [x] `key.UnmarshalText` (key.go): valid key, bad base64, wrong length.
-- [x] `AgentCmd.Validate` (agent.go): key length check, overlay mask not a
+- [x] `AgentCmd.Validate` (agent.go): overlay mask not a
       multiple of 8, bind-addr + bind-iface conflict, bind-iface resolution
       (uses `lo`), autodetect. Remaining gaps are OS error branches.
 - [x] `computeClusterKey` (cluster/cluster.go): provided key wins, state key

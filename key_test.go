@@ -15,24 +15,24 @@ func Test_key_UnmarshalText(t *testing.T) {
 	tests := []struct {
 		name    string
 		in      string
-		want    []byte
-		wantErr bool
+		want    key
+		wantErr string
 	}{
-		{"valid key", encoded, raw, false},
-		{"empty input", "", []byte{}, false},
-		{"short key decodes without length check", "YWJj", []byte("abc"), false},
-		{"invalid base64", "not*base64!", nil, true},
+		{"valid key", encoded, raw, ""},
+		{"empty input", "", key{}, ""},
+		{"wrong length", "YWJj", nil, "unsupported cluster key length"},
+		{"invalid base64", "not*base64!", nil, "illegal base64"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			k := &key{}
+			var k key
 			err := k.UnmarshalText([]byte(tt.in))
-			if tt.wantErr {
-				require.Error(t, err)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, tt.want, k.bytes)
+			assert.Equal(t, tt.want, k)
 		})
 	}
 }

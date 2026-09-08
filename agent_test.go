@@ -18,11 +18,6 @@ func Test_AgentCmd_Validate_errors(t *testing.T) {
 		wantErr string
 	}{
 		{
-			"key wrong length",
-			AgentCmd{ClusterKey: key{bytes: []byte("short")}, OverlayNet: testOverlay},
-			"unsupported cluster key length",
-		},
-		{
 			"overlay mask not multiple of 8",
 			AgentCmd{OverlayNet: netip.MustParsePrefix("10.0.0.0/20")},
 			"unsupported overlay network size",
@@ -67,7 +62,7 @@ func Test_AgentCmd_Validate_bindAddrAutodetect(t *testing.T) {
 
 func Test_AgentCmd_Validate_validKey(t *testing.T) {
 	cmd := AgentCmd{
-		ClusterKey: key{bytes: []byte("abcdefghijklmnopqrstuvwxyzABCDEF")},
+		ClusterKey: key("abcdefghijklmnopqrstuvwxyzABCDEF"),
 		OverlayNet: testOverlay,
 		BindAddr:   "127.0.0.1",
 	}

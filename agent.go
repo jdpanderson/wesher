@@ -34,10 +34,6 @@ type AgentCmd struct {
 }
 
 func (a *AgentCmd) Validate() error {
-	if len(a.ClusterKey.bytes) != 0 && len(a.ClusterKey.bytes) != cluster.KeyLen {
-		return fmt.Errorf("unsupported cluster key length; expected %d, got %d", cluster.KeyLen, len(a.ClusterKey.bytes))
-	}
-
 	if a.OverlayNet.Bits()%8 != 0 {
 		return fmt.Errorf("unsupported overlay network size; net mask must be multiple of 8, got %d", a.OverlayNet.Bits())
 	}
@@ -95,7 +91,7 @@ type hostsWriter interface {
 
 // Run wires up cluster, wireguard and /etc/hosts, joins the cluster and runs the agent loop until SIGTERM/SIGINT.
 func (a *AgentCmd) Run(cli *cli) error {
-	cluster, err := cluster.New(a.Interface, a.Init, a.ClusterKey.bytes, a.BindAddr, a.ClusterPort)
+	cluster, err := cluster.New(a.Interface, a.Init, a.ClusterKey, a.BindAddr, a.ClusterPort)
 	if err != nil {
 		return fmt.Errorf("creating cluster: %w", err)
 	}
