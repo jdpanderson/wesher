@@ -185,9 +185,10 @@ Correctness issues found during the initial read (verify each, then fix):
       `AgentCmd.validateNode` now rejects (log-and-skip) nodes with an empty
       name, an overlay address outside `--overlay-net`, or an unparseable
       public key. Validation lives in the agent, which knows the overlay net.
-- [ ] Join retry uses backoff defaults, which give up after 15 minutes. Decide
-      whether that is intended. (backoff v4 -> v6 done 2026-09-07; the retry
-      is now context-aware, so SIGTERM during the join loop exits cleanly.)
+- [x] Join retry uses backoff defaults, which give up after 15 minutes. Decided
+      2026-09-07: retry indefinitely (interval capped at 60s), SIGTERM/SIGINT
+      is the way out. A node that gives up needs a manual restart, which is
+      worse than a periodic error log.
 - [x] `LogLevelFlag.AfterApply` calls `Fatal` instead of returning the error.
       Fixed as part of the logrus -> `log/slog` migration (2026-09-07); the
       level is parsed by `slog.Level.UnmarshalText`.

@@ -176,9 +176,12 @@ func (a *AgentCmd) Run(cli *cli) error {
 	ctx, cancelSignals := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer cancelSignals()
 
+	// Keep trying to join until it works or we are told to stop; a node that gives
+	// up would need a manual restart, which is worse than a noisy log.
 	nodec := cluster.Members() // avoid deadlocks by starting before join
 	if _, err := backoff.Retry(ctx,
 		func() (struct{}, error) { return struct{}{}, cluster.Join(a.Join) },
+		backoff.WithMaxElapsedTime(0),
 		backoff.WithNotify(func(err error, dur time.Duration) {
 			slog.Error("could not join cluster, retrying", "err", err, "in", dur)
 		}),
