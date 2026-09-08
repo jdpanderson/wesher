@@ -75,6 +75,19 @@ func KnownNodes(clusterName string) []common.Node {
 	return out
 }
 
+// LocalIdentity returns the identity persisted for clusterName, if any.
+func LocalIdentity(clusterName string) (trust.PublicKey, bool) {
+	st := loadState(clusterName)
+	if len(st.Seed) == 0 {
+		return trust.PublicKey{}, false
+	}
+	id, err := trust.IdentityFromSeed(st.Seed)
+	if err != nil {
+		return trust.PublicKey{}, false
+	}
+	return id.Public(), true
+}
+
 // Bootstrap is the persisted knowledge a node starts from. Load fills it; the
 // agent then either makes the node a root, enrols it, or finds it already
 // enrolled, and hands it to New.

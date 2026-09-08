@@ -16,6 +16,7 @@ import (
 	"github.com/cenkalti/backoff/v6"
 	"github.com/jdpanderson/wesher/cluster"
 	"github.com/jdpanderson/wesher/common"
+	"github.com/jdpanderson/wesher/control"
 	"github.com/jdpanderson/wesher/enroll"
 	"github.com/jdpanderson/wesher/etchosts"
 	"github.com/jdpanderson/wesher/trust"
@@ -36,6 +37,7 @@ type AgentCmd struct {
 	// PersistentKeepalive is a time.Duration so kong accepts "25s"; 0 disables it.
 	PersistentKeepalive time.Duration `env:"WESHER_PERSISTENT_KEEPALIVE" help:"interval at which peers send keepalives, to keep NAT mappings open (e.g. 25s); 0 disables" default:"0"`
 	NoEtcHosts          bool          `env:"WESHER_NO_ETC_HOSTS" help:"disable writing of entries to /etc/hosts"`
+	ControlSocket       string        `env:"WESHER_CONTROL_SOCKET" help:"unix socket for 'wesher invite' and 'wesher revoke' (default /run/wesher/<interface>.sock)"`
 }
 
 func (a *AgentCmd) Validate() error {
@@ -235,6 +237,17 @@ func (a *AgentCmd) Run() error {
 	if err != nil {
 		return fmt.Errorf("creating cluster: %w", err)
 	}
+
+	socket := a.ControlSocket
+	if socket == "" {
+		socket = control.DefaultSocket(a.Interface)
+	}
+	ctl, err := control.Listen(socket, agentControl{cluster})
+	if err != nil {
+		cluster.Leave()
+		return err
+	}
+	defer ctl.Close()
 
 	hostsFile := &etchosts.EtcHosts{
 		Banner: "# ! managed automatically by wesher interface " + a.Interface,

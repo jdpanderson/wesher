@@ -16,6 +16,8 @@ type cli struct {
 
 	Agent  AgentCmd  `cmd:"" default:"withargs" help:"start the wesher agent (default when no command specified)"`
 	Status StatusCmd `cmd:"" help:"show the wireguard interface and its peers"`
+	Invite InviteCmd `cmd:"" help:"mint an enrolment token for a new node (talks to the running agent)"`
+	Revoke RevokeCmd `cmd:"" help:"revoke a node's membership (talks to the running agent)"`
 }
 
 func main() {

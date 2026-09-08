@@ -292,8 +292,8 @@ transport. Not compatible with shared-key wesher.
       exchange, encrypted hand-off of root, records and gossip address.
       Agent: `--init` roots a cluster, `--join HOST --join-key TOKEN` enrols,
       a bare start rejoins from state. `--cluster-key` and `showkey` removed.
-- [ ] Control socket and `invite` / `revoke` subcommands; agent flags
-      (`--join-key`; drop `--cluster-key`, `showkey`).
+- [x] Control socket (`/run/wesher/<iface>.sock`, owner-only, JSON request and
+      response) and `invite` / `revoke` subcommands. `status` shows identities.
 - [ ] e2e: enrol via `invite`, restart without token, revoke; README security
       section rewritten.
 - [ ] **DECISION**: rename the project. It now forks the concept, not just
