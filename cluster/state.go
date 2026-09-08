@@ -8,12 +8,16 @@ import (
 	"path/filepath"
 
 	"github.com/jdpanderson/wesher/common"
+	"github.com/jdpanderson/wesher/trust"
 )
 
-// State keeps track of information needed to rejoin the cluster
+// state is what a node persists: its identity seed, the membership it trusts
+// and the peers it last saw, so it can restart unattended.
 type state struct {
-	ClusterKey []byte
-	Nodes      []common.Node
+	Seed    []byte           `json:"seed"`
+	Root    *trust.PublicKey `json:"root,omitempty"`
+	Records trust.Records    `json:"records"`
+	Nodes   []common.Node    `json:"nodes"`
 }
 
 var statePathTemplate = "/var/lib/wesher/%s.json"
@@ -39,29 +43,6 @@ func (s *state) save(clusterName string) error {
 
 // loadState reads the persisted state for clusterName; missing or unreadable
 // state yields an empty state.
-// LoadKey returns the cluster key persisted for clusterName.
-func LoadKey(clusterName string) ([]byte, error) {
-	key := loadState(clusterName).ClusterKey
-	if len(key) == 0 {
-		return nil, fmt.Errorf("no cluster key stored in %s", statePath(clusterName))
-	}
-	return key, nil
-}
-
-// KnownNodes returns the peers persisted for clusterName with their metadata
-// decoded; nodes whose metadata does not decode are skipped.
-func KnownNodes(clusterName string) []common.Node {
-	nodes := loadState(clusterName).Nodes
-	out := make([]common.Node, 0, len(nodes))
-	for _, n := range nodes {
-		if err := n.DecodeMeta(); err != nil {
-			continue
-		}
-		out = append(out, n)
-	}
-	return out
-}
-
 func loadState(clusterName string) *state {
 	statePath := statePath(clusterName)
 	content, err := os.ReadFile(statePath)
@@ -78,4 +59,79 @@ func loadState(clusterName string) *state {
 		return &state{}
 	}
 	return s
+}
+
+// KnownNodes returns the peers persisted for clusterName with their metadata
+// decoded; nodes whose metadata does not decode are skipped.
+func KnownNodes(clusterName string) []common.Node {
+	nodes := loadState(clusterName).Nodes
+	out := make([]common.Node, 0, len(nodes))
+	for _, n := range nodes {
+		if err := n.DecodeMeta(); err != nil {
+			continue
+		}
+		out = append(out, n)
+	}
+	return out
+}
+
+// Bootstrap is the persisted knowledge a node starts from. Load fills it; the
+// agent then either makes the node a root, enrols it, or finds it already
+// enrolled, and hands it to New.
+type Bootstrap struct {
+	Identity *trust.Identity
+	Root     trust.PublicKey // zero until enrolled or initialised
+	Records  trust.Records
+	Peers    []common.Node // last known peers, with metadata
+	enrolled bool
+}
+
+// Load reads the state for name, or starts fresh when init is set, and makes
+// sure the node has an identity. The identity is persisted immediately.
+func Load(name string, init bool) (*Bootstrap, error) {
+	st := &state{}
+	if !init {
+		st = loadState(name)
+	}
+	if len(st.Seed) == 0 {
+		id, err := trust.NewIdentity()
+		if err != nil {
+			return nil, err
+		}
+		st = &state{Seed: id.Seed()}
+		if err := st.save(name); err != nil {
+			return nil, fmt.Errorf("saving new identity: %w", err)
+		}
+		slog.Info("generated node identity", "identity", id.Public().Short(), "path", statePath(name))
+	}
+	id, err := trust.IdentityFromSeed(st.Seed)
+	if err != nil {
+		return nil, fmt.Errorf("loading identity from %s: %w", statePath(name), err)
+	}
+	b := &Bootstrap{Identity: id, Records: st.Records, Peers: st.Nodes}
+	if st.Root != nil {
+		b.Root = *st.Root
+		b.enrolled = true
+	}
+	return b, nil
+}
+
+// Enrolled reports whether the node already belongs to a cluster.
+func (b *Bootstrap) Enrolled() bool { return b.enrolled }
+
+// InitRoot makes this node the root of a new cluster.
+func (b *Bootstrap) InitRoot(nodeName string, now func() int64) {
+	b.Root = b.Identity.Public()
+	adm := trust.SelfAdmit(b.Identity, nodeName, unixTime(now))
+	b.Records = trust.Records{Admissions: []trust.Admission{adm}}
+	b.Peers = nil
+	b.enrolled = true
+}
+
+// Enrol records the outcome of an enrolment exchange.
+func (b *Bootstrap) Enrol(root trust.PublicKey, records trust.Records) {
+	b.Root = root
+	b.Records = records
+	b.Peers = nil
+	b.enrolled = true
 }

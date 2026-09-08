@@ -14,9 +14,8 @@ type cli struct {
 	LogLevel LogLevelFlag     `env:"WESHER_LOG_LEVEL" help:"set the verbosity (debug/info/warn/error)" default:"warn"`
 	Version  kong.VersionFlag `help:"display current version and exit"`
 
-	Agent   AgentCmd   `cmd:"" default:"withargs" help:"start the wesher agent (default when no command specified)"`
-	ShowKey ShowKeyCmd `cmd:"" name:"showkey" help:"print the cluster key persisted for an interface"`
-	Status  StatusCmd  `cmd:"" help:"show the wireguard interface and its peers"`
+	Agent  AgentCmd  `cmd:"" default:"withargs" help:"start the wesher agent (default when no command specified)"`
+	Status StatusCmd `cmd:"" help:"show the wireguard interface and its peers"`
 }
 
 func main() {

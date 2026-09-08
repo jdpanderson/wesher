@@ -1,31 +1,56 @@
+// Package cluster manages membership: a memberlist gossip ring whose transport
+// authenticates nodes by identity, a signed admission set, and enrolment of new
+// nodes with invitation tokens. See docs/membership.md.
 package cluster
 
 import (
-	"crypto/rand"
-	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/netip"
-	"os"
 	"slices"
+	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hashicorp/memberlist"
 	"github.com/jdpanderson/wesher/common"
-	"github.com/mattn/go-isatty"
+	"github.com/jdpanderson/wesher/enroll"
+	"github.com/jdpanderson/wesher/trust"
 )
 
-// KeyLen is the fixed length of cluster keys, must be checked by callers
-const KeyLen = 32
+// Config is what New needs; the agent assembles it from a Bootstrap.
+type Config struct {
+	Name          string     // state name; the wireguard interface in practice
+	BindAddr      netip.Addr // may be a wildcard
+	AdvertiseAddr netip.Addr // what other nodes are told to reach us at
+	BindPort      int        // gossip, TCP and UDP
+	EnrolPort     int        // enrolment, TCP; the wireguard port in practice
+	LocalNode     *common.Node
+	Identity      *trust.Identity
+	Root          trust.PublicKey
+	Records       trust.Records
+	Peers         []common.Node              // last known peers, to seed the address book
+	Known         map[string]trust.PublicKey // extra address -> identity, e.g. the enrolling member
+}
 
 // Cluster represents a running cluster configuration
 type Cluster struct {
 	name      string
-	ml        *memberlist.Memberlist
+	ml        atomic.Pointer[memberlist.Memberlist]
 	localName string
+	local     *common.Node
+	id        *trust.Identity
+	set       *trust.Set
+	book      *addrBook
+	tokens    *enroll.TokenStore
+	queue     *memberlist.TransmitLimitedQueue
+	enrolLn   net.Listener
+	enrolSrv  *enroll.Server
 	state     *state
-	stateMu   sync.Mutex // guards state.Nodes and state.save
+	stateMu   sync.Mutex // guards state and its saving
 	events    chan memberlist.NodeEvent
 	changed   chan struct{}  // one-slot signal that the member list changed
 	done      chan struct{}  // closed by Leave
@@ -36,76 +61,171 @@ type Cluster struct {
 // newMemberlistConfig builds the base memberlist config; tests swap in faster timers.
 var newMemberlistConfig = memberlist.DefaultWANConfig
 
-// New creates a Cluster that gossips localNode's name and metadata; it is ready to be joined.
-// name identifies the persisted state (the wireguard interface name in practice).
-// bindAddr may be a wildcard; advertiseAddr is what other nodes are told to reach us at.
-func New(name string, init bool, clusterKey []byte, bindAddr, advertiseAddr netip.Addr, bindPort int, localNode *common.Node) (*Cluster, error) {
-	state := &state{}
-	if !init {
-		state = loadState(name)
+// New creates a Cluster for an enrolled node and starts gossiping and accepting
+// enrolments; it is ready to be joined.
+func New(cfg Config) (*Cluster, error) {
+	if cfg.Identity == nil || cfg.LocalNode == nil {
+		return nil, fmt.Errorf("cluster: identity and local node are required")
+	}
+	set := trust.NewSet(cfg.Root)
+	set.Merge(cfg.Records)
+	if !set.Valid(cfg.Identity.Public()) {
+		return nil, fmt.Errorf("this node (%s) is not a member of the cluster rooted at %s", cfg.Identity.Public().Short(), cfg.Root.Short())
 	}
 
-	clusterKey, generated, err := computeClusterKey(state, clusterKey)
-	if err != nil {
-		return nil, fmt.Errorf("computing cluster key: %w", err)
+	// bind our ephemeral wireguard key and overlay address to our identity
+	cfg.LocalNode.Identity = cfg.Identity.Public()
+	cfg.LocalNode.Signature = cfg.Identity.Sign(trust.MetaDigest(cfg.LocalNode.Name, cfg.LocalNode.OverlayAddr, cfg.LocalNode.PubKey))
+
+	book := newAddrBook()
+	for addr, id := range cfg.Known {
+		book.set(addr, id)
 	}
-	if generated {
-		// Print the key only on a terminal so it does not end up in logs; otherwise say where it is.
-		if isatty.IsTerminal(os.Stdout.Fd()) {
-			fmt.Printf("new cluster key generated: %s\n", base64.StdEncoding.EncodeToString(clusterKey))
-		} else {
-			slog.Warn("new cluster key generated; not printing because stdout is not a terminal",
-				"hint", "wesher showkey --interface "+name)
+	for i := range cfg.Peers {
+		n := cfg.Peers[i]
+		if id, err := verifyMeta(set, &n); err == nil {
+			book.set(hostPort(n.Addr, cfg.BindPort), id)
 		}
 	}
 
-	// memberlist delivers events while holding its node lock, so the receiver must never
-	// call back into memberlist: forwardEvents only logs and signals changed. The small
-	// buffer absorbs events still in flight after Leave stops the forwarder.
-	events := make(chan memberlist.NodeEvent, 16)
+	c := &Cluster{
+		name:      cfg.Name,
+		localName: cfg.LocalNode.Name,
+		local:     cfg.LocalNode,
+		id:        cfg.Identity,
+		set:       set,
+		book:      book,
+		tokens:    enroll.NewTokenStore(),
+		events:    make(chan memberlist.NodeEvent, 16),
+		changed:   make(chan struct{}, 1),
+		done:      make(chan struct{}),
+		state:     &state{Seed: cfg.Identity.Seed(), Nodes: cfg.Peers},
+	}
+	root := cfg.Root
+	c.state.Root = &root
+	c.state.Records = set.Records()
+	c.queue = &memberlist.TransmitLimitedQueue{RetransmitMult: 3, NumNodes: func() int {
+		if ml := c.ml.Load(); ml != nil {
+			return ml.NumMembers()
+		}
+		return 1
+	}}
 
-	delegate := &delegateNode{localNode}
+	logger := slog.NewLogLogger(slog.Default().Handler(), slog.LevelDebug)
+	inner, err := memberlist.NewNetTransport(&memberlist.NetTransportConfig{
+		BindAddrs: []string{cfg.BindAddr.String()}, BindPort: cfg.BindPort, Logger: logger,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("binding gossip transport: %w", err)
+	}
+	transport, err := newSecureTransport(inner, cfg.Identity, set, book)
+	if err != nil {
+		_ = inner.Shutdown()
+		return nil, err
+	}
+
 	mlConfig := newMemberlistConfig()
-	mlConfig.Name = localNode.Name
-	mlConfig.Logger = slog.NewLogLogger(slog.Default().Handler(), slog.LevelDebug)
-	mlConfig.SecretKey = clusterKey
-	mlConfig.BindAddr = bindAddr.String()
-	mlConfig.BindPort = bindPort
-	mlConfig.AdvertiseAddr = advertiseAddr.String()
-	mlConfig.AdvertisePort = bindPort
-	mlConfig.Delegate = delegate
-	mlConfig.Conflict = delegate
-	mlConfig.Events = &memberlist.ChannelEventDelegate{Ch: events}
+	mlConfig.Name = cfg.LocalNode.Name
+	mlConfig.Logger = logger
+	mlConfig.Transport = transport
+	mlConfig.BindAddr = cfg.BindAddr.String()
+	mlConfig.BindPort = cfg.BindPort
+	mlConfig.AdvertiseAddr = cfg.AdvertiseAddr.String()
+	mlConfig.AdvertisePort = cfg.BindPort
+	mlConfig.UDPBufferSize -= packetOverhead
+	mlConfig.Delegate = c
+	mlConfig.Conflict = c
+	mlConfig.Events = &memberlist.ChannelEventDelegate{Ch: c.events}
 
 	ml, err := memberlist.Create(mlConfig)
 	if err != nil {
 		return nil, fmt.Errorf("creating memberlist: %w", err)
 	}
+	c.ml.Store(ml)
 
-	c := &Cluster{
-		name:      name,
-		ml:        ml,
-		localName: localNode.Name,
-		events:    events,
-		changed:   make(chan struct{}, 1),
-		done:      make(chan struct{}),
-		state:     state,
+	// enrolment listens on TCP alongside wireguard's UDP port
+	c.enrolLn, err = net.Listen("tcp", net.JoinHostPort(cfg.BindAddr.String(), strconv.Itoa(cfg.EnrolPort)))
+	if err != nil {
+		_ = ml.Shutdown()
+		return nil, fmt.Errorf("binding enrolment listener: %w", err)
 	}
-	c.routines.Add(1)
+	c.enrolSrv = &enroll.Server{
+		Identity: cfg.Identity, Tokens: c.tokens, Root: cfg.Root, Admit: c.admit,
+		GossipAddr: net.JoinHostPort(cfg.AdvertiseAddr.String(), strconv.Itoa(cfg.BindPort)),
+	}
+	c.routines.Add(2)
 	go c.forwardEvents()
+	go func() { defer c.routines.Done(); c.enrolSrv.Serve(c.enrolLn) }()
 
+	c.stateMu.Lock()
+	c.saveState()
+	c.stateMu.Unlock()
 	return c, nil
+}
+
+// Identity is this node's identity.
+func (c *Cluster) Identity() trust.PublicKey { return c.id.Public() }
+
+// Trust is the membership set.
+func (c *Cluster) Trust() *trust.Set { return c.set }
+
+// Invite mints an enrolment token valid for ttl and uses joiners.
+func (c *Cluster) Invite(ttl time.Duration, uses int) (string, error) {
+	return c.tokens.Mint(ttl, uses)
+}
+
+// Revoke signs and distributes a revocation of id.
+func (c *Cluster) Revoke(id trust.PublicKey) error {
+	rev := trust.Revoke(c.id, id, time.Now())
+	if _, err := c.set.AddRevocation(rev); err != nil {
+		return err
+	}
+	c.broadcast(recordMsg{Revocation: &rev})
+	c.stateMu.Lock()
+	c.saveState()
+	c.stateMu.Unlock()
+	c.signalChanged() // the revoked node drops out of Members at once
+	return nil
+}
+
+// admit is called by the enrolment server once a joiner has proven the token.
+func (c *Cluster) admit(a trust.Admission) (trust.Records, error) {
+	if _, err := c.set.AddAdmission(a); err != nil {
+		return trust.Records{}, err
+	}
+	c.broadcast(recordMsg{Admission: &a})
+	c.stateMu.Lock()
+	c.saveState()
+	c.stateMu.Unlock()
+	return c.set.Records(), nil
 }
 
 // saveState persists the state, logging rather than failing on error: the
 // state only speeds up the next start. Callers hold stateMu.
 func (c *Cluster) saveState() {
+	c.state.Records = c.set.Records()
 	if err := c.state.save(c.name); err != nil {
 		slog.Warn("could not save cluster state", "path", statePath(c.name), "err", err)
 	}
 }
 
-// forwardEvents logs memberlist events about other nodes and coalesces them into changed.
+// verifyMeta decodes a node's metadata and checks that a valid member signed it.
+func verifyMeta(set *trust.Set, n *common.Node) (trust.PublicKey, error) {
+	if err := n.DecodeMeta(); err != nil {
+		return trust.PublicKey{}, err
+	}
+	id := trust.PublicKey(n.Identity)
+	if !set.Valid(id) {
+		return id, fmt.Errorf("identity %s is not a member", id.Short())
+	}
+	if !trust.Verify(id, trust.MetaDigest(n.Name, n.OverlayAddr, n.PubKey), n.Signature) {
+		return id, fmt.Errorf("metadata signature of %s does not verify", n.Name)
+	}
+	return id, nil
+}
+
+// forwardEvents logs memberlist events about other nodes, learns their
+// addresses, and coalesces the events into changed.
 func (c *Cluster) forwardEvents() {
 	defer c.routines.Done()
 	for {
@@ -126,6 +246,12 @@ func (c *Cluster) forwardEvents() {
 		case memberlist.NodeLeave:
 			slog.Info("node left", "name", event.Node.Name, "addr", event.Node.Addr)
 		}
+		if event.Event != memberlist.NodeLeave {
+			n := common.Node{Name: event.Node.Name, Addr: event.Node.Addr, Meta: event.Node.Meta}
+			if id, err := verifyMeta(c.set, &n); err == nil {
+				c.book.set(event.Node.Address(), id)
+			}
+		}
 		select {
 		case c.changed <- struct{}{}:
 		default: // a signal is already pending
@@ -140,14 +266,17 @@ func (c *Cluster) forwardEvents() {
 // nodes can be joined.
 func (c *Cluster) Join(addrs []string) error {
 	if len(addrs) == 0 {
+		c.stateMu.Lock()
 		for _, n := range c.state.Nodes {
 			addrs = append(addrs, n.Addr.String())
 		}
+		c.stateMu.Unlock()
 	}
 
-	if _, err := c.ml.Join(addrs); err != nil {
+	ml := c.ml.Load()
+	if _, err := ml.Join(addrs); err != nil {
 		return fmt.Errorf("joining cluster: %w", err)
-	} else if len(addrs) > 0 && c.ml.NumMembers() < 2 {
+	} else if len(addrs) > 0 && ml.NumMembers() < 2 {
 		return fmt.Errorf("could not join to any of the provided addresses")
 	}
 
@@ -160,10 +289,12 @@ func (c *Cluster) Leave() {
 		c.stateMu.Lock()
 		c.saveState()
 		c.stateMu.Unlock()
-		if err := c.ml.Leave(10 * time.Second); err != nil {
+		_ = c.enrolLn.Close()
+		ml := c.ml.Load()
+		if err := ml.Leave(10 * time.Second); err != nil {
 			slog.Warn("could not announce leave to the cluster", "err", err)
 		}
-		if err := c.ml.Shutdown(); err != nil {
+		if err := ml.Shutdown(); err != nil {
 			slog.Warn("could not shut down memberlist", "err", err)
 		}
 		close(c.done)
@@ -171,9 +302,10 @@ func (c *Cluster) Leave() {
 	})
 }
 
-// Members returns a channel that receives the current list of other nodes
-// whenever the membership changes; bursts of changes may be coalesced into
-// one snapshot. Call it at most once. The channel is closed after Leave.
+// Members returns a channel that receives the current list of other verified
+// nodes whenever the membership changes; bursts of changes may be coalesced
+// into one snapshot. Nodes whose metadata is not signed by a valid member are
+// left out. Call it at most once. The channel is closed after Leave.
 func (c *Cluster) Members() <-chan []common.Node {
 	changes := make(chan []common.Node)
 
@@ -188,16 +320,20 @@ func (c *Cluster) Members() <-chan []common.Node {
 			case <-c.changed:
 			}
 
-			nodes := make([]common.Node, 0, c.ml.NumMembers())
-			for _, n := range c.ml.Members() {
+			ml := c.ml.Load()
+			nodes := make([]common.Node, 0, ml.NumMembers())
+			for _, n := range ml.Members() {
 				if n.Name == c.localName {
 					continue
 				}
-				nodes = append(nodes, common.Node{
-					Name: n.Name,
-					Addr: n.Addr,
-					Meta: n.Meta,
-				})
+				node := common.Node{Name: n.Name, Addr: n.Addr, Meta: n.Meta}
+				id, err := verifyMeta(c.set, &node)
+				if err != nil {
+					slog.Warn("ignoring node with unverified metadata", "name", n.Name, "addr", n.Addr, "err", err)
+					continue
+				}
+				c.book.set(n.Address(), id)
+				nodes = append(nodes, node)
 			}
 			c.stateMu.Lock()
 			c.state.Nodes = nodes
@@ -214,19 +350,135 @@ func (c *Cluster) Members() <-chan []common.Node {
 	return changes
 }
 
-// computeClusterKey settles on the provided key, else the stored one, else a
-// fresh random key, and records it in state. generated reports the last case.
-func computeClusterKey(state *state, clusterKey []byte) (key []byte, generated bool, err error) {
-	if len(clusterKey) == 0 {
-		clusterKey = state.ClusterKey
+// --- memberlist.Delegate: node metadata and membership record distribution ---
+
+var _ memberlist.Delegate = (*Cluster)(nil)
+var _ memberlist.ConflictDelegate = (*Cluster)(nil)
+
+// recordMsg is a broadcast carrying one membership record.
+type recordMsg struct {
+	Admission  *trust.Admission  `json:"admission,omitempty"`
+	Revocation *trust.Revocation `json:"revocation,omitempty"`
+}
+
+// recordBroadcast implements memberlist.NamedBroadcast; a newer record for the
+// same identity supersedes an older one still queued.
+type recordBroadcast struct {
+	name string
+	msg  []byte
+}
+
+func (b recordBroadcast) Name() string                                { return b.name }
+func (b recordBroadcast) Invalidates(other memberlist.Broadcast) bool { return false }
+func (b recordBroadcast) Message() []byte                             { return b.msg }
+func (b recordBroadcast) Finished()                                   {}
+
+func (c *Cluster) broadcast(m recordMsg) {
+	msg, err := json.Marshal(m)
+	if err != nil {
+		return
 	}
-	if len(clusterKey) == 0 {
-		clusterKey = make([]byte, KeyLen)
-		if _, err := rand.Read(clusterKey); err != nil {
-			return nil, false, fmt.Errorf("reading random source: %w", err)
+	name := "adm:"
+	switch {
+	case m.Admission != nil:
+		name += m.Admission.Identity.String()
+	case m.Revocation != nil:
+		name = "rev:" + m.Revocation.Identity.String()
+	}
+	c.queue.QueueBroadcast(recordBroadcast{name: name, msg: msg})
+}
+
+// NodeMeta implements memberlist.Delegate: our signed metadata.
+func (c *Cluster) NodeMeta(limit int) []byte {
+	encoded, err := c.local.EncodeMeta(limit)
+	if err != nil {
+		slog.Error("failed to encode local node", "err", err)
+		return nil
+	}
+	return encoded
+}
+
+// NotifyMsg implements memberlist.Delegate: a record broadcast from a peer.
+// Records that change our set are re-broadcast so they spread epidemically.
+func (c *Cluster) NotifyMsg(b []byte) {
+	var m recordMsg
+	if err := json.Unmarshal(b, &m); err != nil {
+		slog.Debug("ignoring undecodable broadcast", "err", err)
+		return
+	}
+	changed := false
+	switch {
+	case m.Admission != nil:
+		ok, err := c.set.AddAdmission(*m.Admission)
+		if err != nil {
+			slog.Warn("rejecting admission record", "identity", m.Admission.Identity.Short(), "err", err)
+			return
 		}
-		generated = true
+		changed = ok
+		if ok {
+			slog.Info("node admitted", "name", m.Admission.Name, "identity", m.Admission.Identity.Short(), "by", m.Admission.Admitter.Short())
+		}
+	case m.Revocation != nil:
+		ok, err := c.set.AddRevocation(*m.Revocation)
+		if err != nil {
+			slog.Warn("rejecting revocation record", "identity", m.Revocation.Identity.Short(), "err", err)
+			return
+		}
+		changed = ok
+		if ok {
+			slog.Warn("node revoked", "identity", m.Revocation.Identity.Short(), "by", m.Revocation.Revoker.Short())
+		}
+	default:
+		return
 	}
-	state.ClusterKey = clusterKey
-	return clusterKey, generated, nil
+	if changed {
+		c.broadcast(m)
+		c.stateMu.Lock()
+		c.saveState()
+		c.stateMu.Unlock()
+		c.signalChanged()
+	}
+}
+
+// GetBroadcasts implements memberlist.Delegate.
+func (c *Cluster) GetBroadcasts(overhead, limit int) [][]byte {
+	return c.queue.GetBroadcasts(overhead, limit)
+}
+
+// LocalState implements memberlist.Delegate: the whole record set, for push/pull.
+func (c *Cluster) LocalState(join bool) []byte {
+	b, err := json.Marshal(c.set.Records())
+	if err != nil {
+		return nil
+	}
+	return b
+}
+
+// MergeRemoteState implements memberlist.Delegate: union in a peer's records.
+func (c *Cluster) MergeRemoteState(buf []byte, join bool) {
+	var rs trust.Records
+	if err := json.Unmarshal(buf, &rs); err != nil {
+		slog.Debug("ignoring undecodable remote state", "err", err)
+		return
+	}
+	if n := c.set.Merge(rs); n > 0 {
+		slog.Debug("merged membership records", "new", n)
+		c.stateMu.Lock()
+		c.saveState()
+		c.stateMu.Unlock()
+		c.signalChanged()
+	}
+}
+
+// NotifyConflict implements memberlist.ConflictDelegate.
+func (c *Cluster) NotifyConflict(existing, other *memberlist.Node) {
+	slog.Error("node name conflict detected", "name", other.Name, "addr", other.Addr)
+}
+
+// signalChanged wakes the Members loop: a record change may admit or revoke a peer.
+func (c *Cluster) signalChanged() {
+	select {
+	case c.changed <- struct{}{}:
+	default:
+	}
 }

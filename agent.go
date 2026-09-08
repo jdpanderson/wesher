@@ -9,21 +9,24 @@ import (
 	"net/netip"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/cenkalti/backoff/v6"
 	"github.com/jdpanderson/wesher/cluster"
 	"github.com/jdpanderson/wesher/common"
+	"github.com/jdpanderson/wesher/enroll"
 	"github.com/jdpanderson/wesher/etchosts"
+	"github.com/jdpanderson/wesher/trust"
 	"github.com/jdpanderson/wesher/wg"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
 type AgentCmd struct {
-	ClusterKey    key          `env:"WESHER_CLUSTER_KEY" help:"shared key for cluster membership; must be 32 bytes base64 encoded; will be generated if not provided"`
-	Join          []string     `env:"WESHER_JOIN" help:"comma separated list of hostnames or IP addresses to existing cluster members; if not provided, will attempt resuming any known state or otherwise wait for further members."`
-	Init          bool         `env:"WESHER_INIT" help:"whether to explicitly (re)initialize the cluster; any known state from previous runs will be forgotten"`
+	Join          []string     `env:"WESHER_JOIN" help:"comma separated list of hostnames or IP addresses of existing cluster members; if not provided, will attempt resuming any known state or otherwise wait for further members."`
+	JoinKey       string       `env:"WESHER_JOIN_KEY" help:"invitation token from 'wesher invite' on a member, needed only the first time this node joins"`
+	Init          bool         `env:"WESHER_INIT" help:"start a new cluster with this node as its root; any known state from previous runs will be forgotten"`
 	BindAddr      netip.Addr   `env:"WESHER_BIND_ADDR" help:"address to bind for cluster membership traffic; 0.0.0.0 or :: binds every interface of that family and advertises one of its addresses. The address family decides whether the cluster runs over IPv4 or IPv6" default:"0.0.0.0"`
 	ClusterPort   int          `env:"WESHER_CLUSTER_PORT" help:"port used for membership gossip traffic (both TCP and UDP); must be the same across cluster" default:"7946"`
 	WireguardPort int          `env:"WESHER_WIREGUARD_PORT" help:"port used for wireguard traffic (UDP); must be the same across cluster" default:"51820"`
@@ -38,6 +41,13 @@ type AgentCmd struct {
 func (a *AgentCmd) Validate() error {
 	if a.OverlayNet.Bits()%8 != 0 {
 		return fmt.Errorf("unsupported overlay network size; net mask must be multiple of 8, got %d", a.OverlayNet.Bits())
+	}
+
+	if a.JoinKey != "" && len(a.Join) == 0 {
+		return fmt.Errorf("--join-key needs --join to say which member to enrol with")
+	}
+	if a.JoinKey != "" && a.Init {
+		return fmt.Errorf("--init starts a new cluster; it cannot be combined with --join-key")
 	}
 
 	if a.MTU < 576 || a.MTU > 65535 {
@@ -171,6 +181,13 @@ func (a *AgentCmd) Run() error {
 	if err != nil {
 		return fmt.Errorf("getting hostname: %w", err)
 	}
+	ctx, cancelSignals := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer cancelSignals()
+
+	boot, err := cluster.Load(a.Interface, a.Init)
+	if err != nil {
+		return err
+	}
 	wgstate, localNode, err := wg.New(wg.Config{
 		Interface:  a.Interface,
 		Port:       a.WireguardPort,
@@ -187,7 +204,34 @@ func (a *AgentCmd) Run() error {
 	if err != nil {
 		return err
 	}
-	cluster, err := cluster.New(a.Interface, a.Init, a.ClusterKey, a.BindAddr, advertise, a.ClusterPort, localNode)
+
+	known := map[string]trust.PublicKey{}
+	joinAddrs := a.Join
+	switch {
+	case boot.Enrolled():
+		if a.JoinKey != "" {
+			slog.Info("already a member of a cluster; ignoring --join-key")
+		}
+	case a.Init:
+		boot.InitRoot(hostname, nil)
+		slog.Info("initialised a new cluster", "root", boot.Root.Short())
+	case a.JoinKey != "":
+		w, memberID, enrolErr := a.enrol(ctx, boot.Identity, hostname)
+		if enrolErr != nil {
+			return enrolErr
+		}
+		boot.Enrol(w.Root, w.Records)
+		known[w.GossipAddr] = memberID
+		joinAddrs = []string{w.GossipAddr}
+		slog.Info("enrolled in cluster", "root", w.Root.Short(), "via", w.GossipAddr)
+	default:
+		return errors.New("this node is not a member of any cluster: use --init to start one, or --join HOST --join-key TOKEN to enrol (get a token with 'wesher invite' on a member)")
+	}
+
+	cluster, err := cluster.New(cluster.Config{
+		Name: a.Interface, BindAddr: a.BindAddr, AdvertiseAddr: advertise, BindPort: a.ClusterPort, EnrolPort: a.WireguardPort,
+		LocalNode: localNode, Identity: boot.Identity, Root: boot.Root, Records: boot.Records, Peers: boot.Peers, Known: known,
+	})
 	if err != nil {
 		return fmt.Errorf("creating cluster: %w", err)
 	}
@@ -197,14 +241,11 @@ func (a *AgentCmd) Run() error {
 		Logger: slog.Default(),
 	}
 
-	ctx, cancelSignals := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
-	defer cancelSignals()
-
 	// Keep trying to join until it works or we are told to stop; a node that gives
 	// up would need a manual restart, which is worse than a noisy log.
 	nodec := cluster.Members() // avoid deadlocks by starting before join
 	if _, err := backoff.Retry(ctx,
-		func() (struct{}, error) { return struct{}{}, cluster.Join(a.Join) },
+		func() (struct{}, error) { return struct{}{}, cluster.Join(joinAddrs) },
 		backoff.WithMaxElapsedTime(0),
 		backoff.WithNotify(func(err error, dur time.Duration) {
 			slog.Error("could not join cluster, retrying", "err", err, "in", dur)
@@ -219,6 +260,24 @@ func (a *AgentCmd) Run() error {
 	}
 
 	return a.loop(ctx, nodec, cluster, wgstate, hostsFile)
+}
+
+// enrol tries each --join host's enrolment port with the join key.
+func (a *AgentCmd) enrol(ctx context.Context, id *trust.Identity, name string) (*enroll.Welcome, trust.PublicKey, error) {
+	var lastErr error
+	for _, host := range a.Join {
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h // --join may carry the gossip port; enrolment uses the wireguard port
+		}
+		addr := net.JoinHostPort(host, strconv.Itoa(a.WireguardPort))
+		w, memberID, err := enroll.Join(ctx, addr, a.JoinKey, id, name)
+		if err == nil {
+			return w, memberID, nil
+		}
+		lastErr = fmt.Errorf("enrolling with %s: %w", addr, err)
+		slog.Warn("enrolment attempt failed", "member", addr, "err", err)
+	}
+	return nil, trust.PublicKey{}, lastErr
 }
 
 // loop applies each membership update until ctx is done, then leaves and tears down.

@@ -121,9 +121,12 @@ func Test_AgentCmd_advertiseAddr(t *testing.T) {
 	assert.True(t, got.Is4() && !got.IsUnspecified() && !got.IsLoopback(), "got %s", got)
 }
 
-func Test_AgentCmd_Validate_validKey(t *testing.T) {
+func Test_AgentCmd_Validate_joinKey(t *testing.T) {
 	cmd := validCmd()
-	cmd.ClusterKey = key("abcdefghijklmnopqrstuvwxyzABCDEF")
-	cmd.BindAddr = netip.MustParseAddr("127.0.0.1")
+	cmd.JoinKey = "token"
+	assert.ErrorContains(t, cmd.Validate(), "needs --join")
+	cmd.Join = []string{"member"}
 	require.NoError(t, cmd.Validate())
+	cmd.Init = true
+	assert.ErrorContains(t, cmd.Validate(), "cannot be combined")
 }

@@ -279,14 +279,19 @@ cluster key with per-node identities, signed admission records, invitation
 tokens that live only for the exchange, and an identity-authenticated gossip
 transport. Not compatible with shared-key wesher.
 
-- [ ] `trust` package: identity from seed (Ed25519 + X25519), admission and
+- [x] `trust` package: identity from seed (Ed25519 + X25519), admission and
       revocation records, validity evaluation from a pinned root, signed node
-      metadata.
-- [ ] `cluster`: state carries seed, root, records and peer identities;
+      metadata. Validity is time-aware: an admission stands if its admitter
+      was a member when it signed.
+- [x] `cluster`: state carries seed, root, records and peer identities;
       memberlist transport with per-pair AES-GCM packets and mutual-TLS
-      streams; metadata verification before a peer is reported.
-- [ ] Enrolment over TCP on the WireGuard port: token store, mutual HMAC
+      streams; metadata verification before a peer is reported. Records sync
+      by push/pull and re-broadcast. A revoked node is cut off, not informed:
+      it sees its peers fail and ends up alone.
+- [x] Enrolment over TCP on the WireGuard port: token store, mutual HMAC
       exchange, encrypted hand-off of root, records and gossip address.
+      Agent: `--init` roots a cluster, `--join HOST --join-key TOKEN` enrols,
+      a bare start rejoins from state. `--cluster-key` and `showkey` removed.
 - [ ] Control socket and `invite` / `revoke` subcommands; agent flags
       (`--join-key`; drop `--cluster-key`, `showkey`).
 - [ ] e2e: enrol via `invite`, restart without token, revoke; README security
