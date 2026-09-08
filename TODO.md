@@ -223,7 +223,11 @@ Hygiene:
       badge and the release job's repository check follow the module-path
       DECISION below.
 - [ ] **DECISION**: module path rename and README ownership (deferred from
-      phase 0).
+      phase 0). README half done 2026-09-07: links, badge, release and clone
+      URLs point at github.com/jdpanderson/wesher; the `go get` install path
+      is gone until the module path matches. Still open: `go.mod` module path,
+      the `import` comment in main.go, and the release job's
+      `github.repository == 'costela/wesher'` gate in CI.
 
 ## Phase 6: features
 

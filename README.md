@@ -1,5 +1,6 @@
-[![Build Status](https://github.com/costela/wesher/actions/workflows/main.yaml/badge.svg)](https://github.com/costela/wesher/actions/workflows/main.yaml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/costela/wesher)](https://goreportcard.com/report/github.com/costela/wesher)
+[![Build Status](https://github.com/jdpanderson/wesher/actions/workflows/main.yaml/badge.svg)](https://github.com/jdpanderson/wesher/actions/workflows/main.yaml)
+
+This is a maintained fork of [costela/wesher](https://github.com/costela/wesher).
 
 # wesher
 
@@ -24,7 +25,7 @@ security benefits from wireguard. See [security considerations](#security-consid
 1. Download the latest release for your architecture:
 
    ```
-   $ wget -O wesher https://github.com/costela/wesher/releases/latest/download/wesher-$(go env GOARCH)
+   $ wget -O wesher https://github.com/jdpanderson/wesher/releases/latest/download/wesher-$(go env GOARCH)
    $ chmod a+x wesher
    ```
 
@@ -62,7 +63,7 @@ This will enable running as an unprivileged user, but some functionality (like a
 
 A minimal `systemd` unit file is provided under the `dist` folder and can be copied to `/etc/systemd/system`:
 ```
-# wget -O /etc/systemd/system/wesher.service https://raw.githubusercontent.com/costela/wesher/master/dist/wesher.service
+# wget -O /etc/systemd/system/wesher.service https://raw.githubusercontent.com/jdpanderson/wesher/main/dist/wesher.service
 # systemctl daemon-reload
 # systemctl enable wesher
 ```
@@ -73,22 +74,12 @@ It can either be initialized by running `wesher` manually once, or by pre-seedin
 
 ## Installing from source
 
-There are a couple of ways of installing `wesher` from sources:
-
-Preferred:
 ```
-$ git clone https://github.com/costela/wesher.git
+$ git clone https://github.com/jdpanderson/wesher.git
 $ cd wesher
 $ make
 ```
-This method can build a bit-by-bit identical binary to the released ones, assuming the same go version is used to build its respective git tag.
-
-
-Alternatively:
-```
-$ GO111MODULE=on go get github.com/costela/wesher
-```
-*Note*: this method will not provide a meaningful output for `--version`.
+This builds a bit-by-bit identical binary to the released ones, assuming the same go version is used to build its respective git tag.
 
 ## Features
 
