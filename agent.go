@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
 	"os"
@@ -17,7 +18,6 @@ import (
 	"github.com/costela/wesher/etchosts"
 	"github.com/costela/wesher/wg"
 	"github.com/hashicorp/go-sockaddr"
-	"github.com/sirupsen/logrus"
 )
 
 type AgentCmd struct {
@@ -108,7 +108,7 @@ func (a *AgentCmd) Run(cli *cli) error {
 
 	hostsFile := &etchosts.EtcHosts{
 		Banner: "# ! managed automatically by wesher interface " + a.Interface,
-		Logger: logrus.StandardLogger(),
+		Logger: slog.Default(),
 	}
 
 	ctx, cancelSignals := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
@@ -118,11 +118,11 @@ func (a *AgentCmd) Run(cli *cli) error {
 	if _, err := backoff.Retry(ctx,
 		func() (struct{}, error) { return struct{}{}, cluster.Join(a.Join) },
 		backoff.WithNotify(func(err error, dur time.Duration) {
-			logrus.WithError(err).Errorf("could not join cluster, retrying in %s", dur)
+			slog.Error("could not join cluster, retrying", "err", err, "in", dur)
 		}),
 	); err != nil {
 		if ctx.Err() != nil {
-			logrus.Info("terminating...")
+			slog.Info("terminating")
 			cluster.Leave()
 			return nil
 		}
@@ -134,7 +134,7 @@ func (a *AgentCmd) Run(cli *cli) error {
 
 // loop applies each membership update until ctx is done, then leaves and tears down.
 func (a *AgentCmd) loop(ctx context.Context, nodec <-chan []common.Node, cl clusterController, wgstate wgController, hosts hostsWriter) error {
-	logrus.Debug("waiting for cluster events")
+	slog.Debug("waiting for cluster events")
 	for {
 		select {
 		case rawNodes, ok := <-nodec:
@@ -143,11 +143,11 @@ func (a *AgentCmd) loop(ctx context.Context, nodec <-chan []common.Node, cl clus
 			}
 			a.apply(rawNodes, wgstate, hosts)
 		case <-ctx.Done():
-			logrus.Info("terminating...")
+			slog.Info("terminating")
 			cl.Leave()
 			if !a.NoEtcHosts {
 				if err := hosts.WriteEntries(map[string][]string{}); err != nil {
-					logrus.WithError(err).Error("could not remove stale hosts entries")
+					slog.Error("could not remove stale hosts entries", "err", err)
 				}
 			}
 			if err := wgstate.DownInterface(); err != nil {
@@ -162,23 +162,22 @@ func (a *AgentCmd) loop(ctx context.Context, nodec <-chan []common.Node, cl clus
 func (a *AgentCmd) apply(rawNodes []common.Node, wgstate wgController, hosts hostsWriter) {
 	nodes := make([]common.Node, 0, len(rawNodes))
 	hostEntries := make(map[string][]string, len(rawNodes))
-	logrus.Info("cluster members:\n")
 	for _, node := range rawNodes {
 		if err := node.DecodeMeta(); err != nil {
-			logrus.Warnf("\t addr: %s, could not decode metadata", node.Addr)
+			slog.Warn("could not decode node metadata, skipping", "addr", node.Addr, "err", err)
 			continue
 		}
-		logrus.Infof("\taddr: %s, overlay: %s, pubkey: %s", node.Addr, node.OverlayAddr, node.PubKey)
+		slog.Info("cluster member", "addr", node.Addr, "overlay", node.OverlayAddr, "pubkey", node.PubKey)
 		nodes = append(nodes, node)
 		hostEntries[node.OverlayAddr.String()] = []string{node.Name}
 	}
 	if err := wgstate.SetUpInterface(nodes); err != nil {
-		logrus.WithError(err).Error("could not up interface")
+		slog.Error("could not up interface", "err", err)
 		wgstate.DownInterface() // nolint: errcheck // opportunistic
 	}
 	if !a.NoEtcHosts {
 		if err := hosts.WriteEntries(hostEntries); err != nil {
-			logrus.WithError(err).Error("could not write hosts entries")
+			slog.Error("could not write hosts entries", "err", err)
 		}
 	}
 }

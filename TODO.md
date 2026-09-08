@@ -174,13 +174,18 @@ Correctness issues found during the initial read (verify each, then fix):
 - [ ] Join retry uses backoff defaults, which give up after 15 minutes. Decide
       whether that is intended. (backoff v4 -> v6 done 2026-09-07; the retry
       is now context-aware, so SIGTERM during the join loop exits cleanly.)
-- [ ] `LogLevelFlag.AfterApply` calls `Fatal` instead of returning the error.
+- [x] `LogLevelFlag.AfterApply` calls `Fatal` instead of returning the error.
+      Fixed as part of the logrus -> `log/slog` migration (2026-09-07); the
+      level is parsed by `slog.Level.UnmarshalText`.
 
 Hygiene:
 
 - [x] Drop the pre-0.3 `/var/lib/wesher/state.json` read fallback
       (`deprecatedStatePath`); state has been keyed by interface name since
       2020-05. README pointed at the old path; now names the per-interface file.
+- [x] logrus -> `log/slog` (logrus is in maintenance mode). memberlist logs
+      through `slog.NewLogLogger` at debug; `etchosts.Logger` is a
+      `*slog.Logger`; messages are structured key/value pairs.
 - [x] Simplification pass (2026-09-07, one commit each): kong's built-in
       `VersionFlag`; `key` is a byte slice validated on parse;
       `wg.overlayAddr` is a pure function; `DownInterface` asks netlink only;

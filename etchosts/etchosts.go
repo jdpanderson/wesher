@@ -2,13 +2,13 @@ package etchosts
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/sirupsen/logrus"
 )
 
 // DefaultBanner is the default magic comment used to identify entries managed by etchosts
@@ -25,16 +25,17 @@ type EtcHosts struct {
 	Banner string
 	// Path is the path to the /etc/hosts file; if not set, will use DefaultPath.
 	Path string
-	// Logger is an optional logrus.StdLogger interface, used for debugging.
-	Logger logrus.StdLogger
+	// Logger is optional; nil disables logging.
+	Logger *slog.Logger
 
 	// rename replaces the hosts file with the temp file; nil means os.Rename.
 	rename func(oldpath, newpath string) error
 }
 
-func (eh *EtcHosts) logf(format string, args ...any) {
+// log writes at the given level if a Logger is set.
+func (eh *EtcHosts) log(level slog.Level, msg string, args ...any) {
 	if eh.Logger != nil {
-		eh.Logger.Printf(format, args...)
+		eh.Logger.Log(context.Background(), level, msg, args...)
 	}
 }
 
@@ -65,7 +66,7 @@ func (eh *EtcHosts) WriteEntries(ipsToNames map[string][]string) error {
 	defer func(file *os.File) {
 		file.Close()
 		if err := os.Remove(file.Name()); err != nil && !os.IsNotExist(err) {
-			eh.logf("unexpected error trying to remove temp file %s: %s", file.Name(), err)
+			eh.log(slog.LevelWarn, "could not remove temp file", "path", file.Name(), "err", err)
 		}
 	}(tmp)
 
@@ -124,7 +125,7 @@ func (eh *EtcHosts) writeEntryWithBanner(w *bufio.Writer, banner, ip string, nam
 	if ip == "" || len(names) == 0 {
 		return
 	}
-	eh.logf("writing entry for %s (%s)", ip, names)
+	eh.log(slog.LevelDebug, "writing hosts entry", "ip", ip, "names", names)
 	fmt.Fprintf(w, "%s\t%s\t%s\n", ip, strings.Join(names, " "), banner)
 }
 
@@ -147,7 +148,7 @@ func (eh *EtcHosts) movePreservePerms(src, dst *os.File) error {
 		rename = os.Rename
 	}
 	if err = rename(src.Name(), dst.Name()); err != nil {
-		eh.logf("could not rename to %s; falling back to copy (%s)", dst.Name(), err)
+		eh.log(slog.LevelInfo, "could not rename over hosts file, falling back to copy", "path", dst.Name(), "err", err)
 
 		if _, err := src.Seek(0, io.SeekStart); err != nil {
 			return err

@@ -3,11 +3,11 @@ package cluster
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
 	"github.com/costela/wesher/common"
-	"github.com/sirupsen/logrus"
 )
 
 // State keeps track of information needed to rejoin the cluster
@@ -39,14 +39,14 @@ func loadState(clusterName string) *state {
 	content, err := os.ReadFile(statePath)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			logrus.Warnf("could not open state in %s: %s", statePath, err)
+			slog.Warn("could not open state", "path", statePath, "err", err)
 		}
 		return &state{}
 	}
 
 	s := &state{}
 	if err := json.Unmarshal(content, s); err != nil {
-		logrus.Warnf("could not decode state: %s", err)
+		slog.Warn("could not decode state", "path", statePath, "err", err)
 		return &state{}
 	}
 	return s

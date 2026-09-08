@@ -6,12 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -52,7 +52,7 @@ func TestEtcHosts_writeEntries(t *testing.T) {
 	type fields struct {
 		Banner string
 		Path   string
-		Logger logrus.StdLogger
+		Logger *slog.Logger
 	}
 	type args struct {
 		orig       io.Reader
@@ -159,7 +159,7 @@ func TestEtcHosts_WriteEntries(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := writeTempHosts(t, tt.orig, 0o600)
-			eh := &EtcHosts{Banner: banner, Path: p, Logger: logrus.StandardLogger()}
+			eh := &EtcHosts{Banner: banner, Path: p, Logger: slog.Default()}
 			require.NoError(t, eh.WriteEntries(tt.ips))
 
 			got, err := os.ReadFile(p)
@@ -205,7 +205,7 @@ func TestEtcHosts_WriteEntries_noLeftoverTempFile(t *testing.T) {
 }
 
 func TestEtcHosts_WriteEntries_renameFallback(t *testing.T) {
-	for _, logger := range []logrus.StdLogger{nil, logrus.StandardLogger()} {
+	for _, logger := range []*slog.Logger{nil, slog.Default()} {
 		orig := "127.0.0.1 localhost\n10.0.0.1\told\t" + DefaultBanner + "\n"
 		p := writeTempHosts(t, orig, 0o600)
 		eh := &EtcHosts{Path: p, Logger: logger, rename: func(_, _ string) error {

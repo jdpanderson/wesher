@@ -1,9 +1,10 @@
 package cluster
 
 import (
+	"log/slog"
+
 	"github.com/costela/wesher/common"
 	"github.com/hashicorp/memberlist"
-	"github.com/sirupsen/logrus"
 )
 
 // DelegateNode implements the memberlist.Delegate interface.
@@ -15,7 +16,7 @@ var _ memberlist.Delegate = (*delegateNode)(nil)
 
 // NotifyConflict implements the memberlist.Delegate interface.
 func (n *delegateNode) NotifyConflict(node, other *memberlist.Node) {
-	logrus.Errorf("node name conflict detected: %s", other.Name)
+	slog.Error("node name conflict detected", "name", other.Name, "addr", other.Addr)
 }
 
 // NodeMeta implements the memberlist.Delegate interface.
@@ -24,7 +25,7 @@ func (n *delegateNode) NotifyConflict(node, other *memberlist.Node) {
 func (n *delegateNode) NodeMeta(limit int) []byte {
 	encoded, err := n.EncodeMeta(limit)
 	if err != nil {
-		logrus.Errorf("failed to encode local node: %s", err)
+		slog.Error("failed to encode local node", "err", err)
 		return nil
 	}
 

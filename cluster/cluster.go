@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"os"
 	"slices"
 	"sync"
@@ -12,7 +13,6 @@ import (
 	"github.com/costela/wesher/common"
 	"github.com/hashicorp/memberlist"
 	"github.com/mattn/go-isatty"
-	"github.com/sirupsen/logrus"
 )
 
 // KeyLen is the fixed length of cluster keys, must be checked by callers
@@ -54,7 +54,7 @@ func New(name string, init bool, clusterKey []byte, bindAddr string, bindPort in
 	delegate := &delegateNode{localNode}
 	mlConfig := newMemberlistConfig()
 	mlConfig.Name = localNode.Name
-	mlConfig.LogOutput = logrus.StandardLogger().WriterLevel(logrus.DebugLevel)
+	mlConfig.Logger = slog.NewLogLogger(slog.Default().Handler(), slog.LevelDebug)
 	mlConfig.SecretKey = clusterKey
 	mlConfig.BindAddr = bindAddr
 	mlConfig.BindPort = bindPort
@@ -136,11 +136,11 @@ func (c *Cluster) Members() <-chan []common.Node {
 			}
 			switch event.Event {
 			case memberlist.NodeJoin:
-				logrus.Infof("node %s joined", event.Node)
+				slog.Info("node joined", "name", event.Node.Name, "addr", event.Node.Addr)
 			case memberlist.NodeUpdate:
-				logrus.Infof("node %s updated", event.Node)
+				slog.Info("node updated", "name", event.Node.Name, "addr", event.Node.Addr)
 			case memberlist.NodeLeave:
-				logrus.Infof("node %s left", event.Node)
+				slog.Info("node left", "name", event.Node.Name, "addr", event.Node.Addr)
 			}
 
 			nodes := make([]common.Node, 0, c.ml.NumMembers())

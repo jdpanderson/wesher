@@ -1,8 +1,11 @@
 package main // import "github.com/costela/wesher"
 
 import (
+	"fmt"
+	"log/slog"
+	"os"
+
 	"github.com/alecthomas/kong"
-	"github.com/sirupsen/logrus"
 )
 
 var version = "dev"
@@ -29,12 +32,12 @@ func main() {
 
 type LogLevelFlag string
 
+// AfterApply installs the default slog logger at the requested level.
 func (l LogLevelFlag) AfterApply() error {
-	logLevel, err := logrus.ParseLevel(string(l))
-	if err != nil {
-		logrus.WithError(err).Fatal("could not parse loglevel")
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(l)); err != nil {
+		return fmt.Errorf("could not parse log level: %w", err)
 	}
-	logrus.SetLevel(logLevel)
-
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 	return nil
 }

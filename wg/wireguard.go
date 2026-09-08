@@ -4,12 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"log/slog"
 	"net"
 	"net/netip"
 	"os"
 
 	"github.com/costela/wesher/common"
-	"github.com/sirupsen/logrus"
 	"github.com/vishvananda/netlink"
 	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
@@ -70,7 +70,7 @@ func newState(iface string, port int, prefix netip.Prefix, name string, client w
 		PrivKey:     privKey,
 		PubKey:      pubKey,
 	}
-	logrus.Debugf("assigned overlay address: %s", state.OverlayAddr)
+	slog.Debug("assigned overlay address", "addr", state.OverlayAddr)
 
 	node := &common.Node{Name: name}
 	node.OverlayAddr = state.OverlayAddr
