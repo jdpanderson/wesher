@@ -1,0 +1,97 @@
+package trust
+
+import (
+	"encoding/binary"
+	"errors"
+	"net/netip"
+	"time"
+)
+
+// Admission says that Admitter vouches for Identity as a member.
+// The root admits itself (Admitter == Identity).
+type Admission struct {
+	Identity  PublicKey `json:"identity"`
+	DHKey     DHKey     `json:"dhKey"`
+	Name      string    `json:"name"`
+	Admitter  PublicKey `json:"admitter"`
+	IssuedAt  int64     `json:"issuedAt"` // unix seconds
+	Signature []byte    `json:"signature"`
+}
+
+// Revocation says that Revoker withdraws Identity's membership.
+type Revocation struct {
+	Identity  PublicKey `json:"identity"`
+	Revoker   PublicKey `json:"revoker"`
+	IssuedAt  int64     `json:"issuedAt"`
+	Signature []byte    `json:"signature"`
+}
+
+const (
+	admissionDomain  = "wesher/admission/v1"
+	revocationDomain = "wesher/revocation/v1"
+	metaDomain       = "wesher/meta/v1"
+)
+
+// canonical builds the signed bytes: domain, then each field length-prefixed.
+func canonical(domain string, fields ...[]byte) []byte {
+	out := append([]byte(domain), 0)
+	for _, f := range fields {
+		out = binary.BigEndian.AppendUint32(out, uint32(len(f)))
+		out = append(out, f...)
+	}
+	return out
+}
+
+func i64(v int64) []byte { return binary.BigEndian.AppendUint64(nil, uint64(v)) }
+
+func (a *Admission) signedBytes() []byte {
+	return canonical(admissionDomain, a.Identity[:], a.DHKey[:], []byte(a.Name), a.Admitter[:], i64(a.IssuedAt))
+}
+
+func (r *Revocation) signedBytes() []byte {
+	return canonical(revocationDomain, r.Identity[:], r.Revoker[:], i64(r.IssuedAt))
+}
+
+// Admit creates an admission of (identity, dh, name) signed by admitter.
+func Admit(admitter *Identity, identity PublicKey, dh DHKey, name string, now time.Time) Admission {
+	a := Admission{Identity: identity, DHKey: dh, Name: name, Admitter: admitter.Public(), IssuedAt: now.Unix()}
+	a.Signature = admitter.Sign(a.signedBytes())
+	return a
+}
+
+// SelfAdmit creates the root record for id.
+func SelfAdmit(id *Identity, name string, now time.Time) Admission {
+	return Admit(id, id.Public(), id.DHPublic(), name, now)
+}
+
+// Revoke creates a revocation of identity signed by revoker.
+func Revoke(revoker *Identity, identity PublicKey, now time.Time) Revocation {
+	r := Revocation{Identity: identity, Revoker: revoker.Public(), IssuedAt: now.Unix()}
+	r.Signature = revoker.Sign(r.signedBytes())
+	return r
+}
+
+// VerifySignature checks that the admitter signed the record.
+func (a *Admission) VerifySignature() error {
+	if a.Name == "" {
+		return errors.New("admission without a name")
+	}
+	if !Verify(a.Admitter, a.signedBytes(), a.Signature) {
+		return errors.New("admission signature does not verify")
+	}
+	return nil
+}
+
+// VerifySignature checks that the revoker signed the record.
+func (r *Revocation) VerifySignature() error {
+	if !Verify(r.Revoker, r.signedBytes(), r.Signature) {
+		return errors.New("revocation signature does not verify")
+	}
+	return nil
+}
+
+// MetaDigest is what a node signs to bind its (ephemeral) wireguard key and
+// overlay address to its identity in gossiped metadata.
+func MetaDigest(name string, overlay netip.Addr, wgPubKey string) []byte {
+	return canonical(metaDomain, []byte(name), overlay.AsSlice(), []byte(wgPubKey))
+}
