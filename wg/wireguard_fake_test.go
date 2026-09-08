@@ -52,12 +52,11 @@ func (f *fakeNL) RouteAdd(r *netlink.Route) error {
 }
 
 type fakeWG struct {
-	deviceErr error
-	cfgErr    error
-	cfg       *wgtypes.Config
+	cfgErr error
+	cfg    *wgtypes.Config
 }
 
-func (f *fakeWG) Device(string) (*wgtypes.Device, error) { return &wgtypes.Device{}, f.deviceErr }
+func (f *fakeWG) Device(string) (*wgtypes.Device, error) { return &wgtypes.Device{}, nil }
 func (f *fakeWG) ConfigureDevice(_ string, cfg wgtypes.Config) error {
 	f.cfg = &cfg
 	return f.cfgErr
@@ -127,21 +126,19 @@ func Test_State_DownInterface_fake(t *testing.T) {
 	boom := errors.New("boom")
 	tests := []struct {
 		name      string
-		deviceErr error
 		nlErrs    map[string]error
 		wantErr   string
 		wantCalls []string
 	}{
-		{"happy path", nil, nil, "", []string{"LinkByName", "LinkDel"}},
-		{"device gone is a no-op", os.ErrNotExist, nil, "", nil},
-		{"device error", boom, nil, "getting device", nil},
-		{"link by name error", nil, map[string]error{"LinkByName": boom}, "getting link", []string{"LinkByName"}},
-		{"link del error", nil, map[string]error{"LinkDel": boom}, "boom", []string{"LinkByName", "LinkDel"}},
+		{"happy path", nil, "", []string{"LinkByName", "LinkDel"}},
+		{"link gone is a no-op", map[string]error{"LinkByName": netlink.LinkNotFoundError{}}, "", []string{"LinkByName"}},
+		{"link by name error", map[string]error{"LinkByName": boom}, "getting link", []string{"LinkByName"}},
+		{"link del error", map[string]error{"LinkDel": boom}, "boom", []string{"LinkByName", "LinkDel"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			nl := &fakeNL{errs: tt.nlErrs}
-			s := newFakeState(t, nl, &fakeWG{deviceErr: tt.deviceErr})
+			s := newFakeState(t, nl, &fakeWG{})
 			err := s.DownInterface()
 			if tt.wantErr == "" {
 				require.NoError(t, err)

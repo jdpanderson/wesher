@@ -96,16 +96,14 @@ func overlayAddr(prefix netip.Prefix, name string) netip.Addr {
 	return addr
 }
 
-// DownInterface shuts down the associated network interface.
+// DownInterface deletes the associated network interface; a missing interface is not an error.
 func (s *State) DownInterface() error {
-	if _, err := s.client.Device(s.iface); err != nil {
-		if os.IsNotExist(err) {
-			return nil // device already gone; noop
-		}
-		return fmt.Errorf("getting device %s: %w", s.iface, err)
-	}
 	link, err := s.nl.LinkByName(s.iface)
 	if err != nil {
+		var notFound netlink.LinkNotFoundError
+		if errors.As(err, &notFound) {
+			return nil
+		}
 		return fmt.Errorf("getting link for %s: %w", s.iface, err)
 	}
 	return s.nl.LinkDel(link)
