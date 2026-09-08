@@ -30,6 +30,8 @@ type netlinker interface {
 	LinkSetMTU(netlink.Link, int) error
 	LinkSetUp(netlink.Link) error
 	RouteAdd(*netlink.Route) error
+	RouteDel(*netlink.Route) error
+	RouteList(netlink.Link, int) ([]netlink.Route, error)
 }
 
 // State holds the configured state of a Wesher Wireguard interface.
@@ -37,6 +39,7 @@ type State struct {
 	iface       string
 	client      wgClient
 	nl          netlinker
+	overlayNet  netip.Prefix
 	OverlayAddr netip.Addr
 	Port        int
 	PrivKey     wgtypes.Key
@@ -65,6 +68,7 @@ func newState(iface string, port int, prefix netip.Prefix, name string, client w
 		iface:       iface,
 		client:      client,
 		nl:          nl,
+		overlayNet:  prefix,
 		OverlayAddr: overlayAddr(prefix, name),
 		Port:        port,
 		PrivKey:     privKey,
@@ -144,7 +148,9 @@ func (s *State) SetUpInterface(nodes []common.Node) error {
 	if err := s.nl.LinkSetUp(link); err != nil {
 		return fmt.Errorf("enabling interface %s: %w", s.iface, err)
 	}
+	wanted := make(map[netip.Addr]bool, len(nodes))
 	for _, node := range nodes {
+		wanted[node.OverlayAddr] = true
 		if err := s.nl.RouteAdd(&netlink.Route{
 			LinkIndex: link.Attrs().Index,
 			Dst:       addrToIPNet(node.OverlayAddr),
@@ -154,6 +160,34 @@ func (s *State) SetUpInterface(nodes []common.Node) error {
 		}
 	}
 
+	return s.removeStaleRoutes(link, wanted)
+}
+
+// removeStaleRoutes deletes host routes to overlay addresses on link that no current peer owns.
+func (s *State) removeStaleRoutes(link netlink.Link, wanted map[netip.Addr]bool) error {
+	routes, err := s.nl.RouteList(link, netlink.FAMILY_ALL)
+	if err != nil {
+		return fmt.Errorf("listing routes on %s: %w", s.iface, err)
+	}
+	for i := range routes {
+		route := &routes[i]
+		if route.Dst == nil {
+			continue
+		}
+		dst, ok := netip.AddrFromSlice(route.Dst.IP)
+		if !ok {
+			continue
+		}
+		dst = dst.Unmap()
+		ones, _ := route.Dst.Mask.Size()
+		if ones != dst.BitLen() || !s.overlayNet.Contains(dst) || wanted[dst] {
+			continue
+		}
+		slog.Debug("removing stale route", "dst", dst, "iface", s.iface)
+		if err := s.nl.RouteDel(route); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("removing route %s from %s: %w", dst, s.iface, err)
+		}
+	}
 	return nil
 }
 

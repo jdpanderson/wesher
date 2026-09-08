@@ -165,9 +165,11 @@ Correctness issues found during the initial read (verify each, then fix):
       to a forwarder that only logs and sets a one-slot "changed" signal;
       `Members` rebuilds the list from that signal. Buffer reduced to 16, only
       to absorb events in flight during shutdown.
-- [ ] `SetUpInterface` adds a route per peer but never removes routes for
+- [x] `SetUpInterface` adds a route per peer but never removes routes for
       peers that left; stale `/32` routes accumulate until the interface goes
-      down. `ReplacePeers: true` already handles the wireguard side.
+      down. `ReplacePeers: true` already handles the wireguard side. Now lists
+      the main-table routes on the link and deletes host routes inside the
+      overlay net that no current peer owns.
 - [x] `--bind-iface` picks `addrs[0]` blindly, which may be IPv6 or link-local.
       Now prefers a global unicast IPv4, falls back to any IPv4 (loopback),
       and errors when the interface has none. The autodetect path uses the
@@ -221,8 +223,9 @@ before starting; none are committed yet.
 - [ ] `showkey` subcommand to print the persisted cluster key.
 - [ ] Persistent keepalive option for peers behind NAT
       (`--persistent-keepalive`).
-- [ ] Remove stale routes and hosts entries when a peer leaves (overlaps with
-      the phase 5 route item; may fall out of that fix).
+- [x] Remove stale routes and hosts entries when a peer leaves (overlaps with
+      the phase 5 route item; may fall out of that fix). It did: hosts entries
+      were already rewritten on every update, routes are now pruned too.
 - [ ] Extra `AllowedIPs` per node so a node can route a subnet into the mesh
       (advertised via node metadata).
 - [ ] Static / seed nodes to mitigate split-brain (upstream roadmap item):

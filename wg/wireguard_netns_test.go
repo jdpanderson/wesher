@@ -94,11 +94,15 @@ func Test_State_SetUpInterface_and_Down(t *testing.T) {
 	// idempotent: link and routes already exist
 	require.NoError(t, s.SetUpInterface([]common.Node{p1, p2}))
 
-	// peers are replaced, not accumulated
+	// peers and their routes are replaced, not accumulated
 	require.NoError(t, s.SetUpInterface([]common.Node{p1}))
 	dev, err = s.client.Device("wgtest0")
 	require.NoError(t, err)
 	assert.Len(t, dev.Peers, 1)
+	routes, err = netlink.RouteList(link, netlink.FAMILY_V4)
+	require.NoError(t, err)
+	require.Len(t, routes, 1)
+	assert.Equal(t, "10.99.0.1/32", routes[0].Dst.String())
 
 	require.NoError(t, s.DownInterface())
 	_, err = netlink.LinkByName("wgtest0")

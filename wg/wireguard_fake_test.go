@@ -2,6 +2,7 @@ package wg
 
 import (
 	"errors"
+	"net"
 	"net/netip"
 	"os"
 	"testing"
@@ -47,8 +48,36 @@ func (f *fakeNL) RouteAdd(r *netlink.Route) error {
 	if err := f.call("RouteAdd"); err != nil {
 		return err
 	}
+	for _, have := range f.routes {
+		if have.Dst.String() == r.Dst.String() {
+			return os.ErrExist
+		}
+	}
 	f.routes = append(f.routes, r)
 	return nil
+}
+func (f *fakeNL) RouteDel(r *netlink.Route) error {
+	if err := f.call("RouteDel"); err != nil {
+		return err
+	}
+	kept := f.routes[:0]
+	for _, have := range f.routes {
+		if have.Dst.String() != r.Dst.String() {
+			kept = append(kept, have)
+		}
+	}
+	f.routes = kept
+	return nil
+}
+func (f *fakeNL) RouteList(netlink.Link, int) ([]netlink.Route, error) {
+	if err := f.call("RouteList"); err != nil {
+		return nil, err
+	}
+	out := make([]netlink.Route, len(f.routes))
+	for i, r := range f.routes {
+		out[i] = *r
+	}
+	return out, nil
 }
 
 type fakeWG struct {
@@ -77,7 +106,7 @@ func Test_State_SetUpInterface_fake(t *testing.T) {
 	p1 := testPeer(t, "p1", "192.0.2.1", "10.99.0.1")
 	require.NoError(t, s.SetUpInterface([]common.Node{p1}))
 
-	assert.Equal(t, []string{"LinkAdd", "LinkByName", "AddrReplace", "LinkSetMTU", "LinkSetUp", "RouteAdd"}, nl.calls)
+	assert.Equal(t, []string{"LinkAdd", "LinkByName", "AddrReplace", "LinkSetMTU", "LinkSetUp", "RouteAdd", "RouteList"}, nl.calls)
 	assert.Equal(t, "wireguard", nl.link.Type())
 	require.NotNil(t, wgc.cfg)
 	assert.True(t, wgc.cfg.ReplacePeers)
@@ -95,6 +124,36 @@ func Test_State_SetUpInterface_fake_existingTolerated(t *testing.T) {
 	require.NoError(t, s.SetUpInterface([]common.Node{testPeer(t, "p1", "192.0.2.1", "10.99.0.1")}))
 }
 
+func Test_State_SetUpInterface_fake_removesStaleRoutes(t *testing.T) {
+	nl := &fakeNL{}
+	s := newFakeState(t, nl, &fakeWG{})
+	p1 := testPeer(t, "p1", "192.0.2.1", "10.99.0.1")
+	p2 := testPeer(t, "p2", "192.0.2.2", "10.99.0.2")
+
+	// a host route outside the overlay net and a non-host route are not ours to touch
+	_, foreign, _ := net.ParseCIDR("192.0.2.9/32")
+	_, wide, _ := net.ParseCIDR("10.99.0.0/24")
+	nl.routes = append(nl.routes, &netlink.Route{Dst: foreign}, &netlink.Route{Dst: wide})
+
+	require.NoError(t, s.SetUpInterface([]common.Node{p1, p2}))
+	require.Len(t, nl.routes, 4)
+
+	nl.calls = nil
+	require.NoError(t, s.SetUpInterface([]common.Node{p1}))
+	assert.Contains(t, nl.calls, "RouteDel")
+	dsts := make([]string, 0, len(nl.routes))
+	for _, r := range nl.routes {
+		dsts = append(dsts, r.Dst.String())
+	}
+	assert.ElementsMatch(t, []string{"192.0.2.9/32", "10.99.0.0/24", "10.99.0.1/32"}, dsts)
+
+	// route del failure is reported
+	nl.errs = map[string]error{"RouteDel": errors.New("boom")}
+	err := s.SetUpInterface(nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "removing route")
+}
+
 func Test_State_SetUpInterface_fake_errors(t *testing.T) {
 	boom := errors.New("boom")
 	tests := []struct {
@@ -110,6 +169,7 @@ func Test_State_SetUpInterface_fake_errors(t *testing.T) {
 		{"mtu", map[string]error{"LinkSetMTU": boom}, nil, "setting MTU"},
 		{"link up", map[string]error{"LinkSetUp": boom}, nil, "enabling interface"},
 		{"route add", map[string]error{"RouteAdd": boom}, nil, "adding route"},
+		{"route list", map[string]error{"RouteList": boom}, nil, "listing routes"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
