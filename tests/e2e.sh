@@ -9,14 +9,19 @@ cleanup() {
         echo "Stopping all remaining containers: ${started_containers[@]}"
         docker container rm -f ${started_containers[@]}
     fi
-    echo "Removing shared network"
-    docker network rm wesher_test
+    echo "Removing shared networks"
+    docker network rm wesher_test wesher_test6
 }
 
 docker build -t wesher-test "$(dirname "$0")"
 
-docker network create wesher_test
+# The underlay must not overlap the default overlay net (10.0.0.0/8), so pick the subnet explicitly.
+docker network create --subnet 172.30.0.0/24 wesher_test
+docker network create --ipv6 --subnet fd00:57::/64 wesher_test6
 trap cleanup EXIT
+
+# network the next containers join; tests switch it for the IPv6 cases
+network=wesher_test
 
 run_test_container() {
     local name=$1
@@ -24,7 +29,7 @@ run_test_container() {
     shift
     local hostname=$1
     shift
-    docker run -d --cap-add=NET_ADMIN --cap-add=NET_RAW --device /dev/net/tun --security-opt label=disable --name ${name} --hostname ${hostname} -v $(pwd):/app --network=wesher_test wesher-test "$@"
+    docker run -d --cap-add=NET_ADMIN --cap-add=NET_RAW --device /dev/net/tun --security-opt label=disable --name ${name} --hostname ${hostname} -v $(pwd):/app --network=${network} wesher-test "$@"
     started_containers[$name]=$name
 }
 
@@ -125,6 +130,40 @@ test_multiple_clusters_restart() {
     docker exec test2-orig ping -c1 -W1 test3 || (docker logs test2-orig; docker logs test3-orig; false)
 
     stop_test_container test3-orig
+    stop_test_container test2-orig
+    stop_test_container test1-orig
+}
+
+# IPv6 underlay (gossip and wireguard endpoints over fd00:57::/64) and IPv6 overlay
+test_ipv6_cluster() {
+    network=wesher_test6
+    local v6='--bind-addr :: --overlay-net fd00:10::/64'
+    run_test_container test1-orig test1 --init $v6
+    run_test_container test2-orig test2 --join test1-orig $v6
+    run_test_container test3-orig test3 --join test1-orig $v6
+    network=wesher_test
+
+    sleep 3
+
+    docker exec test1-orig ping -c1 -W1 test2 || (docker logs test1-orig; docker logs test2-orig; false)
+    docker exec test3-orig ping -c1 -W1 test1 || (docker logs test1-orig; docker logs test3-orig; false)
+    docker exec test1-orig /app/wesher status | grep -q '^address: *fd00:10:' || (docker exec test1-orig /app/wesher status; false)
+
+    stop_test_container test3-orig
+    stop_test_container test2-orig
+    stop_test_container test1-orig
+}
+
+# IPv6 overlay over the IPv4 underlay
+test_ipv6_overlay() {
+    run_test_container test1-orig test1 --init --overlay-net fd00:10::/64
+    run_test_container test2-orig test2 --join test1-orig --overlay-net fd00:10::/64
+
+    sleep 3
+
+    docker exec test1-orig ping -c1 -W1 test2 || (docker logs test1-orig; docker logs test2-orig; false)
+    docker exec test2-orig ping -c1 -W1 test1 || (docker logs test1-orig; docker logs test2-orig; false)
+
     stop_test_container test2-orig
     stop_test_container test1-orig
 }

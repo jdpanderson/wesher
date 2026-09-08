@@ -256,11 +256,16 @@ before starting; none are committed yet.
 - [ ] systemd `sd_notify` readiness and a `Type=notify` unit file.
 - [ ] Cluster key rotation (upstream roadmap item; largest effort, needs a
       protocol design).
-- [ ] IPv6 underlay support and verification (memberlist and endpoint
+- [x] IPv6 underlay support and verification (memberlist and endpoint
       handling are IPv4-assumed in places). 2026-09-08: `--bind-addr` is a
       `netip.Addr` defaulting to `0.0.0.0`; its family decides the cluster's
       family. For a wildcard (`0.0.0.0`/`::`) wesher picks the advertise address
       itself (public, then global unicast; never on the overlay interface)
       and sets memberlist's `AdvertiseAddr`, which memberlist only did for
       `0.0.0.0`. `--bind-iface` removed (breaking): it conflicted with
-      `--bind-addr` and picked addresses awkwardly. Still open: e2e scenarios.
+      `--bind-addr` and picked addresses awkwardly. e2e: `test_ipv6_cluster`
+      (IPv6 underlay and overlay) and `test_ipv6_overlay` (IPv6 overlay over
+      IPv4). The e2e IPv4 network is now pinned to 172.30.0.0/24 because
+      podman's default 10.89.0.0/24 sits inside the default overlay net. Found
+      and fixed on the way: stale-route pruning removed the kernel's route to
+      our own IPv6 /128 address.

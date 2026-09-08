@@ -159,6 +159,21 @@ All options can be passed either as command-line flags or environment variables:
 | `--no-etc-hosts` | WESHER_NO_ETC_HOSTS | whether to skip writing hosts entries for each node in mesh | `false` |
 | `--log-level LEVEL` | WESHER_LOG_LEVEL | set the verbosity (one of debug/info/warn/error) | `warn` |
 
+## IPv4 and IPv6
+
+Any address option accepts either family. Two independent choices are made per cluster:
+
+- **Underlay** (cluster gossip and wireguard endpoints): the family of `--bind-addr` decides. `0.0.0.0` (the default)
+  or a specific IPv4 address makes an IPv4 cluster; `::` or a specific IPv6 address makes an IPv6 cluster. Every node
+  of a cluster must use the same family, since an IPv4-only node cannot reach an IPv6-only one. Dual-stack hosts can
+  join either kind of cluster.
+- **Overlay** (the mesh addresses): the family of `--overlay-net`, independent of the underlay. An IPv6 overlay such
+  as `fd00:10::/64` over an IPv4 underlay works, and so does the reverse.
+
+With a wildcard bind address, wesher advertises one of the host's addresses of that family to the cluster, preferring
+a public one, then any global unicast address (RFC 1918 and unique local addresses included). Link-local addresses and
+addresses on the wesher interface itself are never chosen. Set a specific `--bind-addr` to control it.
+
 ## Running multiple clusters
 
 To make a node be a member of multiple clusters, simply start multiple wesher instances.  
