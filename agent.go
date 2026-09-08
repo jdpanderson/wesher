@@ -17,6 +17,7 @@ import (
 	"github.com/costela/wesher/common"
 	"github.com/costela/wesher/etchosts"
 	"github.com/costela/wesher/wg"
+	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
 type AgentCmd struct {
@@ -67,6 +68,21 @@ func (a *AgentCmd) Validate() error {
 		a.BindAddr = addr.String()
 	}
 
+	return nil
+}
+
+// validateNode rejects peer metadata we would not want to install: an overlay
+// address outside our overlay net or an unparseable wireguard public key.
+func (a *AgentCmd) validateNode(node *common.Node) error {
+	if node.Name == "" {
+		return errors.New("empty node name")
+	}
+	if !a.OverlayNet.Contains(node.OverlayAddr) {
+		return fmt.Errorf("overlay address %s is outside %s", node.OverlayAddr, a.OverlayNet)
+	}
+	if _, err := wgtypes.ParseKey(node.PubKey); err != nil {
+		return fmt.Errorf("public key: %w", err)
+	}
 	return nil
 }
 
@@ -204,13 +220,17 @@ func (a *AgentCmd) loop(ctx context.Context, nodec <-chan []common.Node, cl clus
 	}
 }
 
-// apply pushes one membership snapshot to wireguard and /etc/hosts; nodes with undecodable metadata are skipped.
+// apply pushes one membership snapshot to wireguard and /etc/hosts; nodes with undecodable or invalid metadata are skipped.
 func (a *AgentCmd) apply(rawNodes []common.Node, wgstate wgController, hosts hostsWriter) {
 	nodes := make([]common.Node, 0, len(rawNodes))
 	hostEntries := make(map[string][]string, len(rawNodes))
 	for _, node := range rawNodes {
 		if err := node.DecodeMeta(); err != nil {
 			slog.Warn("could not decode node metadata, skipping", "addr", node.Addr, "err", err)
+			continue
+		}
+		if err := a.validateNode(&node); err != nil {
+			slog.Warn("invalid node metadata, skipping", "name", node.Name, "addr", node.Addr, "err", err)
 			continue
 		}
 		slog.Info("cluster member", "addr", node.Addr, "overlay", node.OverlayAddr, "pubkey", node.PubKey)

@@ -181,9 +181,10 @@ Correctness issues found during the initial read (verify each, then fix):
       suggests a `showkey` subcommand). Minimal fix: off a terminal it now
       logs a warning naming the state file to grep. `showkey` stays a phase 6
       candidate; `computeClusterKey` is pure and reports whether it generated.
-- [ ] `common.Node.DecodeMeta` trusts peer metadata blindly (upstream TODO).
-      At minimum validate that `OverlayAddr` is inside the configured overlay
-      net and `PubKey` parses, and log-and-skip otherwise.
+- [x] `common.Node.DecodeMeta` trusts peer metadata blindly (upstream TODO).
+      `AgentCmd.validateNode` now rejects (log-and-skip) nodes with an empty
+      name, an overlay address outside `--overlay-net`, or an unparseable
+      public key. Validation lives in the agent, which knows the overlay net.
 - [ ] Join retry uses backoff defaults, which give up after 15 minutes. Decide
       whether that is intended. (backoff v4 -> v6 done 2026-09-07; the retry
       is now context-aware, so SIGTERM during the join loop exits cleanly.)
