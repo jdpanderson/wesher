@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path"
+	"path/filepath"
 
 	"github.com/costela/wesher/common"
 	"github.com/sirupsen/logrus"
@@ -20,7 +20,7 @@ var statePathTemplate = "/var/lib/wesher/%s.json"
 
 func (s *state) save(clusterName string) error {
 	statePath := fmt.Sprintf(statePathTemplate, clusterName)
-	if err := os.MkdirAll(path.Dir(statePath), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(statePath), 0700); err != nil {
 		return err
 	}
 

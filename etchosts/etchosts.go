@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -56,7 +56,7 @@ func (eh *EtcHosts) WriteEntries(ipsToNames map[string][]string) error {
 
 	// create tmpfile in same folder as the hosts file
 	// TODO: replace with github.com/google/renameio
-	tmp, err := os.CreateTemp(path.Dir(hostsPath), "etchosts")
+	tmp, err := os.CreateTemp(filepath.Dir(hostsPath), "etchosts")
 	if err != nil {
 		return fmt.Errorf("could not create tempfile: %w", err)
 	}
