@@ -163,8 +163,12 @@ Correctness issues found during the initial read (verify each, then fix):
 - [ ] `SetUpInterface` adds a route per peer but never removes routes for
       peers that left; stale `/32` routes accumulate until the interface goes
       down. `ReplacePeers: true` already handles the wireguard side.
-- [ ] `--bind-iface` picks `addrs[0]` blindly, which may be IPv6 or link-local.
-      Prefer a global unicast IPv4, or make family selectable.
+- [x] `--bind-iface` picks `addrs[0]` blindly, which may be IPv6 or link-local.
+      Now prefers a global unicast IPv4, falls back to any IPv4 (loopback),
+      and errors when the interface has none. The autodetect path uses the
+      same helper with a public-address predicate, replacing
+      `go-sockaddr.GetPublicIP` (direct dependency dropped; memberlist still
+      pulls it in).
 - [ ] `computeClusterKey` prints the generated key only when stdout is a TTY,
       so a systemd-started first node never reveals its key (upstream TODO
       suggests a `showkey` subcommand).

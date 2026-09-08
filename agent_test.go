@@ -42,6 +42,38 @@ func Test_AgentCmd_Validate_errors(t *testing.T) {
 	}
 }
 
+func Test_firstIPv4(t *testing.T) {
+	ipnet := func(s string) net.Addr { // like iface.Addrs(): host IP with the interface mask
+		ip, n, err := net.ParseCIDR(s)
+		require.NoError(t, err)
+		return &net.IPNet{IP: ip, Mask: n.Mask}
+	}
+	addrs := []net.Addr{
+		ipnet("fe80::1/64"),      // IPv6 link-local
+		ipnet("169.254.1.2/16"),  // IPv4 link-local
+		ipnet("2001:db8::1/64"),  // IPv6 global
+		ipnet("10.1.2.3/24"),     // private IPv4
+		ipnet("100.64.0.9/10"),   // shared address space
+		ipnet("198.51.100.7/24"), // public IPv4 (TEST-NET-2)
+		&net.IPAddr{IP: net.ParseIP("203.0.113.1")},
+	}
+
+	got, ok := firstIPv4(addrs, netip.Addr.IsGlobalUnicast)
+	require.True(t, ok)
+	assert.Equal(t, "10.1.2.3", got.String(), "first global unicast IPv4 wins over link-local and IPv6")
+
+	got, ok = firstIPv4(addrs, isPublic)
+	require.True(t, ok)
+	assert.Equal(t, "198.51.100.7", got.String(), "private and shared space are not public")
+
+	_, ok = firstIPv4([]net.Addr{ipnet("fe80::1/64"), ipnet("2001:db8::1/64")}, func(netip.Addr) bool { return true })
+	assert.False(t, ok, "IPv6-only yields nothing")
+
+	got, ok = firstIPv4([]net.Addr{ipnet("127.0.0.1/8")}, func(netip.Addr) bool { return true })
+	require.True(t, ok)
+	assert.Equal(t, "127.0.0.1", got.String())
+}
+
 func Test_AgentCmd_Validate_bindIface(t *testing.T) {
 	cmd := AgentCmd{OverlayNet: testOverlay, BindIface: "lo"}
 	require.NoError(t, cmd.Validate())

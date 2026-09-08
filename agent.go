@@ -17,7 +17,6 @@ import (
 	"github.com/costela/wesher/common"
 	"github.com/costela/wesher/etchosts"
 	"github.com/costela/wesher/wg"
-	"github.com/hashicorp/go-sockaddr"
 )
 
 type AgentCmd struct {
@@ -42,7 +41,6 @@ func (a *AgentCmd) Validate() error {
 	case a.BindAddr != "" && a.BindIface != "":
 		return fmt.Errorf("setting both bind address and bind interface is not supported")
 	case a.BindIface != "":
-		// Compute the actual bind address based on the provided interface
 		iface, err := net.InterfaceByName(a.BindIface)
 		if err != nil {
 			return fmt.Errorf("getting interface by name %s: %w", a.BindIface, err)
@@ -51,27 +49,75 @@ func (a *AgentCmd) Validate() error {
 		if err != nil {
 			return fmt.Errorf("getting addresses for interface %s: %w", a.BindIface, err)
 		}
-		if len(addrs) > 0 {
-			if addr, ok := addrs[0].(*net.IPNet); ok {
-				a.BindAddr = addr.IP.String()
-			}
+		addr, ok := firstIPv4(addrs, netip.Addr.IsGlobalUnicast)
+		if !ok {
+			addr, ok = firstIPv4(addrs, func(netip.Addr) bool { return true })
 		}
+		if !ok {
+			return fmt.Errorf("no IPv4 address on interface %s", a.BindIface)
+		}
+		a.BindAddr = addr.String()
 	case a.BindAddr == "":
-		// memberlist refuses to listen on 0.0.0.0 unless it can find a private IP to advertise,
-		// so detect a public one first
-		detectedBindAddr, err := sockaddr.GetPublicIP()
-		if err != nil {
-			return err
+		// memberlist refuses to bind 0.0.0.0 unless it can find a private IP to advertise,
+		// so prefer a public address; otherwise let memberlist pick a private one.
+		addr, ok := firstIPv4(upInterfaceAddrs(), isPublic)
+		if !ok {
+			addr = netip.IPv4Unspecified()
 		}
-		// if we cannot find a public IP, let memberlist do its thing
-		if detectedBindAddr != "" {
-			a.BindAddr = detectedBindAddr
-		} else {
-			a.BindAddr = "0.0.0.0"
-		}
+		a.BindAddr = addr.String()
 	}
 
 	return nil
+}
+
+// firstIPv4 returns the first IPv4 address in addrs accepted by want.
+func firstIPv4(addrs []net.Addr, want func(netip.Addr) bool) (netip.Addr, bool) {
+	for _, na := range addrs {
+		var ip net.IP
+		switch v := na.(type) {
+		case *net.IPNet:
+			ip = v.IP
+		case *net.IPAddr:
+			ip = v.IP
+		default:
+			continue
+		}
+		addr, ok := netip.AddrFromSlice(ip)
+		if !ok {
+			continue
+		}
+		addr = addr.Unmap()
+		if addr.Is4() && want(addr) {
+			return addr, true
+		}
+	}
+	return netip.Addr{}, false
+}
+
+// sharedAddressSpace is RFC 6598 carrier-grade NAT space, private for our purposes.
+var sharedAddressSpace = netip.MustParsePrefix("100.64.0.0/10")
+
+// isPublic reports whether addr is a globally routable unicast address.
+func isPublic(addr netip.Addr) bool {
+	return addr.IsGlobalUnicast() && !addr.IsPrivate() && !sharedAddressSpace.Contains(addr)
+}
+
+// upInterfaceAddrs returns the addresses of all up, non-loopback interfaces, in interface order.
+func upInterfaceAddrs() []net.Addr {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	var addrs []net.Addr
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		if ifAddrs, err := iface.Addrs(); err == nil {
+			addrs = append(addrs, ifAddrs...)
+		}
+	}
+	return addrs
 }
 
 // clusterController, wgController and hostsWriter are the parts of the

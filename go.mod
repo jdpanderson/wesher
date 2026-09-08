@@ -5,7 +5,6 @@ go 1.26.0
 require (
 	github.com/alecthomas/kong v1.16.1
 	github.com/cenkalti/backoff/v6 v6.0.1
-	github.com/hashicorp/go-sockaddr v1.0.7
 	github.com/hashicorp/memberlist v0.6.0
 	github.com/mattn/go-isatty v0.0.24
 	github.com/stretchr/testify v1.12.1
@@ -23,6 +22,7 @@ require (
 	github.com/hashicorp/go-metrics v0.6.1 // indirect
 	github.com/hashicorp/go-msgpack/v2 v2.1.5 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
+	github.com/hashicorp/go-sockaddr v1.0.7 // indirect
 	github.com/hashicorp/go-uuid v1.0.2 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/mdlayher/genetlink v1.4.0 // indirect
