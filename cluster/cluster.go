@@ -22,9 +22,7 @@ const KeyLen = 32
 type Cluster struct {
 	name      string
 	ml        *memberlist.Memberlist
-	mlConfig  *memberlist.Config
-	localNode *common.Node
-	LocalName string
+	localName string
 	state     *state
 	stateMu   sync.Mutex // guards state.Nodes and state.save
 	events    chan memberlist.NodeEvent
@@ -36,9 +34,9 @@ type Cluster struct {
 // newMemberlistConfig builds the base memberlist config; tests swap in faster timers.
 var newMemberlistConfig = memberlist.DefaultWANConfig
 
-// New is used to create a new Cluster instance
-// The returned instance is ready to be updated with the local node settings then joined
-func New(name string, init bool, clusterKey []byte, bindAddr string, bindPort int) (*Cluster, error) {
+// New creates a Cluster that gossips localNode's name and metadata; it is ready to be joined.
+// name identifies the persisted state (the wireguard interface name in practice).
+func New(name string, init bool, clusterKey []byte, bindAddr string, bindPort int, localNode *common.Node) (*Cluster, error) {
 	state := &state{}
 	if !init {
 		state = loadState(name)
@@ -49,31 +47,35 @@ func New(name string, init bool, clusterKey []byte, bindAddr string, bindPort in
 		return nil, fmt.Errorf("computing cluster key: %w", err)
 	}
 
+	// The big channel buffer is a work-around for https://github.com/hashicorp/memberlist/issues/23
+	// More than this many simultaneous events will deadlock cluster.members()
+	events := make(chan memberlist.NodeEvent, 100)
+
+	delegate := &delegateNode{localNode}
 	mlConfig := newMemberlistConfig()
+	mlConfig.Name = localNode.Name
 	mlConfig.LogOutput = logrus.StandardLogger().WriterLevel(logrus.DebugLevel)
 	mlConfig.SecretKey = clusterKey
 	mlConfig.BindAddr = bindAddr
 	mlConfig.BindPort = bindPort
 	mlConfig.AdvertisePort = bindPort
+	mlConfig.Delegate = delegate
+	mlConfig.Conflict = delegate
+	mlConfig.Events = &memberlist.ChannelEventDelegate{Ch: events}
 
 	ml, err := memberlist.Create(mlConfig)
 	if err != nil {
 		return nil, fmt.Errorf("creating memberlist: %w", err)
 	}
 
-	cluster := Cluster{
+	return &Cluster{
 		name:      name,
 		ml:        ml,
-		mlConfig:  mlConfig,
-		LocalName: ml.LocalNode().Name,
-		// The big channel buffer is a work-around for https://github.com/hashicorp/memberlist/issues/23
-		// More than this many simultaneous events will deadlock cluster.members()
-		events: make(chan memberlist.NodeEvent, 100),
-		done:   make(chan struct{}),
-		state:  state,
-	}
-
-	return &cluster, nil
+		localName: localNode.Name,
+		events:    events,
+		done:      make(chan struct{}),
+		state:     state,
+	}, nil
 }
 
 // Join tries to join the cluster by contacting provided addresses
@@ -110,17 +112,6 @@ func (c *Cluster) Leave() {
 	})
 }
 
-// Update gossips the local node configuration, propagating any change
-func (c *Cluster) Update(localNode *common.Node) {
-	c.localNode = localNode
-	// wrap in a delegateNode instance for memberlist.Delegate implementation
-	delegate := &delegateNode{c.localNode}
-	c.mlConfig.Conflict = delegate
-	c.mlConfig.Delegate = delegate
-	c.mlConfig.Events = &memberlist.ChannelEventDelegate{Ch: c.events}
-	c.ml.UpdateNode(1 * time.Second) // nolint: errcheck // we currently do not update after creation
-}
-
 // Members provides a channel notifying of cluster changes
 // Everytime a change happens inside the cluster (except for local changes),
 // the updated list of cluster nodes is pushed to the channel.
@@ -139,7 +130,7 @@ func (c *Cluster) Members() <-chan []common.Node {
 				return
 			case event = <-c.events:
 			}
-			if event.Node.Name == c.LocalName {
+			if event.Node.Name == c.localName {
 				// ignore events about ourselves
 				continue
 			}
@@ -154,7 +145,7 @@ func (c *Cluster) Members() <-chan []common.Node {
 
 			nodes := make([]common.Node, 0, c.ml.NumMembers())
 			for _, n := range c.ml.Members() {
-				if n.Name == c.LocalName {
+				if n.Name == c.localName {
 					continue
 				}
 				nodes = append(nodes, common.Node{

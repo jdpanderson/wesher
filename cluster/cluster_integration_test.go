@@ -25,24 +25,14 @@ func freePort(t *testing.T) int {
 	return l.Addr().(*net.TCPAddr).Port
 }
 
-// newTestCluster creates a cluster whose memberlist node is named after its
-// bind address, so several in-process nodes do not collide on the hostname.
+// newTestCluster creates a cluster for a node called name; the state file is named after it too.
 func newTestCluster(t *testing.T, name, bindAddr string, port int, overlay string) (*Cluster, *common.Node) {
 	t.Helper()
-	orig := newMemberlistConfig
-	newMemberlistConfig = func() *memberlist.Config {
-		cfg := orig()
-		cfg.Name = bindAddr
-		return cfg
-	}
-	c, err := New(name, true, testKey, bindAddr, port)
-	newMemberlistConfig = orig
-	require.NoError(t, err)
-
 	node := &common.Node{Name: name}
 	node.OverlayAddr = netip.MustParseAddr(overlay)
 	node.PubKey = "pubkey-" + name
-	c.Update(node)
+	c, err := New(name, true, testKey, bindAddr, port, node)
+	require.NoError(t, err)
 	return c, node
 }
 
@@ -75,7 +65,6 @@ func Test_Cluster_joinAndLeave(t *testing.T) {
 	a, _ := newTestCluster(t, "a", "127.0.0.1", port, "10.0.0.1")
 	defer a.Leave()
 	b, nodeB := newTestCluster(t, "b", "127.0.0.2", port, "10.0.0.2")
-	assert.Equal(t, "127.0.0.1", a.LocalName)
 
 	chA := a.Members()
 	drain(b.Members())
@@ -85,7 +74,7 @@ func Test_Cluster_joinAndLeave(t *testing.T) {
 
 	members := waitMembers(t, chA, 1)
 	require.NoError(t, members[0].DecodeMeta())
-	assert.Equal(t, "127.0.0.2", members[0].Name)
+	assert.Equal(t, "b", members[0].Name)
 	assert.Equal(t, nodeB.OverlayAddr, members[0].OverlayAddr)
 	assert.Equal(t, nodeB.PubKey, members[0].PubKey)
 
@@ -111,7 +100,7 @@ func Test_Cluster_joinFailure(t *testing.T) {
 
 func Test_New_badBindAddr(t *testing.T) {
 	useTempStatePaths(t)
-	_, err := New("a", true, testKey, "192.0.2.1", 0) // TEST-NET, not a local address
+	_, err := New("a", true, testKey, "192.0.2.1", 0, &common.Node{Name: "a"}) // TEST-NET, not a local address
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "creating memberlist")
 }

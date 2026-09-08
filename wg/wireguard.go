@@ -72,7 +72,7 @@ func newState(iface string, port int, prefix netip.Prefix, name string, client w
 	}
 	logrus.Debugf("assigned overlay address: %s", state.OverlayAddr)
 
-	node := &common.Node{}
+	node := &common.Node{Name: name}
 	node.OverlayAddr = state.OverlayAddr
 	node.PubKey = state.PubKey.String()
 

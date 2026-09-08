@@ -138,11 +138,13 @@ Correctness issues found during the initial read (verify each, then fix):
       `bufio.Writer` so write errors are checked once on `Flush`.
 - [x] `AgentCmd.Run` `Fatal`/`os.Exit` replaced with returned errors. Fixed in
       phase 4.
-- [ ] `Cluster.Update` installs the memberlist delegates after
+- [x] `Cluster.Update` installs the memberlist delegates after
       `memberlist.Create`; memberlist reads `Config.Delegate` during `Create`
       and on every gossip cycle, so this is a data race and the local node's
-      metadata is only pushed by the `UpdateNode` call. Restructure so the
-      node metadata is known before `Create`.
+      metadata is only pushed by the `UpdateNode` call. Removed `Update`:
+      the agent resolves the hostname, `wg.New` names the node, and
+      `cluster.New` takes it and installs the delegates before `Create`.
+      Local metadata never changes at runtime, so nothing needed re-announcing.
 - [x] `Cluster.Name` dereferences `localNode`, nil until `Update` is called.
       Removed: it had no callers, and in production returned "" because
       `wg.New` never sets the node name.

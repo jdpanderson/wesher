@@ -93,21 +93,23 @@ type hostsWriter interface {
 
 // Run wires up cluster, wireguard and /etc/hosts, joins the cluster and runs the agent loop until SIGTERM/SIGINT.
 func (a *AgentCmd) Run(cli *cli) error {
-	cluster, err := cluster.New(a.Interface, a.Init, a.ClusterKey, a.BindAddr, a.ClusterPort)
+	hostname, err := os.Hostname()
 	if err != nil {
-		return fmt.Errorf("creating cluster: %w", err)
+		return fmt.Errorf("getting hostname: %w", err)
 	}
-	wgstate, localNode, err := wg.New(a.Interface, a.WireguardPort, a.OverlayNet, cluster.LocalName)
+	wgstate, localNode, err := wg.New(a.Interface, a.WireguardPort, a.OverlayNet, hostname)
 	if err != nil {
 		return fmt.Errorf("instantiating wireguard controller: %w", err)
+	}
+	cluster, err := cluster.New(a.Interface, a.Init, a.ClusterKey, a.BindAddr, a.ClusterPort, localNode)
+	if err != nil {
+		return fmt.Errorf("creating cluster: %w", err)
 	}
 
 	hostsFile := &etchosts.EtcHosts{
 		Banner: "# ! managed automatically by wesher interface " + a.Interface,
 		Logger: logrus.StandardLogger(),
 	}
-
-	cluster.Update(localNode)
 
 	nodec := cluster.Members() // avoid deadlocks by starting before join
 	if err := backoff.RetryNotify(
