@@ -254,8 +254,9 @@ before starting; none are committed yet.
       (`wesher status [--interface DEV] [--json]`; names come from the
       persisted cluster state). A health endpoint remains a separate candidate.
 - [ ] systemd `sd_notify` readiness and a `Type=notify` unit file.
-- [ ] Cluster key rotation (upstream roadmap item; largest effort, needs a
-      protocol design).
+- [x] Cluster key rotation (upstream roadmap item; largest effort, needs a
+      protocol design). Superseded by phase 7: there is no cluster key to
+      rotate.
 - [x] IPv6 underlay support and verification (memberlist and endpoint
       handling are IPv4-assumed in places). 2026-09-08: `--bind-addr` is a
       `netip.Addr` defaulting to `0.0.0.0`; its family decides the cluster's
@@ -269,3 +270,28 @@ before starting; none are committed yet.
       podman's default 10.89.0.0/24 sits inside the default overlay net. Found
       and fixed on the way: stale-route pruning removed the kernel's route to
       our own IPv6 /128 address.
+- [ ] Rate limiting sensitive incoming requests; We don't want to allow brute-forcing joins or denial of service. We should have a mechanism of shutting down incoming requests if the rate is too high. This feels like something that must already exist as a package (or combination of packages). We could also just support dectection or logging such that an external piece of software would watch the logs and block hosts. This needs thought and design before we implement
+
+## Phase 7: identity-based membership
+
+Design: `docs/membership.md` (accepted 2026-09-08). Replaces the shared
+cluster key with per-node identities, signed admission records, invitation
+tokens that live only for the exchange, and an identity-authenticated gossip
+transport. Not compatible with shared-key wesher.
+
+- [ ] `trust` package: identity from seed (Ed25519 + X25519), admission and
+      revocation records, validity evaluation from a pinned root, signed node
+      metadata.
+- [ ] `cluster`: state carries seed, root, records and peer identities;
+      memberlist transport with per-pair AES-GCM packets and mutual-TLS
+      streams; metadata verification before a peer is reported.
+- [ ] Enrolment over TCP on the WireGuard port: token store, mutual HMAC
+      exchange, encrypted hand-off of root, records and gossip address.
+- [ ] Control socket and `invite` / `revoke` subcommands; agent flags
+      (`--join-key`; drop `--cluster-key`, `showkey`).
+- [ ] e2e: enrol via `invite`, restart without token, revoke; README security
+      section rewritten.
+- [ ] **DECISION**: rename the project. It now forks the concept, not just
+      the code: no compatibility with wesher's wire protocol, state, flags or
+      key model remains. Needs a name, then module path, binary, interface
+      default, state directory, control socket path, env prefix, README.
