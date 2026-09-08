@@ -39,6 +39,11 @@ func enterTestNetns(t *testing.T) {
 	})
 }
 
+// testConfig uses a non-default MTU so the test proves it is applied.
+func testConfig() Config {
+	return Config{Interface: "wgtest0", Port: 51820, OverlayNet: netip.MustParsePrefix(testPrefix), Name: "test", MTU: 1400}
+}
+
 func testPeer(t *testing.T, name, addr, overlay string) common.Node {
 	t.Helper()
 	key, err := wgtypes.GeneratePrivateKey()
@@ -51,7 +56,7 @@ func testPeer(t *testing.T, name, addr, overlay string) common.Node {
 
 func Test_New(t *testing.T) {
 	enterTestNetns(t)
-	s, node, err := New("wgtest0", 51820, netip.MustParsePrefix(testPrefix), "test")
+	s, node, err := New(testConfig())
 	require.NoError(t, err)
 	assert.Equal(t, s.PrivKey.PublicKey(), s.PubKey)
 	assert.Equal(t, s.OverlayAddr, node.OverlayAddr)
@@ -61,7 +66,7 @@ func Test_New(t *testing.T) {
 
 func Test_State_SetUpInterface_and_Down(t *testing.T) {
 	enterTestNetns(t)
-	s, _, err := New("wgtest0", 51820, netip.MustParsePrefix(testPrefix), "test")
+	s, _, err := New(testConfig())
 	require.NoError(t, err)
 
 	p1 := testPeer(t, "p1", "192.0.2.1", "10.99.0.1")
@@ -71,7 +76,7 @@ func Test_State_SetUpInterface_and_Down(t *testing.T) {
 	link, err := netlink.LinkByName("wgtest0")
 	require.NoError(t, err)
 	assert.Equal(t, "wireguard", link.Type())
-	assert.Equal(t, 1420, link.Attrs().MTU)
+	assert.Equal(t, 1400, link.Attrs().MTU)
 	assert.NotZero(t, link.Attrs().Flags&net.FlagUp)
 
 	addrs, err := netlink.AddrList(link, netlink.FAMILY_V4)
@@ -113,7 +118,7 @@ func Test_State_SetUpInterface_and_Down(t *testing.T) {
 
 func Test_State_SetUpInterface_badPeerKey(t *testing.T) {
 	enterTestNetns(t)
-	s, _, err := New("wgtest0", 51820, netip.MustParsePrefix(testPrefix), "test")
+	s, _, err := New(testConfig())
 	require.NoError(t, err)
 	defer func() { _ = s.DownInterface() }()
 

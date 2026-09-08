@@ -34,9 +34,19 @@ type netlinker interface {
 	RouteList(netlink.Link, int) ([]netlink.Route, error)
 }
 
+// Config describes the wireguard interface a State manages.
+type Config struct {
+	Interface  string       // name of the wireguard interface to create
+	Port       int          // wireguard listen port, also used as the peers' port
+	OverlayNet netip.Prefix // network the overlay addresses are picked from
+	Name       string       // local node name; hashed into the overlay address
+	MTU        int          // interface MTU
+}
+
 // State holds the configured state of a Wesher Wireguard interface.
 type State struct {
 	iface       string
+	mtu         int
 	client      wgClient
 	nl          netlinker
 	overlayNet  netip.Prefix
@@ -49,15 +59,15 @@ type State struct {
 // New creates a new Wesher Wireguard state.
 // The Wireguard keys are generated for every new interface.
 // The interface must later be setup using SetUpInterface.
-func New(iface string, port int, prefix netip.Prefix, name string) (*State, *common.Node, error) {
+func New(cfg Config) (*State, *common.Node, error) {
 	client, err := wgctrl.New()
 	if err != nil {
 		return nil, nil, fmt.Errorf("instantiating wireguard client: %w", err)
 	}
-	return newState(iface, port, prefix, name, client, &netlink.Handle{})
+	return newState(cfg, client, &netlink.Handle{})
 }
 
-func newState(iface string, port int, prefix netip.Prefix, name string, client wgClient, nl netlinker) (*State, *common.Node, error) {
+func newState(cfg Config, client wgClient, nl netlinker) (*State, *common.Node, error) {
 	privKey, err := wgtypes.GeneratePrivateKey()
 	if err != nil {
 		return nil, nil, fmt.Errorf("generating private key: %w", err)
@@ -65,18 +75,19 @@ func newState(iface string, port int, prefix netip.Prefix, name string, client w
 	pubKey := privKey.PublicKey()
 
 	state := State{
-		iface:       iface,
+		iface:       cfg.Interface,
+		mtu:         cfg.MTU,
 		client:      client,
 		nl:          nl,
-		overlayNet:  prefix,
-		OverlayAddr: overlayAddr(prefix, name),
-		Port:        port,
+		overlayNet:  cfg.OverlayNet,
+		OverlayAddr: overlayAddr(cfg.OverlayNet, cfg.Name),
+		Port:        cfg.Port,
 		PrivKey:     privKey,
 		PubKey:      pubKey,
 	}
 	slog.Debug("assigned overlay address", "addr", state.OverlayAddr)
 
-	node := &common.Node{Name: name}
+	node := &common.Node{Name: cfg.Name}
 	node.OverlayAddr = state.OverlayAddr
 	node.PubKey = state.PubKey.String()
 
@@ -141,8 +152,7 @@ func (s *State) SetUpInterface(nodes []common.Node) error {
 	}); err != nil {
 		return fmt.Errorf("setting address for %s: %w", s.iface, err)
 	}
-	// TODO: make MTU configurable?
-	if err := s.nl.LinkSetMTU(link, 1420); err != nil {
+	if err := s.nl.LinkSetMTU(link, s.mtu); err != nil {
 		return fmt.Errorf("setting MTU for %s: %w", s.iface, err)
 	}
 	if err := s.nl.LinkSetUp(link); err != nil {

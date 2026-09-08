@@ -230,7 +230,7 @@ Hygiene:
 Candidates, roughly by value-to-effort. Each is a **DECISION** to discuss
 before starting; none are committed yet.
 
-- [ ] Configurable MTU (`--mtu`, default 1420). Upstream TODO; trivial.
+- [x] Configurable MTU (`--mtu`, default 1420). `wg.New` now takes a `wg.Config`.
 - [ ] `showkey` subcommand to print the persisted cluster key.
 - [ ] Persistent keepalive option for peers behind NAT
       (`--persistent-keepalive`).

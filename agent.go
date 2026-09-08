@@ -30,12 +30,17 @@ type AgentCmd struct {
 	WireguardPort int          `env:"WESHER_WIREGUARD_PORT" help:"port used for wireguard traffic (UDP); must be the same across cluster" default:"51820"`
 	OverlayNet    netip.Prefix `env:"WESHER_OVERLAY_NET" help:"the network in which to allocate addresses for the overlay mesh network (CIDR format); smaller networks increase the chance of IP collision" default:"10.0.0.0/8"`
 	Interface     string       `env:"WESHER_INTERFACE" help:"name of the wireguard interface to create and manage" default:"wgoverlay"`
+	MTU           int          `env:"WESHER_MTU" help:"MTU of the wireguard interface" default:"1420"`
 	NoEtcHosts    bool         `env:"WESHER_NO_ETC_HOSTS" help:"disable writing of entries to /etc/hosts"`
 }
 
 func (a *AgentCmd) Validate() error {
 	if a.OverlayNet.Bits()%8 != 0 {
 		return fmt.Errorf("unsupported overlay network size; net mask must be multiple of 8, got %d", a.OverlayNet.Bits())
+	}
+
+	if a.MTU < 576 || a.MTU > 65535 {
+		return fmt.Errorf("unsupported MTU %d; must be between 576 and 65535", a.MTU)
 	}
 
 	switch {
@@ -159,7 +164,13 @@ func (a *AgentCmd) Run() error {
 	if err != nil {
 		return fmt.Errorf("getting hostname: %w", err)
 	}
-	wgstate, localNode, err := wg.New(a.Interface, a.WireguardPort, a.OverlayNet, hostname)
+	wgstate, localNode, err := wg.New(wg.Config{
+		Interface:  a.Interface,
+		Port:       a.WireguardPort,
+		OverlayNet: a.OverlayNet,
+		Name:       hostname,
+		MTU:        a.MTU,
+	})
 	if err != nil {
 		return fmt.Errorf("instantiating wireguard controller: %w", err)
 	}

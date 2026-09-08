@@ -11,6 +11,9 @@ import (
 
 var testOverlay = netip.MustParsePrefix("10.0.0.0/8")
 
+// validCmd returns an AgentCmd with the flag defaults that Validate requires.
+func validCmd() AgentCmd { return AgentCmd{OverlayNet: testOverlay, MTU: 1420} }
+
 func Test_AgentCmd_Validate_errors(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -19,17 +22,22 @@ func Test_AgentCmd_Validate_errors(t *testing.T) {
 	}{
 		{
 			"overlay mask not multiple of 8",
-			AgentCmd{OverlayNet: netip.MustParsePrefix("10.0.0.0/20")},
+			AgentCmd{OverlayNet: netip.MustParsePrefix("10.0.0.0/20"), MTU: 1420},
 			"unsupported overlay network size",
 		},
 		{
 			"bind addr and iface both set",
-			AgentCmd{OverlayNet: testOverlay, BindAddr: "127.0.0.1", BindIface: "lo"},
+			AgentCmd{OverlayNet: testOverlay, MTU: 1420, BindAddr: "127.0.0.1", BindIface: "lo"},
 			"both bind address and bind interface",
 		},
 		{
+			"mtu too small",
+			AgentCmd{OverlayNet: testOverlay, MTU: 500},
+			"unsupported MTU",
+		},
+		{
 			"bind iface missing",
-			AgentCmd{OverlayNet: testOverlay, BindIface: "nonexistent0"},
+			AgentCmd{OverlayNet: testOverlay, MTU: 1420, BindIface: "nonexistent0"},
 			"getting interface by name",
 		},
 	}
@@ -75,28 +83,28 @@ func Test_firstIPv4(t *testing.T) {
 }
 
 func Test_AgentCmd_Validate_bindIface(t *testing.T) {
-	cmd := AgentCmd{OverlayNet: testOverlay, BindIface: "lo"}
+	cmd := validCmd()
+	cmd.BindIface = "lo"
 	require.NoError(t, cmd.Validate())
 	assert.Equal(t, "127.0.0.1", cmd.BindAddr)
 }
 
 func Test_AgentCmd_Validate_bindAddrExplicit(t *testing.T) {
-	cmd := AgentCmd{OverlayNet: testOverlay, BindAddr: "192.0.2.1"}
+	cmd := validCmd()
+	cmd.BindAddr = "192.0.2.1"
 	require.NoError(t, cmd.Validate())
 	assert.Equal(t, "192.0.2.1", cmd.BindAddr)
 }
 
 func Test_AgentCmd_Validate_bindAddrAutodetect(t *testing.T) {
-	cmd := AgentCmd{OverlayNet: testOverlay}
+	cmd := validCmd()
 	require.NoError(t, cmd.Validate())
 	assert.NotNil(t, net.ParseIP(cmd.BindAddr), "expected an IP, got %q", cmd.BindAddr)
 }
 
 func Test_AgentCmd_Validate_validKey(t *testing.T) {
-	cmd := AgentCmd{
-		ClusterKey: key("abcdefghijklmnopqrstuvwxyzABCDEF"),
-		OverlayNet: testOverlay,
-		BindAddr:   "127.0.0.1",
-	}
+	cmd := validCmd()
+	cmd.ClusterKey = key("abcdefghijklmnopqrstuvwxyzABCDEF")
+	cmd.BindAddr = "127.0.0.1"
 	require.NoError(t, cmd.Validate())
 }

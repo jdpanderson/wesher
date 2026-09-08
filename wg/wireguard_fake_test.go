@@ -3,7 +3,6 @@ package wg
 import (
 	"errors"
 	"net"
-	"net/netip"
 	"os"
 	"testing"
 
@@ -19,6 +18,7 @@ type fakeNL struct {
 	errs   map[string]error
 	calls  []string
 	link   netlink.Link
+	mtu    int
 	routes []*netlink.Route
 }
 
@@ -42,7 +42,7 @@ func (f *fakeNL) LinkByName(string) (netlink.Link, error) {
 	return &netlink.Wireguard{LinkAttrs: netlink.LinkAttrs{Name: "wgtest0", Index: 7}}, nil
 }
 func (f *fakeNL) AddrReplace(netlink.Link, *netlink.Addr) error { return f.call("AddrReplace") }
-func (f *fakeNL) LinkSetMTU(netlink.Link, int) error            { return f.call("LinkSetMTU") }
+func (f *fakeNL) LinkSetMTU(_ netlink.Link, mtu int) error      { f.mtu = mtu; return f.call("LinkSetMTU") }
 func (f *fakeNL) LinkSetUp(netlink.Link) error                  { return f.call("LinkSetUp") }
 func (f *fakeNL) RouteAdd(r *netlink.Route) error {
 	if err := f.call("RouteAdd"); err != nil {
@@ -93,7 +93,7 @@ func (f *fakeWG) ConfigureDevice(_ string, cfg wgtypes.Config) error {
 
 func newFakeState(t *testing.T, nl *fakeNL, wgc *fakeWG) *State {
 	t.Helper()
-	s, _, err := newState("wgtest0", 51820, netip.MustParsePrefix(testPrefix), "test", wgc, nl)
+	s, _, err := newState(testConfig(), wgc, nl)
 	require.NoError(t, err)
 	return s
 }
@@ -108,6 +108,7 @@ func Test_State_SetUpInterface_fake(t *testing.T) {
 
 	assert.Equal(t, []string{"LinkAdd", "LinkByName", "AddrReplace", "LinkSetMTU", "LinkSetUp", "RouteAdd", "RouteList"}, nl.calls)
 	assert.Equal(t, "wireguard", nl.link.Type())
+	assert.Equal(t, 1400, nl.mtu)
 	require.NotNil(t, wgc.cfg)
 	assert.True(t, wgc.cfg.ReplacePeers)
 	assert.Equal(t, 51820, *wgc.cfg.ListenPort)
