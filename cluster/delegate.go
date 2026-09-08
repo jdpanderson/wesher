@@ -3,8 +3,8 @@ package cluster
 import (
 	"log/slog"
 
-	"github.com/costela/wesher/common"
 	"github.com/hashicorp/memberlist"
+	"github.com/jdpanderson/wesher/common"
 )
 
 // DelegateNode implements the memberlist.Delegate interface.

@@ -10,8 +10,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/costela/wesher/cluster"
-	"github.com/costela/wesher/wg"
+	"github.com/jdpanderson/wesher/cluster"
+	"github.com/jdpanderson/wesher/wg"
 )
 
 // StatusCmd shows the live wireguard state of a wesher interface, naming peers

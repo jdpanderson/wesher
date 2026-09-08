@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/costela/wesher/common"
+	"github.com/jdpanderson/wesher/common"
 	"github.com/vishvananda/netlink"
 	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"

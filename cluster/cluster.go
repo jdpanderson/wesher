@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/costela/wesher/common"
 	"github.com/hashicorp/memberlist"
+	"github.com/jdpanderson/wesher/common"
 	"github.com/mattn/go-isatty"
 )
 

@@ -5,7 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/costela/wesher/cluster"
+	"github.com/jdpanderson/wesher/cluster"
 )
 
 // key is a base64-encoded cluster key flag; empty means "generate one".

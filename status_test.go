@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/costela/wesher/wg"
+	"github.com/jdpanderson/wesher/wg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

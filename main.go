@@ -1,4 +1,4 @@
-package main // import "github.com/costela/wesher"
+package main // import "github.com/jdpanderson/wesher"
 
 import (
 	"fmt"

@@ -1,4 +1,4 @@
-module github.com/costela/wesher
+module github.com/jdpanderson/wesher
 
 go 1.26.0
 

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/costela/wesher/common"
+	"github.com/jdpanderson/wesher/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"

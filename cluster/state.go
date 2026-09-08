@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/costela/wesher/common"
+	"github.com/jdpanderson/wesher/common"
 )
 
 // State keeps track of information needed to rejoin the cluster

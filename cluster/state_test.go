@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/costela/wesher/common"
+	"github.com/jdpanderson/wesher/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

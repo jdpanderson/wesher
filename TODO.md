@@ -222,12 +222,12 @@ Hygiene:
       promises to reflect what we actually plan. Table and promises done; the
       badge and the release job's repository check follow the module-path
       DECISION below.
-- [ ] **DECISION**: module path rename and README ownership (deferred from
-      phase 0). README half done 2026-09-07: links, badge, release and clone
-      URLs point at github.com/jdpanderson/wesher; the `go get` install path
-      is gone until the module path matches. Still open: `go.mod` module path,
-      the `import` comment in main.go, and the release job's
-      `github.repository == 'costela/wesher'` gate in CI.
+- [x] **DECISION**: module path rename and README ownership (deferred from
+      phase 0). Decided 2026-09-08: the code has diverged too far for
+      cherry-picking to upstream to matter. Module path is
+      `github.com/jdpanderson/wesher`; imports, the `import` comment, the CI
+      release gate and the README follow. `go install .../wesher@latest`
+      works again. The README keeps the "fork of costela/wesher" line.
 
 ## Phase 6: features
 

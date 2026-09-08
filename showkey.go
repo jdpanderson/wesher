@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/costela/wesher/cluster"
+	"github.com/jdpanderson/wesher/cluster"
 )
 
 // ShowKeyCmd prints the persisted cluster key, for nodes started without a terminal.

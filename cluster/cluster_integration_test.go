@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/costela/wesher/common"
 	"github.com/hashicorp/memberlist"
+	"github.com/jdpanderson/wesher/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

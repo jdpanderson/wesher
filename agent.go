@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v6"
-	"github.com/costela/wesher/cluster"
-	"github.com/costela/wesher/common"
-	"github.com/costela/wesher/etchosts"
-	"github.com/costela/wesher/wg"
+	"github.com/jdpanderson/wesher/cluster"
+	"github.com/jdpanderson/wesher/common"
+	"github.com/jdpanderson/wesher/etchosts"
+	"github.com/jdpanderson/wesher/wg"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 

@@ -102,6 +102,11 @@ $ make
 ```
 This builds a bit-by-bit identical binary to the released ones, assuming the same go version is used to build its respective git tag.
 
+Alternatively, without a checkout (`--version` will then report `dev` rather than a tag):
+```
+$ go install github.com/jdpanderson/wesher@latest
+```
+
 ## Features
 
 The `wesher` tool builds a cluster and manages the configuration of wireguard on each node to create peer-to-peer
