@@ -137,6 +137,10 @@ func (eh *EtcHosts) movePreservePerms(src, dst *os.File) error {
 	if err != nil {
 		return fmt.Errorf("could not stat %s: %w", dst.Name(), err)
 	}
+	// CreateTemp made src 0600; match the hosts file before it becomes the hosts file
+	if err := src.Chmod(etcHostsInfo.Mode()); err != nil {
+		return fmt.Errorf("could not chmod %s: %w", src.Name(), err)
+	}
 
 	rename := eh.rename
 	if rename == nil {
@@ -156,12 +160,6 @@ func (eh *EtcHosts) movePreservePerms(src, dst *os.File) error {
 		}
 		_, err = io.Copy(dst, src)
 		return err
-	}
-
-	// ensure we're not running with some umask that might break things
-
-	if err := src.Chmod(etcHostsInfo.Mode()); err != nil {
-		return fmt.Errorf("could not chmod %s: %w", src.Name(), err)
 	}
 	// TODO: also keep user?
 
