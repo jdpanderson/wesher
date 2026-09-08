@@ -53,6 +53,18 @@ func Test_loadState_missing(t *testing.T) {
 	assert.Equal(t, &state{}, loadState("test"))
 }
 
+func Test_LoadKey(t *testing.T) {
+	useTempStatePaths(t)
+	_, err := LoadKey("test")
+	require.ErrorContains(t, err, "no cluster key stored")
+
+	s := testState()
+	require.NoError(t, s.save("test"))
+	got, err := LoadKey("test")
+	require.NoError(t, err)
+	assert.Equal(t, s.ClusterKey, got)
+}
+
 func Test_loadState_malformed(t *testing.T) {
 	dir := useTempStatePaths(t)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.json"), []byte("{not json"), 0o600))

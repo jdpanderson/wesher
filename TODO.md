@@ -231,7 +231,8 @@ Candidates, roughly by value-to-effort. Each is a **DECISION** to discuss
 before starting; none are committed yet.
 
 - [x] Configurable MTU (`--mtu`, default 1420). `wg.New` now takes a `wg.Config`.
-- [ ] `showkey` subcommand to print the persisted cluster key.
+- [x] `showkey` subcommand to print the persisted cluster key
+      (`wesher showkey [--interface DEV]`, via `cluster.LoadKey`).
 - [x] Persistent keepalive option for peers behind NAT
       (`--persistent-keepalive`, a duration in whole seconds, 0 = off).
 - [x] Remove stale routes and hosts entries when a peer leaves (overlaps with

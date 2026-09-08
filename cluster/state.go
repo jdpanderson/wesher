@@ -39,6 +39,15 @@ func (s *state) save(clusterName string) error {
 
 // loadState reads the persisted state for clusterName; missing or unreadable
 // state yields an empty state.
+// LoadKey returns the cluster key persisted for clusterName.
+func LoadKey(clusterName string) ([]byte, error) {
+	key := loadState(clusterName).ClusterKey
+	if len(key) == 0 {
+		return nil, fmt.Errorf("no cluster key stored in %s", statePath(clusterName))
+	}
+	return key, nil
+}
+
 func loadState(clusterName string) *state {
 	statePath := statePath(clusterName)
 	content, err := os.ReadFile(statePath)

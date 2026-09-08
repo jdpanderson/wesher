@@ -53,7 +53,7 @@ func New(name string, init bool, clusterKey []byte, bindAddr string, bindPort in
 			fmt.Printf("new cluster key generated: %s\n", base64.StdEncoding.EncodeToString(clusterKey))
 		} else {
 			slog.Warn("new cluster key generated; not printing because stdout is not a terminal",
-				"hint", "grep ClusterKey "+statePath(name))
+				"hint", "wesher showkey --interface "+name)
 		}
 	}
 
