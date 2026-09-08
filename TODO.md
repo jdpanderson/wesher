@@ -142,7 +142,9 @@ Correctness issues found during the initial read (verify each, then fix):
       and on every gossip cycle, so this is a data race and the local node's
       metadata is only pushed by the `UpdateNode` call. Restructure so the
       node metadata is known before `Create`.
-- [ ] `Cluster.Name` dereferences `localNode`, nil until `Update` is called.
+- [x] `Cluster.Name` dereferences `localNode`, nil until `Update` is called.
+      Removed: it had no callers, and in production returned "" because
+      `wg.New` never sets the node name.
 - [x] `Cluster.Members` goroutine now stops on `Leave` (phase 4); data races
       with `Leave` on `state` and on the node slice fixed in phase 3.
 - [ ] The 100-slot events buffer remains a workaround for a memberlist

@@ -75,11 +75,6 @@ func New(name string, init bool, clusterKey []byte, bindAddr string, bindPort in
 	return &cluster, nil
 }
 
-// Name provides the current cluster name
-func (c *Cluster) Name() string {
-	return c.localNode.Name
-}
-
 // Join tries to join the cluster by contacting provided addresses
 // Provided addresses are passed as is, if no address is provided, known
 // cluster nodes are contacted instead.

@@ -76,7 +76,6 @@ func Test_Cluster_joinAndLeave(t *testing.T) {
 	defer a.Leave()
 	b, nodeB := newTestCluster(t, "b", "127.0.0.2", port, "10.0.0.2")
 	assert.Equal(t, "127.0.0.1", a.LocalName)
-	assert.Equal(t, "a", a.Name())
 
 	chA := a.Members()
 	drain(b.Members())
