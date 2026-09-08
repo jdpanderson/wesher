@@ -167,6 +167,10 @@ Hygiene:
 - [x] Drop the pre-0.3 `/var/lib/wesher/state.json` read fallback
       (`deprecatedStatePath`); state has been keyed by interface name since
       2020-05. README pointed at the old path; now names the per-interface file.
+- [x] Remove the hidden `--ip-as-name` flag (PoC-era local-testing aid that
+      set the memberlist node name to the bind IP and broke `/etc/hosts`
+      entries). The integration tests now name nodes via the
+      `newMemberlistConfig` hook instead.
 - [ ] Replace `nolint: errcheck` sites with explicit logging where the error is
       useful (state save failures are worth a warning).
 - [ ] Wire up `golangci-lint` with a modest config and fix what it reports.

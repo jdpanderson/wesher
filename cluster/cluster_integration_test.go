@@ -25,9 +25,18 @@ func freePort(t *testing.T) int {
 	return l.Addr().(*net.TCPAddr).Port
 }
 
+// newTestCluster creates a cluster whose memberlist node is named after its
+// bind address, so several in-process nodes do not collide on the hostname.
 func newTestCluster(t *testing.T, name, bindAddr string, port int, overlay string) (*Cluster, *common.Node) {
 	t.Helper()
-	c, err := New(name, true, testKey, bindAddr, port, true)
+	orig := newMemberlistConfig
+	newMemberlistConfig = func() *memberlist.Config {
+		cfg := orig()
+		cfg.Name = bindAddr
+		return cfg
+	}
+	c, err := New(name, true, testKey, bindAddr, port)
+	newMemberlistConfig = orig
 	require.NoError(t, err)
 
 	node := &common.Node{Name: name}
@@ -105,7 +114,7 @@ func Test_Cluster_joinFailure(t *testing.T) {
 
 func Test_New_badBindAddr(t *testing.T) {
 	useTempStatePaths(t)
-	_, err := New("a", true, testKey, "192.0.2.1", 0, false) // TEST-NET, not a local address
+	_, err := New("a", true, testKey, "192.0.2.1", 0) // TEST-NET, not a local address
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "creating memberlist")
 }

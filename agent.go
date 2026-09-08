@@ -31,9 +31,6 @@ type AgentCmd struct {
 	OverlayNet    netip.Prefix `env:"WESHER_OVERLAY_NET" help:"the network in which to allocate addresses for the overlay mesh network (CIDR format); smaller networks increase the chance of IP collision" default:"10.0.0.0/8"`
 	Interface     string       `env:"WESHER_INTERFACE" help:"name of the wireguard interface to create and manage" default:"wgoverlay"`
 	NoEtcHosts    bool         `env:"WESHER_NO_ETC_HOSTS" help:"disable writing of entries to /etc/hosts"`
-
-	// for easier local testing; will break etchosts entry
-	UseIPAsName bool `name:"ip-as-name" default:"false" hidden:""`
 }
 
 func (a *AgentCmd) Validate() error {
@@ -98,7 +95,7 @@ type hostsWriter interface {
 
 // Run wires up cluster, wireguard and /etc/hosts, joins the cluster and runs the agent loop until SIGTERM/SIGINT.
 func (a *AgentCmd) Run(cli *cli) error {
-	cluster, err := cluster.New(a.Interface, a.Init, a.ClusterKey.bytes, a.BindAddr, a.ClusterPort, a.UseIPAsName)
+	cluster, err := cluster.New(a.Interface, a.Init, a.ClusterKey.bytes, a.BindAddr, a.ClusterPort)
 	if err != nil {
 		return fmt.Errorf("creating cluster: %w", err)
 	}
