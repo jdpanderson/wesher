@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/costela/wesher/common"
 	"github.com/stretchr/testify/assert"
@@ -41,7 +42,10 @@ func enterTestNetns(t *testing.T) {
 
 // testConfig uses a non-default MTU so the test proves it is applied.
 func testConfig() Config {
-	return Config{Interface: "wgtest0", Port: 51820, OverlayNet: netip.MustParsePrefix(testPrefix), Name: "test", MTU: 1400}
+	return Config{
+		Interface: "wgtest0", Port: 51820, OverlayNet: netip.MustParsePrefix(testPrefix), Name: "test",
+		MTU: 1400, PersistentKeepalive: 25 * time.Second,
+	}
 }
 
 func testPeer(t *testing.T, name, addr, overlay string) common.Node {
@@ -91,6 +95,7 @@ func Test_State_SetUpInterface_and_Down(t *testing.T) {
 	require.Len(t, dev.Peers, 2)
 	assert.Equal(t, "192.0.2.1:51820", dev.Peers[0].Endpoint.String())
 	assert.Equal(t, "10.99.0.1/32", dev.Peers[0].AllowedIPs[0].String())
+	assert.Equal(t, 25*time.Second, dev.Peers[0].PersistentKeepaliveInterval)
 
 	routes, err := netlink.RouteList(link, netlink.FAMILY_V4)
 	require.NoError(t, err)

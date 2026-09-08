@@ -232,8 +232,8 @@ before starting; none are committed yet.
 
 - [x] Configurable MTU (`--mtu`, default 1420). `wg.New` now takes a `wg.Config`.
 - [ ] `showkey` subcommand to print the persisted cluster key.
-- [ ] Persistent keepalive option for peers behind NAT
-      (`--persistent-keepalive`).
+- [x] Persistent keepalive option for peers behind NAT
+      (`--persistent-keepalive`, a duration in whole seconds, 0 = off).
 - [x] Remove stale routes and hosts entries when a peer leaves (overlaps with
       the phase 5 route item; may fall out of that fix). It did: hosts entries
       were already rewritten on every update, routes are now pruned too.

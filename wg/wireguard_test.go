@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/netip"
 	"testing"
+	"time"
 
 	"github.com/costela/wesher/common"
 	"github.com/stretchr/testify/assert"
@@ -105,12 +106,25 @@ func Test_State_nodesToPeerConfigs(t *testing.T) {
 
 	assert.Equal(t, key1, cfgs[0].PublicKey.String())
 	assert.True(t, cfgs[0].ReplaceAllowedIPs)
+	assert.Nil(t, cfgs[0].PersistentKeepaliveInterval, "keepalive off by default")
 	assert.Equal(t, "192.0.2.1:51820", cfgs[0].Endpoint.String())
 	assert.Equal(t, "10.0.0.1/32", cfgs[0].AllowedIPs[0].String())
 
 	assert.Equal(t, key2, cfgs[1].PublicKey.String())
 	assert.Equal(t, "[2001:db8::2]:51820", cfgs[1].Endpoint.String())
 	assert.Equal(t, "fd00::2/128", cfgs[1].AllowedIPs[0].String())
+}
+
+func Test_State_nodesToPeerConfigs_keepalive(t *testing.T) {
+	n := common.Node{Name: "n", Addr: net.ParseIP("192.0.2.1")}
+	n.OverlayAddr = netip.MustParseAddr("10.0.0.1")
+	n.PubKey = wgtypes.Key{1}.String()
+
+	s := &State{Port: 51820, keepalive: 25 * time.Second}
+	cfgs, err := s.nodesToPeerConfigs([]common.Node{n})
+	require.NoError(t, err)
+	require.NotNil(t, cfgs[0].PersistentKeepaliveInterval)
+	assert.Equal(t, 25*time.Second, *cfgs[0].PersistentKeepaliveInterval)
 }
 
 func Test_State_nodesToPeerConfigs_badKey(t *testing.T) {

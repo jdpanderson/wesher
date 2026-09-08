@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/netip"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,6 +35,11 @@ func Test_AgentCmd_Validate_errors(t *testing.T) {
 			"mtu too small",
 			AgentCmd{OverlayNet: testOverlay, MTU: 500},
 			"unsupported MTU",
+		},
+		{
+			"keepalive not whole seconds",
+			AgentCmd{OverlayNet: testOverlay, MTU: 1420, PersistentKeepalive: 1500 * time.Millisecond},
+			"unsupported persistent keepalive",
 		},
 		{
 			"bind iface missing",

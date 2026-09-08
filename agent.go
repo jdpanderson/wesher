@@ -31,7 +31,9 @@ type AgentCmd struct {
 	OverlayNet    netip.Prefix `env:"WESHER_OVERLAY_NET" help:"the network in which to allocate addresses for the overlay mesh network (CIDR format); smaller networks increase the chance of IP collision" default:"10.0.0.0/8"`
 	Interface     string       `env:"WESHER_INTERFACE" help:"name of the wireguard interface to create and manage" default:"wgoverlay"`
 	MTU           int          `env:"WESHER_MTU" help:"MTU of the wireguard interface" default:"1420"`
-	NoEtcHosts    bool         `env:"WESHER_NO_ETC_HOSTS" help:"disable writing of entries to /etc/hosts"`
+	// PersistentKeepalive is a time.Duration so kong accepts "25s"; 0 disables it.
+	PersistentKeepalive time.Duration `env:"WESHER_PERSISTENT_KEEPALIVE" help:"interval at which peers send keepalives, to keep NAT mappings open (e.g. 25s); 0 disables" default:"0"`
+	NoEtcHosts          bool          `env:"WESHER_NO_ETC_HOSTS" help:"disable writing of entries to /etc/hosts"`
 }
 
 func (a *AgentCmd) Validate() error {
@@ -41,6 +43,10 @@ func (a *AgentCmd) Validate() error {
 
 	if a.MTU < 576 || a.MTU > 65535 {
 		return fmt.Errorf("unsupported MTU %d; must be between 576 and 65535", a.MTU)
+	}
+
+	if ka := a.PersistentKeepalive; ka != 0 && (ka < time.Second || ka > 65535*time.Second || ka%time.Second != 0) {
+		return fmt.Errorf("unsupported persistent keepalive %s; must be whole seconds between 1s and 65535s", ka)
 	}
 
 	switch {
@@ -170,6 +176,8 @@ func (a *AgentCmd) Run() error {
 		OverlayNet: a.OverlayNet,
 		Name:       hostname,
 		MTU:        a.MTU,
+
+		PersistentKeepalive: a.PersistentKeepalive,
 	})
 	if err != nil {
 		return fmt.Errorf("instantiating wireguard controller: %w", err)

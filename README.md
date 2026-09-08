@@ -144,6 +144,7 @@ All options can be passed either as command-line flags or environment variables:
 | `--overlay-net ADDR/MASK` | WESHER_OVERLAY_NET | the network in which to allocate addresses for the overlay mesh network (CIDR format); smaller networks increase the chance of IP collision | `10.0.0.0/8` |
 | `--interface DEV` | WESHER_INTERFACE | name of the wireguard interface to create and manage | `wgoverlay` |
 | `--mtu MTU` | WESHER_MTU | MTU of the wireguard interface | `1420` |
+| `--persistent-keepalive DURATION` | WESHER_PERSISTENT_KEEPALIVE | interval at which peers send keepalives, to keep NAT mappings open (e.g. `25s`); `0` disables | `0` |
 | `--no-etc-hosts` | WESHER_NO_ETC_HOSTS | whether to skip writing hosts entries for each node in mesh | `false` |
 | `--log-level LEVEL` | WESHER_LOG_LEVEL | set the verbosity (one of debug/info/warn/error) | `warn` |
 

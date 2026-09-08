@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"time"
 
 	"github.com/costela/wesher/common"
 	"github.com/vishvananda/netlink"
@@ -41,12 +42,16 @@ type Config struct {
 	OverlayNet netip.Prefix // network the overlay addresses are picked from
 	Name       string       // local node name; hashed into the overlay address
 	MTU        int          // interface MTU
+	// PersistentKeepalive, when non-zero, makes every peer send keepalives at this
+	// interval so NAT mappings stay open.
+	PersistentKeepalive time.Duration
 }
 
 // State holds the configured state of a Wesher Wireguard interface.
 type State struct {
 	iface       string
 	mtu         int
+	keepalive   time.Duration
 	client      wgClient
 	nl          netlinker
 	overlayNet  netip.Prefix
@@ -77,6 +82,7 @@ func newState(cfg Config, client wgClient, nl netlinker) (*State, *common.Node, 
 	state := State{
 		iface:       cfg.Interface,
 		mtu:         cfg.MTU,
+		keepalive:   cfg.PersistentKeepalive,
 		client:      client,
 		nl:          nl,
 		overlayNet:  cfg.OverlayNet,
@@ -215,9 +221,14 @@ func (s *State) nodesToPeerConfigs(nodes []common.Node) ([]wgtypes.PeerConfig, e
 		if err != nil {
 			return nil, fmt.Errorf("parsing wireguard key: %w", err)
 		}
+		var keepalive *time.Duration
+		if s.keepalive > 0 {
+			keepalive = &s.keepalive
+		}
 		peerCfgs[i] = wgtypes.PeerConfig{
-			PublicKey:         pubKey,
-			ReplaceAllowedIPs: true,
+			PublicKey:                   pubKey,
+			ReplaceAllowedIPs:           true,
+			PersistentKeepaliveInterval: keepalive,
 			Endpoint: &net.UDPAddr{
 				IP:   node.Addr,
 				Port: s.Port,
