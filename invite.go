@@ -13,8 +13,8 @@ import (
 
 // controlFlags are shared by the commands that talk to a running agent.
 type controlFlags struct {
-	Interface     string `env:"CHEESECLOTH_INTERFACE" help:"wireguard interface of the agent to talk to" default:"wgoverlay"`
-	ControlSocket string `env:"CHEESECLOTH_CONTROL_SOCKET" help:"agent control socket (default /run/cheesecloth/<interface>.sock)"`
+	Interface     string `help:"wireguard interface of the agent to talk to" default:"wgoverlay"`
+	ControlSocket string `help:"agent control socket (default /run/cheesecloth/<interface>.sock)"`
 }
 
 func (c *controlFlags) socket() string {

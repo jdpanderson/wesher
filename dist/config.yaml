@@ -1,0 +1,21 @@
+# cheesecloth configuration. Keys are the command-line flag names; a flag given
+# on the command line overrides the value here. Unknown keys are an error.
+# join-key and init are command-line only and must not appear in this file.
+#
+# Install as /etc/cheesecloth/config.yaml.
+
+# members to contact on start; leave out to resume from saved state
+#join:
+#  - node1.example.net
+#  - node2.example.net
+
+# address family of the cluster is decided here: 0.0.0.0 (IPv4) or :: (IPv6)
+bind-addr: 0.0.0.0
+cluster-port: 7946
+wireguard-port: 51820
+overlay-net: 10.0.0.0/8
+interface: wgoverlay
+mtu: 1420
+#persistent-keepalive: 25s
+#no-etc-hosts: true
+log-level: warn

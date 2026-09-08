@@ -11,7 +11,8 @@ import (
 var version = "dev"
 
 type cli struct {
-	LogLevel LogLevelFlag     `env:"CHEESECLOTH_LOG_LEVEL" help:"set the verbosity (debug/info/warn/error)" default:"warn"`
+	Config   kong.ConfigFlag  `help:"configuration file to read instead of ${default_config}" placeholder:"PATH"`
+	LogLevel LogLevelFlag     `help:"set the verbosity (debug/info/warn/error)" default:"warn"`
 	Version  kong.VersionFlag `help:"display current version and exit"`
 
 	Agent  AgentCmd  `cmd:"" default:"withargs" help:"start the cheesecloth agent (default when no command specified)"`
@@ -22,15 +23,14 @@ type cli struct {
 
 func main() {
 	cli := &cli{}
-	ktx := kong.Parse(cli,
-		kong.Name("cheesecloth"),
-		kong.Description("mesh overlay network manager"),
-		kong.UsageOnError(),
-		kong.Vars{"version": version},
-	)
-
-	err := ktx.Run(cli)
-	ktx.FatalIfErrorf(err)
+	k, err := parser(cli, DefaultConfigPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "cheesecloth:", err)
+		os.Exit(1)
+	}
+	ktx, err := k.Parse(os.Args[1:])
+	k.FatalIfErrorf(err)
+	k.FatalIfErrorf(ktx.Run())
 }
 
 type LogLevelFlag string

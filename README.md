@@ -79,9 +79,9 @@ A minimal `systemd` unit file is provided under the `dist` folder and can be cop
 ```
 The provided unit file assumes `cheesecloth` is installed to `/usr/local/sbin`.
 
-For an unattended first start, put `CHEESECLOTH_JOIN=x.x.x.x` and `CHEESECLOTH_JOIN_KEY=...` in `/etc/default/cheesecloth`
-(see [configuration options](#configuration-options) below). Once the node is enrolled the key is ignored on later
-starts and can be removed from the file.
+Put the node's settings in `/etc/cheesecloth/config.yaml` (see [configuration options](#configuration-options) below).
+The join key never goes in the file: enrol the node once by hand, or from a provisioning step, with
+`cheesecloth --join-key TOKEN` (the `join` hosts can come from the file), then let the unit start it on every boot.
 
 ## Checking on a node
 
@@ -157,23 +157,28 @@ This means a restart requires no manual intervention, even if every node restart
 
 ## Configuration options
 
-All options can be passed either as command-line flags or environment variables:
+Options come from command-line flags or from a YAML configuration file, `/etc/cheesecloth/config.yaml` by default or
+the file named by `--config`. Config keys are the flag names without the leading dashes, e.g. `bind-addr: "::"`.
+A flag given on the command line overrides the file. Unknown keys in the file are an error, as are `join-key` and
+`init`, which are one-time actions and stay on the command line. Environment variables are not read.
+An annotated example lives in [`dist/config.yaml`](dist/config.yaml).
 
-| Option | Env | Description | Default |
+| Option | Config key | Description | Default |
 |---|---|---|---|
-| `--join HOST,...` | CHEESECLOTH_JOIN | comma separated list of hostnames or IP addresses of existing cluster members; if not provided, will attempt resuming any known state or otherwise wait for further members |  |
-| `--join-key TOKEN` | CHEESECLOTH_JOIN_KEY | invitation token from `cheesecloth invite` on a member; needed only the first time this node joins, ignored afterwards |  |
-| `--init` | CHEESECLOTH_INIT | start a new cluster with this node as its root; any known state from previous runs will be forgotten | `false` |
-| `--control-socket PATH` | CHEESECLOTH_CONTROL_SOCKET | unix socket used by `cheesecloth invite` and `cheesecloth revoke` | `/run/cheesecloth/<interface>.sock` |
-| `--bind-addr ADDR` | CHEESECLOTH_BIND_ADDR | address to bind for cluster membership; `0.0.0.0` or `::` binds every interface of that family and advertises one of its addresses (public preferred). The family decides whether the cluster runs over IPv4 or IPv6, see [IPv4 and IPv6](#ipv4-and-ipv6) | `0.0.0.0` |
-| `--cluster-port PORT` | CHEESECLOTH_CLUSTER_PORT | port used for membership gossip traffic (both TCP and UDP); must be the same across cluster | `7946` |
-| `--wireguard-port PORT` | CHEESECLOTH_WIREGUARD_PORT | port used for wireguard traffic (UDP); must be the same across cluster | `51820` |
-| `--overlay-net ADDR/MASK` | CHEESECLOTH_OVERLAY_NET | the network in which to allocate addresses for the overlay mesh network (CIDR format); smaller networks increase the chance of IP collision | `10.0.0.0/8` |
-| `--interface DEV` | CHEESECLOTH_INTERFACE | name of the wireguard interface to create and manage | `wgoverlay` |
-| `--mtu MTU` | CHEESECLOTH_MTU | MTU of the wireguard interface | `1420` |
-| `--persistent-keepalive DURATION` | CHEESECLOTH_PERSISTENT_KEEPALIVE | interval at which peers send keepalives, to keep NAT mappings open (e.g. `25s`); `0` disables | `0` |
-| `--no-etc-hosts` | CHEESECLOTH_NO_ETC_HOSTS | whether to skip writing hosts entries for each node in mesh | `false` |
-| `--log-level LEVEL` | CHEESECLOTH_LOG_LEVEL | set the verbosity (one of debug/info/warn/error) | `warn` |
+| `--join HOST,...` | `join` | comma separated list of hostnames or IP addresses of existing cluster members; if not provided, will attempt resuming any known state or otherwise wait for further members |  |
+| `--join-key TOKEN` | command line only | invitation token from `cheesecloth invite` on a member; needed only the first time this node joins, ignored afterwards |  |
+| `--init` | command line only | start a new cluster with this node as its root; any known state from previous runs will be forgotten | `false` |
+| `--control-socket PATH` | `control-socket` | unix socket used by `cheesecloth invite` and `cheesecloth revoke` | `/run/cheesecloth/<interface>.sock` |
+| `--bind-addr ADDR` | `bind-addr` | address to bind for cluster membership; `0.0.0.0` or `::` binds every interface of that family and advertises one of its addresses (public preferred). The family decides whether the cluster runs over IPv4 or IPv6, see [IPv4 and IPv6](#ipv4-and-ipv6) | `0.0.0.0` |
+| `--cluster-port PORT` | `cluster-port` | port used for membership gossip traffic (both TCP and UDP); must be the same across cluster | `7946` |
+| `--wireguard-port PORT` | `wireguard-port` | port used for wireguard traffic (UDP); must be the same across cluster | `51820` |
+| `--overlay-net ADDR/MASK` | `overlay-net` | the network in which to allocate addresses for the overlay mesh network (CIDR format); smaller networks increase the chance of IP collision | `10.0.0.0/8` |
+| `--interface DEV` | `interface` | name of the wireguard interface to create and manage | `wgoverlay` |
+| `--mtu MTU` | `mtu` | MTU of the wireguard interface | `1420` |
+| `--persistent-keepalive DURATION` | `persistent-keepalive` | interval at which peers send keepalives, to keep NAT mappings open (e.g. `25s`); `0` disables | `0` |
+| `--no-etc-hosts` | `no-etc-hosts` | whether to skip writing hosts entries for each node in mesh | `false` |
+| `--log-level LEVEL` | `log-level` | set the verbosity (one of debug/info/warn/error) | `warn` |
+| `--config PATH` | command line only | configuration file to read | `/etc/cheesecloth/config.yaml` |
 
 ## IPv4 and IPv6
 

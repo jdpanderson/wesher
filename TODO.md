@@ -248,8 +248,11 @@ before starting; none are committed yet.
       periodically re-join configured addresses.
 - [ ] Overlay IP collision detection: warn or refuse when two members hash to
       the same address (upstream roadmap item).
-- [ ] Config file support (kong supports YAML/JSON loaders) alongside flags
-      and env.
+- [x] Config file support. Decided 2026-09-08: YAML at
+      `/etc/cheesecloth/config.yaml` or `--config`, keys are flag names,
+      command line overrides the file, unknown keys are an error, `join-key`
+      and `init` are refused in the file. Environment variables removed
+      entirely; the systemd unit no longer loads an EnvironmentFile.
 - [x] `status` subcommand listing peers, handshake age, and overlay addresses
       (`wesher status [--interface DEV] [--json]`; names come from the
       persisted cluster state). A health endpoint remains a separate candidate.

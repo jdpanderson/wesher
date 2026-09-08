@@ -25,19 +25,19 @@ import (
 )
 
 type AgentCmd struct {
-	Join          []string     `env:"CHEESECLOTH_JOIN" help:"comma separated list of hostnames or IP addresses of existing cluster members; if not provided, will attempt resuming any known state or otherwise wait for further members."`
-	JoinKey       string       `env:"CHEESECLOTH_JOIN_KEY" help:"invitation token from 'cheesecloth invite' on a member, needed only the first time this node joins"`
-	Init          bool         `env:"CHEESECLOTH_INIT" help:"start a new cluster with this node as its root; any known state from previous runs will be forgotten"`
-	BindAddr      netip.Addr   `env:"CHEESECLOTH_BIND_ADDR" help:"address to bind for cluster membership traffic; 0.0.0.0 or :: binds every interface of that family and advertises one of its addresses. The address family decides whether the cluster runs over IPv4 or IPv6" default:"0.0.0.0"`
-	ClusterPort   int          `env:"CHEESECLOTH_CLUSTER_PORT" help:"port used for membership gossip traffic (both TCP and UDP); must be the same across cluster" default:"7946"`
-	WireguardPort int          `env:"CHEESECLOTH_WIREGUARD_PORT" help:"port used for wireguard traffic (UDP); must be the same across cluster" default:"51820"`
-	OverlayNet    netip.Prefix `env:"CHEESECLOTH_OVERLAY_NET" help:"the network in which to allocate addresses for the overlay mesh network (CIDR format); smaller networks increase the chance of IP collision" default:"10.0.0.0/8"`
-	Interface     string       `env:"CHEESECLOTH_INTERFACE" help:"name of the wireguard interface to create and manage" default:"wgoverlay"`
-	MTU           int          `env:"CHEESECLOTH_MTU" help:"MTU of the wireguard interface" default:"1420"`
+	Join          []string     `help:"comma separated list of hostnames or IP addresses of existing cluster members; if not provided, will attempt resuming any known state or otherwise wait for further members."`
+	JoinKey       string       `help:"invitation token from 'cheesecloth invite' on a member, needed only the first time this node joins"`
+	Init          bool         `help:"start a new cluster with this node as its root; any known state from previous runs will be forgotten"`
+	BindAddr      netip.Addr   `help:"address to bind for cluster membership traffic; 0.0.0.0 or :: binds every interface of that family and advertises one of its addresses. The address family decides whether the cluster runs over IPv4 or IPv6" default:"0.0.0.0"`
+	ClusterPort   int          `help:"port used for membership gossip traffic (both TCP and UDP); must be the same across cluster" default:"7946"`
+	WireguardPort int          `help:"port used for wireguard traffic (UDP); must be the same across cluster" default:"51820"`
+	OverlayNet    netip.Prefix `help:"the network in which to allocate addresses for the overlay mesh network (CIDR format); smaller networks increase the chance of IP collision" default:"10.0.0.0/8"`
+	Interface     string       `help:"name of the wireguard interface to create and manage" default:"wgoverlay"`
+	MTU           int          `help:"MTU of the wireguard interface" default:"1420"`
 	// PersistentKeepalive is a time.Duration so kong accepts "25s"; 0 disables it.
-	PersistentKeepalive time.Duration `env:"CHEESECLOTH_PERSISTENT_KEEPALIVE" help:"interval at which peers send keepalives, to keep NAT mappings open (e.g. 25s); 0 disables" default:"0"`
-	NoEtcHosts          bool          `env:"CHEESECLOTH_NO_ETC_HOSTS" help:"disable writing of entries to /etc/hosts"`
-	ControlSocket       string        `env:"CHEESECLOTH_CONTROL_SOCKET" help:"unix socket for 'cheesecloth invite' and 'cheesecloth revoke' (default /run/cheesecloth/<interface>.sock)"`
+	PersistentKeepalive time.Duration `help:"interval at which peers send keepalives, to keep NAT mappings open (e.g. 25s); 0 disables" default:"0"`
+	NoEtcHosts          bool          `help:"disable writing of entries to /etc/hosts"`
+	ControlSocket       string        `help:"unix socket for 'cheesecloth invite' and 'cheesecloth revoke' (default /run/cheesecloth/<interface>.sock)"`
 }
 
 func (a *AgentCmd) Validate() error {

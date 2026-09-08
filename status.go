@@ -18,7 +18,7 @@ import (
 // StatusCmd shows the live wireguard state of a cheesecloth interface, naming peers
 // from the persisted cluster state. Needs the same privileges as the agent.
 type StatusCmd struct {
-	Interface string `env:"CHEESECLOTH_INTERFACE" help:"wireguard interface to report on" default:"wgoverlay"`
+	Interface string `help:"wireguard interface to report on" default:"wgoverlay"`
 	JSON      bool   `help:"print the report as JSON"`
 }
 
