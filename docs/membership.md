@@ -40,7 +40,7 @@ admitter's signature.
 Membership is a grow-only set of signed records, not a secret.
 
 ```
-Admission  { Identity, DHKey, Name, Admitter, IssuedAt, Signature }
+Admission  { Identity, DHKey, Name, Host, Admitter, IssuedAt, Signature }
 Revocation { Identity, Revoker, IssuedAt, Signature }
 ```
 
@@ -60,6 +60,23 @@ prefix (`cheesecloth/admission/v1`, `cheesecloth/revocation/v1`).
 - Records are distributed by memberlist's push/pull state sync (whole set,
   union merge) and by broadcast when a record is created. Nodes persist the
   set, so a restarted node has it before contacting anyone.
+
+### Overlay addresses
+
+`Host` is the member's slot in the overlay network: its address is
+`--overlay-net` with the host part set to `Host`. The root takes slot 1; an
+admitter gives a joiner the lowest slot no admission in its set uses (slots of
+revoked members are reused only when nothing else is free). Every node derives
+every member's address from the same records, so addresses are stable across
+restarts, dense in the overlay net, and independent of hostnames. Changing
+`--overlay-net` on every node moves the whole mesh without re-enrolling.
+
+Two members can be handed the same slot only if two admitters enrol joiners
+at the same time, before either admission has spread. The records still
+decide: the earlier admission (then the smaller identity) keeps the slot and
+every node excludes the other, logging the collision. The losing node keeps
+running but has no peers until it is enrolled again (delete its state file and
+join with a fresh invitation).
 
 ## Enrolment
 
@@ -131,9 +148,11 @@ gossip round, by which time the streamed push/pull has populated the book.
 Gossiped per node (memberlist limit 512 bytes):
 `{ OverlayAddr, WGPubKey, Identity, Signature }` with
 `Signature = Ed25519(identity, "cheesecloth/meta/v1" || Name || OverlayAddr || WGPubKey)`.
-A node installs a peer's WireGuard key only if the identity is a valid member
-and the signature verifies. This binds each node's ephemeral WireGuard key to
-its persisted identity without persisting the WireGuard key.
+A node installs a peer's WireGuard key only if the identity is a valid member,
+the signature verifies, and `OverlayAddr` is the address the peer's admission
+assigns. This binds each node's ephemeral WireGuard key to its persisted
+identity without persisting the WireGuard key, and stops a member from
+claiming another's address.
 
 ## Restart and recovery
 

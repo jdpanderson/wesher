@@ -26,23 +26,31 @@ func freePort(t *testing.T) int {
 	return l.Addr().(*net.TCPAddr).Port
 }
 
-func testNodeFor(name, overlay string) *common.Node {
+var testOverlay = netip.MustParsePrefix("10.0.0.0/8")
+
+// testNodeFor builds the local node for b at the overlay address its admission assigns.
+func testNodeFor(t *testing.T, name string, b *Bootstrap) *common.Node {
+	t.Helper()
+	host, err := b.Host()
+	require.NoError(t, err)
+	addr, ok := common.OverlayAddr(testOverlay, host)
+	require.True(t, ok)
 	node := &common.Node{Name: name}
-	node.OverlayAddr = netip.MustParseAddr(overlay)
+	node.OverlayAddr = addr
 	node.PubKey = "pubkey-" + name
 	return node
 }
 
 // rootCluster starts a new cluster whose root is this node.
-func rootCluster(t *testing.T, name, bindAddr string, gossipPort, enrolPort int, overlay string) *Cluster {
+func rootCluster(t *testing.T, name, bindAddr string, gossipPort, enrolPort int) *Cluster {
 	t.Helper()
 	b, err := Load(name, true)
 	require.NoError(t, err)
 	b.InitRoot(name, nil)
 	bind := netip.MustParseAddr(bindAddr)
 	c, err := New(Config{
-		Name: name, BindAddr: bind, AdvertiseAddr: bind, BindPort: gossipPort, EnrolPort: enrolPort,
-		LocalNode: testNodeFor(name, overlay), Identity: b.Identity, Root: b.Root, Records: b.Records,
+		Name: name, BindAddr: bind, AdvertiseAddr: bind, BindPort: gossipPort, EnrolPort: enrolPort, OverlayNet: testOverlay,
+		LocalNode: testNodeFor(t, name, b), Identity: b.Identity, Root: b.Root, Records: b.Records,
 	})
 	require.NoError(t, err)
 	return c
@@ -50,7 +58,7 @@ func rootCluster(t *testing.T, name, bindAddr string, gossipPort, enrolPort int,
 
 // enrolCluster enrols a new node with member (reachable at memberBind:memberEnrolPort)
 // and joins it to the gossip ring.
-func enrolCluster(t *testing.T, member *Cluster, memberBind string, memberEnrolPort int, name, bindAddr string, gossipPort, enrolPort int, overlay string) *Cluster {
+func enrolCluster(t *testing.T, member *Cluster, memberBind string, memberEnrolPort int, name, bindAddr string, gossipPort, enrolPort int) *Cluster {
 	t.Helper()
 	token, err := member.Invite(time.Minute, 1)
 	require.NoError(t, err)
@@ -61,8 +69,8 @@ func enrolCluster(t *testing.T, member *Cluster, memberBind string, memberEnrolP
 	b.Enrol(w.Root, w.Records)
 	bind := netip.MustParseAddr(bindAddr)
 	c, err := New(Config{
-		Name: name, BindAddr: bind, AdvertiseAddr: bind, BindPort: gossipPort, EnrolPort: enrolPort,
-		LocalNode: testNodeFor(name, overlay), Identity: b.Identity, Root: b.Root, Records: b.Records,
+		Name: name, BindAddr: bind, AdvertiseAddr: bind, BindPort: gossipPort, EnrolPort: enrolPort, OverlayNet: testOverlay,
+		LocalNode: testNodeFor(t, name, b), Identity: b.Identity, Root: b.Root, Records: b.Records,
 		Known: map[string]trust.PublicKey{w.GossipAddr: memberID},
 	})
 	require.NoError(t, err)
@@ -104,11 +112,11 @@ func Test_Cluster_enrolJoinLeave(t *testing.T) {
 	useTempStatePaths(t)
 	gossip, enrol := freePort(t), freePort(t)
 
-	a := rootCluster(t, "a", "127.0.0.1", gossip, enrol, "10.0.0.1")
+	a := rootCluster(t, "a", "127.0.0.1", gossip, enrol)
 	defer a.Leave()
 	chA := a.Members()
 
-	b := enrolCluster(t, a, "127.0.0.1", enrol, "b", "127.0.0.2", gossip, enrol, "10.0.0.2")
+	b := enrolCluster(t, a, "127.0.0.1", enrol, "b", "127.0.0.2", gossip, enrol)
 	drain(b.Members())
 
 	members := waitMembers(t, chA, 1)
@@ -138,12 +146,12 @@ func Test_Cluster_enrolJoinLeave(t *testing.T) {
 func Test_Cluster_rejectsUnenrolled(t *testing.T) {
 	useTempStatePaths(t)
 	gossip, enrol := freePort(t), freePort(t)
-	a := rootCluster(t, "a", "127.0.0.1", gossip, enrol, "10.0.0.1")
+	a := rootCluster(t, "a", "127.0.0.1", gossip, enrol)
 	defer a.Leave()
 	drain(a.Members())
 
 	// a node rooted elsewhere knows a's address and identity but is not a member of a's cluster
-	c := rootCluster(t, "c", "127.0.0.2", gossip, enrol, "10.0.0.3")
+	c := rootCluster(t, "c", "127.0.0.2", gossip, enrol)
 	defer c.Leave()
 	c.book.set(fmt.Sprintf("127.0.0.1:%d", gossip), a.Identity())
 	err := c.Join([]string{fmt.Sprintf("127.0.0.1:%d", gossip)})
@@ -155,10 +163,10 @@ func Test_Cluster_revocation(t *testing.T) {
 	useTempStatePaths(t)
 	useFastMemberlist(t)
 	gossip, enrol := freePort(t), freePort(t)
-	a := rootCluster(t, "a", "127.0.0.1", gossip, enrol, "10.0.0.1")
+	a := rootCluster(t, "a", "127.0.0.1", gossip, enrol)
 	defer a.Leave()
 	chA := a.Members()
-	b := enrolCluster(t, a, "127.0.0.1", enrol, "b", "127.0.0.2", gossip, enrol, "10.0.0.2")
+	b := enrolCluster(t, a, "127.0.0.1", enrol, "b", "127.0.0.2", gossip, enrol)
 	defer b.Leave()
 	chB := b.Members()
 	waitMembers(t, chA, 1)
@@ -175,17 +183,17 @@ func Test_Cluster_recordsSpreadTransitively(t *testing.T) {
 	useTempStatePaths(t)
 	useFastMemberlist(t)
 	gossip, enrol := freePort(t), freePort(t)
-	a := rootCluster(t, "a", "127.0.0.1", gossip, enrol, "10.0.0.1")
+	a := rootCluster(t, "a", "127.0.0.1", gossip, enrol)
 	defer a.Leave()
 	chA := a.Members()
-	b := enrolCluster(t, a, "127.0.0.1", enrol, "b", "127.0.0.2", gossip, enrol, "10.0.0.2")
+	b := enrolCluster(t, a, "127.0.0.1", enrol, "b", "127.0.0.2", gossip, enrol)
 	defer b.Leave()
 	chB := b.Members()
 	waitMembers(t, chA, 1)
 	waitMembers(t, chB, 1)
 
 	// c is enrolled by b, not by the root, and joins via b; a must still accept it
-	c := enrolCluster(t, b, "127.0.0.2", enrol, "c", "127.0.0.3", gossip, enrol, "10.0.0.3")
+	c := enrolCluster(t, b, "127.0.0.2", enrol, "c", "127.0.0.3", gossip, enrol)
 	defer c.Leave()
 	drain(c.Members())
 	members := waitMembers(t, chA, 2)
@@ -200,8 +208,8 @@ func Test_New_badBindAddr(t *testing.T) {
 	require.NoError(t, err)
 	b.InitRoot("a", nil)
 	bad := netip.MustParseAddr("192.0.2.1") // TEST-NET, not a local address
-	_, err = New(Config{Name: "a", BindAddr: bad, AdvertiseAddr: bad, BindPort: 0, EnrolPort: 0,
-		LocalNode: testNodeFor("a", "10.0.0.1"), Identity: b.Identity, Root: b.Root, Records: b.Records})
+	_, err = New(Config{Name: "a", BindAddr: bad, AdvertiseAddr: bad, BindPort: 0, EnrolPort: 0, OverlayNet: testOverlay,
+		LocalNode: testNodeFor(t, "a", b), Identity: b.Identity, Root: b.Root, Records: b.Records})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "gossip transport")
 }
@@ -211,13 +219,13 @@ func Test_New_notAMember(t *testing.T) {
 	b, err := Load("a", true)
 	require.NoError(t, err)
 	other := testIdentity(t)
-	_, err = New(Config{Name: "a", LocalNode: testNodeFor("a", "10.0.0.1"), Identity: b.Identity, Root: other.Public()})
+	_, err = New(Config{Name: "a", OverlayNet: testOverlay, LocalNode: &common.Node{Name: "a"}, Identity: b.Identity, Root: other.Public()})
 	assert.ErrorContains(t, err, "not a member")
 }
 
 func Test_Cluster_Leave_closesMembers(t *testing.T) {
 	useTempStatePaths(t)
-	c := rootCluster(t, "a", "127.0.0.1", freePort(t), freePort(t), "10.0.0.1")
+	c := rootCluster(t, "a", "127.0.0.1", freePort(t), freePort(t))
 	ch := c.Members()
 
 	c.Leave()
@@ -235,10 +243,10 @@ func Test_Cluster_detectsFailedNode(t *testing.T) {
 	useTempStatePaths(t)
 	useFastMemberlist(t)
 	gossip, enrol := freePort(t), freePort(t)
-	a := rootCluster(t, "a", "127.0.0.1", gossip, enrol, "10.0.0.1")
+	a := rootCluster(t, "a", "127.0.0.1", gossip, enrol)
 	defer a.Leave()
 	chA := a.Members()
-	b := enrolCluster(t, a, "127.0.0.1", enrol, "b", "127.0.0.2", gossip, enrol, "10.0.0.2")
+	b := enrolCluster(t, a, "127.0.0.1", enrol, "b", "127.0.0.2", gossip, enrol)
 	drain(b.Members())
 	waitMembers(t, chA, 1)
 

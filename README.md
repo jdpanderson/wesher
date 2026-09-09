@@ -136,10 +136,14 @@ is no shared cluster key. New nodes are admitted with a short-lived invitation t
 
 ### Automatic IP address management
 
-The overlay IP address of each node is automatically selected out of a private network (`10.0.0.0/8` by default; MUST be different from the underlying network used for cluster communication) and is consistently hashed based on the peer's hostname.
+The overlay IP address of each node is allocated out of a private network (`10.0.0.0/8` by default; MUST be different
+from the underlying network used for cluster communication). The node that ran `--init` takes the first address; each
+node enrolled afterwards is assigned the lowest free address by the member that admitted it, and that assignment is part
+of its signed admission record. Addresses are therefore stable across restarts, packed from the bottom of the network,
+and agreed on by every member; a node claiming an address other than its assigned one is ignored.
 
-The use of consistent hashing means a given node will always receive the same overlay IP address (see [limitations](#overlay-ip-collisions)
-of this approach below).
+The overlay network must be the same on every node. Changing `--overlay-net` everywhere moves the whole mesh, as each
+node keeps its position in the network.
 
 **Note**: the node's hostname is also used by the underlying cluster management (using [memberlist](https://github.com/hashicorp/memberlist))
 to identify nodes and must therefore be unique in the cluster.
@@ -172,7 +176,7 @@ An annotated example lives in [`dist/config.yaml`](dist/config.yaml).
 | `--bind-addr ADDR` | `bind-addr` | address to bind for cluster membership; `0.0.0.0` or `::` binds every interface of that family and advertises one of its addresses (public preferred). The family decides whether the cluster runs over IPv4 or IPv6, see [IPv4 and IPv6](#ipv4-and-ipv6) | `0.0.0.0` |
 | `--cluster-port PORT` | `cluster-port` | port used for membership gossip traffic (both TCP and UDP); must be the same across cluster | `7946` |
 | `--wireguard-port PORT` | `wireguard-port` | port used for wireguard traffic (UDP); must be the same across cluster | `51820` |
-| `--overlay-net ADDR/MASK` | `overlay-net` | the network in which to allocate addresses for the overlay mesh network (CIDR format); smaller networks increase the chance of IP collision | `10.0.0.0/8` |
+| `--overlay-net ADDR/MASK` | `overlay-net` | the network in which to allocate addresses for the overlay mesh network (CIDR format); must be the same across cluster | `10.0.0.0/8` |
 | `--interface DEV` | `interface` | name of the wireguard interface to create and manage | `wgoverlay` |
 | `--mtu MTU` | `mtu` | MTU of the wireguard interface | `1420` |
 | `--persistent-keepalive DURATION` | `persistent-keepalive` | interval at which peers send keepalives, to keep NAT mappings open (e.g. `25s`); `0` disables | `0` |
@@ -204,7 +208,7 @@ Each instance **must** have different values for the following settings:
 - `--wireguard-port`
 
 The following settings are not required to be unique, but recommended:
-- `--overlay-net` (to reduce the chance of node address conflicts; see [Overlay IP collisions](#overlay-ip-collisions))
+- `--overlay-net` (so a host in both clusters does not see the same addresses twice)
 
 ## Security considerations
 
@@ -228,9 +232,10 @@ whose overlay address falls outside `--overlay-net` or whose wireguard key does 
 
 ### Overlay IP collisions
 
-Since the assignment of IPs on the overlay network is decided by the individual node and implemented as a
-naive hashing of the hostname, there can be no guarantee two hosts will not generate the same overlay IPs.
-A larger `--overlay-net` reduces the chance; collision detection is a candidate for future work.
+Two nodes can be assigned the same overlay address only if two different members admit new nodes at the same moment,
+before either admission has reached the other. The signed records still decide: the earlier admission keeps the
+address and every node ignores the later one, logging the collision. The losing node keeps running without peers until
+it is enrolled again: stop it, delete `/var/lib/cheesecloth/<interface>.json`, and start it with a fresh invitation.
 
 ### Split-brain
 

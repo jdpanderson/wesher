@@ -90,10 +90,13 @@ func Test_Bootstrap_initAndEnrol(t *testing.T) {
 	other := testIdentity(t)
 	j, err := Load("joiner", true)
 	require.NoError(t, err)
-	adm := trust.Admit(other, j.Identity.Public(), j.Identity.DHPublic(), "joiner", unixTime(nil))
+	adm := trust.Admit(other, j.Identity.Public(), j.Identity.DHPublic(), "joiner", 7, unixTime(nil))
 	j.Enrol(other.Public(), trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(other, "o", unixTime(nil)), adm}})
 	assert.True(t, j.Enrolled())
 	assert.Equal(t, other.Public(), j.Root)
+	host, err := j.Host()
+	require.NoError(t, err)
+	assert.Equal(t, uint64(7), host)
 }
 
 func Test_KnownNodes(t *testing.T) {

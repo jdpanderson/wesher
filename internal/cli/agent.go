@@ -15,6 +15,7 @@ import (
 
 	"github.com/cenkalti/backoff/v6"
 	"github.com/jdpanderson/cheesecloth/cluster"
+	"github.com/jdpanderson/cheesecloth/common"
 	"github.com/jdpanderson/cheesecloth/control"
 	"github.com/jdpanderson/cheesecloth/enroll"
 	"github.com/jdpanderson/cheesecloth/etchosts"
@@ -31,7 +32,7 @@ type AgentCmd struct {
 	BindAddr      netip.Addr   `help:"address to bind for cluster membership traffic; 0.0.0.0 or :: binds every interface of that family and advertises one of its addresses. The address family decides whether the cluster runs over IPv4 or IPv6" default:"0.0.0.0"`
 	ClusterPort   int          `help:"port used for membership gossip traffic (both TCP and UDP); must be the same across cluster" default:"7946"`
 	WireguardPort int          `help:"port used for wireguard traffic (UDP); must be the same across cluster" default:"51820"`
-	OverlayNet    netip.Prefix `help:"the network in which to allocate addresses for the overlay mesh network (CIDR format); smaller networks increase the chance of IP collision" default:"10.0.0.0/8"`
+	OverlayNet    netip.Prefix `help:"the network in which to allocate addresses for the overlay mesh network (CIDR format); must be the same across cluster" default:"10.0.0.0/8"`
 	Interface     string       `help:"name of the wireguard interface to create and manage" default:"wgoverlay"`
 	MTU           int          `help:"MTU of the wireguard interface" default:"1420"`
 	// PersistentKeepalive is a time.Duration so kong accepts "25s"; 0 disables it.
@@ -41,8 +42,8 @@ type AgentCmd struct {
 }
 
 func (a *AgentCmd) Validate() error {
-	if a.OverlayNet.Bits()%8 != 0 {
-		return fmt.Errorf("unsupported overlay network size; net mask must be multiple of 8, got %d", a.OverlayNet.Bits())
+	if common.MaxHost(a.OverlayNet) < 2 {
+		return fmt.Errorf("overlay network %s has no room for two nodes", a.OverlayNet)
 	}
 
 	if a.JoinKey != "" && len(a.Join) == 0 {
@@ -76,18 +77,6 @@ func (a *AgentCmd) Run() error {
 	if err != nil {
 		return err
 	}
-	wgstate, localNode, err := wg.New(wg.Config{
-		Interface:  a.Interface,
-		Port:       a.WireguardPort,
-		OverlayNet: a.OverlayNet,
-		Name:       hostname,
-		MTU:        a.MTU,
-
-		PersistentKeepalive: a.PersistentKeepalive,
-	})
-	if err != nil {
-		return fmt.Errorf("instantiating wireguard controller: %w", err)
-	}
 	advertise, err := a.advertiseAddr()
 	if err != nil {
 		return err
@@ -116,9 +105,33 @@ func (a *AgentCmd) Run() error {
 		return errors.New("this node is not a member of any cluster: use --init to start one, or --join HOST --join-key TOKEN to enrol (get a token with 'cheesecloth invite' on a member)")
 	}
 
+	host, err := boot.Host()
+	if err != nil {
+		return err
+	}
+	overlayAddr, ok := common.OverlayAddr(a.OverlayNet, host)
+	if !ok {
+		return fmt.Errorf("this node's overlay slot %d does not fit in %s; is --overlay-net the same on every node?", host, a.OverlayNet)
+	}
+	slog.Debug("assigned overlay address", "addr", overlayAddr, "slot", host)
+	wgstate, localNode, err := wg.New(wg.Config{
+		Interface:   a.Interface,
+		Port:        a.WireguardPort,
+		OverlayNet:  a.OverlayNet,
+		OverlayAddr: overlayAddr,
+		Name:        hostname,
+		MTU:         a.MTU,
+
+		PersistentKeepalive: a.PersistentKeepalive,
+	})
+	if err != nil {
+		return fmt.Errorf("instantiating wireguard controller: %w", err)
+	}
+
 	cluster, err := cluster.New(cluster.Config{
 		Name: a.Interface, BindAddr: a.BindAddr, AdvertiseAddr: advertise, BindPort: a.ClusterPort, EnrolPort: a.WireguardPort,
-		LocalNode: localNode, Identity: boot.Identity, Root: boot.Root, Records: boot.Records, Peers: boot.Peers, Known: known,
+		OverlayNet: a.OverlayNet, LocalNode: localNode, Identity: boot.Identity, Root: boot.Root, Records: boot.Records,
+		Peers: boot.Peers, Known: known,
 	})
 	if err != nil {
 		return fmt.Errorf("creating cluster: %w", err)

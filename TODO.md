@@ -251,8 +251,14 @@ before starting; none are committed yet.
       (advertised via node metadata).
 - [ ] Static / seed nodes to mitigate split-brain (upstream roadmap item):
       periodically re-join configured addresses.
-- [ ] Overlay IP collision detection: warn or refuse when two members hash to
-      the same address (upstream roadmap item).
+- [x] Overlay IP collision detection: warn or refuse when two members hash to
+      the same address (upstream roadmap item). 2026-09-09: hashing is gone.
+      The admission record carries the node's slot in the overlay net; the
+      admitter hands out the lowest free one, so addresses are dense, stable
+      and agreed on by every member. Peers whose metadata claims a different
+      address are ignored, as is the later of two admissions to one slot
+      (a race between two admitters); the loser is logged and must re-enrol.
+      `--overlay-net` no longer needs a /8-aligned mask.
 - [x] Config file support. Decided 2026-09-08: YAML at
       `/etc/cheesecloth/config.yaml` or `--config`, keys are flag names,
       command line overrides the file, unknown keys are an error, `join-key`

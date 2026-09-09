@@ -7,16 +7,21 @@ import (
 	"time"
 )
 
-// Admission says that Admitter vouches for Identity as a member.
-// The root admits itself (Admitter == Identity).
+// Admission says that Admitter vouches for Identity as a member and assigns
+// it Host, its slot in the overlay network (the host part of its address,
+// never 0). The root admits itself (Admitter == Identity) and takes slot 1.
 type Admission struct {
 	Identity  PublicKey `json:"identity"`
 	DHKey     DHKey     `json:"dhKey"`
 	Name      string    `json:"name"`
+	Host      uint64    `json:"host"`
 	Admitter  PublicKey `json:"admitter"`
 	IssuedAt  int64     `json:"issuedAt"` // unix seconds
 	Signature []byte    `json:"signature"`
 }
+
+// RootHost is the overlay slot the root assigns itself.
+const RootHost = 1
 
 // Revocation says that Revoker withdraws Identity's membership.
 type Revocation struct {
@@ -44,24 +49,27 @@ func canonical(domain string, fields ...[]byte) []byte {
 
 func i64(v int64) []byte { return binary.BigEndian.AppendUint64(nil, uint64(v)) }
 
+func u64(v uint64) []byte { return binary.BigEndian.AppendUint64(nil, v) }
+
 func (a *Admission) signedBytes() []byte {
-	return canonical(admissionDomain, a.Identity[:], a.DHKey[:], []byte(a.Name), a.Admitter[:], i64(a.IssuedAt))
+	return canonical(admissionDomain, a.Identity[:], a.DHKey[:], []byte(a.Name), u64(a.Host), a.Admitter[:], i64(a.IssuedAt))
 }
 
 func (r *Revocation) signedBytes() []byte {
 	return canonical(revocationDomain, r.Identity[:], r.Revoker[:], i64(r.IssuedAt))
 }
 
-// Admit creates an admission of (identity, dh, name) signed by admitter.
-func Admit(admitter *Identity, identity PublicKey, dh DHKey, name string, now time.Time) Admission {
-	a := Admission{Identity: identity, DHKey: dh, Name: name, Admitter: admitter.Public(), IssuedAt: now.Unix()}
+// Admit creates an admission of (identity, dh, name) at overlay slot host,
+// signed by admitter.
+func Admit(admitter *Identity, identity PublicKey, dh DHKey, name string, host uint64, now time.Time) Admission {
+	a := Admission{Identity: identity, DHKey: dh, Name: name, Host: host, Admitter: admitter.Public(), IssuedAt: now.Unix()}
 	a.Signature = admitter.Sign(a.signedBytes())
 	return a
 }
 
 // SelfAdmit creates the root record for id.
 func SelfAdmit(id *Identity, name string, now time.Time) Admission {
-	return Admit(id, id.Public(), id.DHPublic(), name, now)
+	return Admit(id, id.Public(), id.DHPublic(), name, RootHost, now)
 }
 
 // Revoke creates a revocation of identity signed by revoker.
@@ -75,6 +83,9 @@ func Revoke(revoker *Identity, identity PublicKey, now time.Time) Revocation {
 func (a *Admission) VerifySignature() error {
 	if a.Name == "" {
 		return errors.New("admission without a name")
+	}
+	if a.Host == 0 {
+		return errors.New("admission without an overlay slot")
 	}
 	if !Verify(a.Admitter, a.signedBytes(), a.Signature) {
 		return errors.New("admission signature does not verify")

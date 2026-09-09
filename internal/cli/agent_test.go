@@ -23,9 +23,9 @@ func Test_AgentCmd_Validate_errors(t *testing.T) {
 		wantErr string
 	}{
 		{
-			"overlay mask not multiple of 8",
-			AgentCmd{OverlayNet: netip.MustParsePrefix("10.0.0.0/20"), MTU: 1420},
-			"unsupported overlay network size",
+			"overlay too small",
+			AgentCmd{OverlayNet: netip.MustParsePrefix("10.0.0.0/31"), MTU: 1420},
+			"no room for two nodes",
 		},
 		{
 			"mtu too small",

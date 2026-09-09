@@ -132,6 +132,16 @@ func Load(name string, init bool) (*Bootstrap, error) {
 // Enrolled reports whether the node already belongs to a cluster.
 func (b *Bootstrap) Enrolled() bool { return b.enrolled }
 
+// Host is the overlay slot this node's admission assigns it.
+func (b *Bootstrap) Host() (uint64, error) {
+	for _, a := range b.Records.Admissions {
+		if a.Identity == b.Identity.Public() {
+			return a.Host, nil
+		}
+	}
+	return 0, fmt.Errorf("no admission record for this node (%s)", b.Identity.Public().Short())
+}
+
 // InitRoot makes this node the root of a new cluster.
 func (b *Bootstrap) InitRoot(nodeName string, now func() int64) {
 	b.Root = b.Identity.Public()

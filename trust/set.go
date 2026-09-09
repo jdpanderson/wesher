@@ -174,6 +174,54 @@ func (s *Set) ByName(name string) (Admission, bool) {
 	return found, n == 1
 }
 
+// ErrOverlayFull is returned by FreeHost when every slot is taken.
+var ErrOverlayFull = errors.New("no free overlay address")
+
+// FreeHost picks the lowest overlay slot in [1, limit] that no admission
+// uses. Slots held only by records that are no longer valid (revoked members)
+// are reused when nothing else is free.
+func (s *Set) FreeHost(limit uint64) (uint64, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	taken := map[uint64]bool{}
+	validTaken := map[uint64]bool{}
+	for id, a := range s.admissions {
+		taken[a.Host] = true
+		if s.valid(id, map[PublicKey]bool{}) {
+			validTaken[a.Host] = true
+		}
+	}
+	for _, used := range []map[uint64]bool{taken, validTaken} {
+		for h := uint64(1); h <= limit && h != 0; h++ {
+			if !used[h] {
+				return h, nil
+			}
+		}
+	}
+	return 0, ErrOverlayFull
+}
+
+// HostConflict reports whether another valid member holds id's overlay slot
+// with a stronger claim: an earlier admission, or the same time and a smaller
+// identity. Every node evaluates the same records, so all agree on who yields.
+func (s *Set) HostConflict(id PublicKey) (Admission, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	mine, ok := s.admissions[id]
+	if !ok {
+		return Admission{}, false
+	}
+	for other, a := range s.admissions {
+		if other == id || a.Host != mine.Host || !s.valid(other, map[PublicKey]bool{}) {
+			continue
+		}
+		if a.IssuedAt < mine.IssuedAt || (a.IssuedAt == mine.IssuedAt && a.Identity.String() < id.String()) {
+			return a, true
+		}
+	}
+	return Admission{}, false
+}
+
 // Members lists the valid members' admissions, sorted by name.
 func (s *Set) Members() []Admission {
 	s.mu.RLock()

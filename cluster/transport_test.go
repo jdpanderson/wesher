@@ -40,7 +40,7 @@ func Test_secureTransport_packetsAndStreams(t *testing.T) {
 	rootID, bID := testIdentity(t), testIdentity(t)
 	recs := trust.Records{Admissions: []trust.Admission{
 		trust.SelfAdmit(rootID, "a", time.Now()),
-		trust.Admit(rootID, bID.Public(), bID.DHPublic(), "b", time.Now()),
+		trust.Admit(rootID, bID.Public(), bID.DHPublic(), "b", 2, time.Now()),
 	}}
 	setA, setB := trust.NewSet(rootID.Public()), trust.NewSet(rootID.Public())
 	setA.Merge(recs)
@@ -102,7 +102,7 @@ func Test_secureTransport_rejectsStrangers(t *testing.T) {
 	strangerSet := trust.NewSet(strangerID.Public())
 	strangerSet.Merge(trust.Records{Admissions: []trust.Admission{
 		trust.SelfAdmit(strangerID, "s", time.Now()),
-		trust.Admit(strangerID, rootID.Public(), rootID.DHPublic(), "a", time.Now()), // it "admits" the member in its own world
+		trust.Admit(strangerID, rootID.Public(), rootID.DHPublic(), "a", 2, time.Now()), // it "admits" the member in its own world
 	}})
 	stranger := newTestNode(t, strangerID, strangerSet, newAddrBook())
 	stranger.tr.book.set(member.addr, rootID.Public())

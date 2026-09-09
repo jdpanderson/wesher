@@ -70,8 +70,8 @@ func cluster(t *testing.T) (root, a, b, stranger *Identity, set *Set) {
 	set = NewSet(root.Public())
 	for _, adm := range []Admission{
 		SelfAdmit(root, "root", t0),
-		Admit(root, a.Public(), a.DHPublic(), "a", t0.Add(time.Minute)),
-		Admit(a, b.Public(), b.DHPublic(), "b", t0.Add(2*time.Minute)),
+		Admit(root, a.Public(), a.DHPublic(), "a", 2, t0.Add(time.Minute)),
+		Admit(a, b.Public(), b.DHPublic(), "b", 3, t0.Add(2*time.Minute)),
 	} {
 		ok, err := set.AddAdmission(adm)
 		require.NoError(t, err)
@@ -93,16 +93,23 @@ func Test_Set_validity(t *testing.T) {
 
 	// a stranger's admission of someone else is stored (signature is fine) but confers nothing
 	c := newID(t)
-	ok, err := set.AddAdmission(Admit(stranger, c.Public(), c.DHPublic(), "c", t0))
+	ok, err := set.AddAdmission(Admit(stranger, c.Public(), c.DHPublic(), "c", 4, t0))
 	require.NoError(t, err)
 	assert.True(t, ok)
 	assert.False(t, set.Valid(c.Public()), "chain does not reach the root")
 
 	// tampering breaks the signature
-	adm := Admit(root, c.Public(), c.DHPublic(), "c", t0)
+	adm := Admit(root, c.Public(), c.DHPublic(), "c", 4, t0)
 	adm.Name = "evil"
 	_, err = set.AddAdmission(adm)
 	assert.ErrorContains(t, err, "signature")
+	adm = Admit(root, c.Public(), c.DHPublic(), "c", 4, t0)
+	adm.Host = 5
+	_, err = set.AddAdmission(adm)
+	assert.ErrorContains(t, err, "signature")
+	adm = Admit(root, c.Public(), c.DHPublic(), "c", 0, t0)
+	_, err = set.AddAdmission(adm)
+	assert.ErrorContains(t, err, "overlay slot")
 
 	dh, err := set.DHKeyOf(b.Public())
 	require.NoError(t, err)
@@ -148,7 +155,7 @@ func Test_Set_revocation(t *testing.T) {
 		assert.True(t, set.Valid(b.Public()), "b was admitted while a was still a member")
 
 		c := newID(t)
-		_, err = set.AddAdmission(Admit(a, c.Public(), c.DHPublic(), "c", t0.Add(4*time.Minute)))
+		_, err = set.AddAdmission(Admit(a, c.Public(), c.DHPublic(), "c", 4, t0.Add(4*time.Minute)))
 		require.NoError(t, err)
 		assert.False(t, set.Valid(c.Public()), "admitted by a after a's revocation")
 	})
@@ -188,18 +195,82 @@ func Test_Set_mergeAndRoundTrip(t *testing.T) {
 
 func Test_Set_newerAdmissionReplaces(t *testing.T) {
 	root, a, _, _, set := cluster(t)
-	fresh := newID(t) // a re-enrolled with a new DH key but same identity? identity is the key; simulate new name
-	_ = fresh
-	older := Admit(root, a.Public(), a.DHPublic(), "a-old", t0)
+	older := Admit(root, a.Public(), a.DHPublic(), "a-old", 2, t0)
 	ok, err := set.AddAdmission(older)
 	require.NoError(t, err)
 	assert.False(t, ok, "older record does not replace")
-	newer := Admit(root, a.Public(), a.DHPublic(), "a-new", t0.Add(time.Hour))
+	newer := Admit(root, a.Public(), a.DHPublic(), "a-new", 2, t0.Add(time.Hour))
 	ok, err = set.AddAdmission(newer)
 	require.NoError(t, err)
 	assert.True(t, ok)
 	got, _ := set.Lookup(a.Public())
 	assert.Equal(t, "a-new", got.Name)
+}
+
+func Test_Set_FreeHost(t *testing.T) {
+	root, a, b, _, set := cluster(t) // slots 1, 2, 3
+	h, err := set.FreeHost(10)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(4), h)
+
+	// gaps are filled first
+	set2 := NewSet(root.Public())
+	set2.Merge(Records{Admissions: []Admission{SelfAdmit(root, "root", t0), Admit(root, b.Public(), b.DHPublic(), "b", 3, t0)}})
+	h, err = set2.FreeHost(10)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(2), h)
+
+	// a revoked member's slot is reused only once nothing else is free
+	_, err = set.AddRevocation(Revoke(root, a.Public(), t0.Add(time.Hour)))
+	require.NoError(t, err)
+	h, err = set.FreeHost(4)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(4), h)
+	h, err = set.FreeHost(3)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(2), h, "a's slot")
+
+	_, err = set2.FreeHost(1)
+	assert.ErrorIs(t, err, ErrOverlayFull)
+}
+
+func Test_Set_HostConflict(t *testing.T) {
+	root, a, b, _, set := cluster(t)
+	_, clash := set.HostConflict(a.Public())
+	assert.False(t, clash)
+
+	// two admitters hand out slot 4 at once: the earlier admission wins
+	c, d := newID(t), newID(t)
+	set.Merge(Records{Admissions: []Admission{
+		Admit(root, c.Public(), c.DHPublic(), "c", 4, t0.Add(10*time.Minute)),
+		Admit(a, d.Public(), d.DHPublic(), "d", 4, t0.Add(11*time.Minute)),
+	}})
+	_, clash = set.HostConflict(c.Public())
+	assert.False(t, clash)
+	winner, clash := set.HostConflict(d.Public())
+	assert.True(t, clash)
+	assert.Equal(t, "c", winner.Name)
+
+	// revoking the winner frees the slot for the loser
+	_, err := set.AddRevocation(Revoke(root, c.Public(), t0.Add(time.Hour)))
+	require.NoError(t, err)
+	_, clash = set.HostConflict(d.Public())
+	assert.False(t, clash)
+
+	// same second: the smaller identity wins, and both sides agree
+	e, f := newID(t), newID(t)
+	set.Merge(Records{Admissions: []Admission{
+		Admit(root, e.Public(), e.DHPublic(), "e", 5, t0),
+		Admit(b, f.Public(), f.DHPublic(), "f", 5, t0),
+	}})
+	_, eLoses := set.HostConflict(e.Public())
+	_, fLoses := set.HostConflict(f.Public())
+	assert.NotEqual(t, eLoses, fLoses)
+	assert.Equal(t, e.Public().String() > f.Public().String(), eLoses)
+
+	// an unknown identity has nothing to conflict with
+	_, clash = set.HostConflict(newID(t).Public())
+	assert.False(t, clash)
 }
 
 func Test_MetaDigest(t *testing.T) {

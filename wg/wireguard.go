@@ -3,7 +3,6 @@ package wg
 import (
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -38,11 +37,12 @@ type netlinker interface {
 
 // Config describes the wireguard interface a State manages.
 type Config struct {
-	Interface  string       // name of the wireguard interface to create
-	Port       int          // wireguard listen port, also used as the peers' port
-	OverlayNet netip.Prefix // network the overlay addresses are picked from
-	Name       string       // local node name; hashed into the overlay address
-	MTU        int          // interface MTU
+	Interface   string       // name of the wireguard interface to create
+	Port        int          // wireguard listen port, also used as the peers' port
+	OverlayNet  netip.Prefix // network the overlay addresses are picked from
+	OverlayAddr netip.Addr   // this node's address inside OverlayNet
+	Name        string       // local node name
+	MTU         int          // interface MTU
 	// PersistentKeepalive, when non-zero, makes every peer send keepalives at this
 	// interval so NAT mappings stay open.
 	PersistentKeepalive time.Duration
@@ -87,35 +87,17 @@ func newState(cfg Config, client wgClient, nl netlinker) (*State, *common.Node, 
 		client:      client,
 		nl:          nl,
 		overlayNet:  cfg.OverlayNet,
-		OverlayAddr: overlayAddr(cfg.OverlayNet, cfg.Name),
+		OverlayAddr: cfg.OverlayAddr,
 		Port:        cfg.Port,
 		PrivKey:     privKey,
 		PubKey:      pubKey,
 	}
-	slog.Debug("assigned overlay address", "addr", state.OverlayAddr)
 
 	node := &common.Node{Name: cfg.Name}
 	node.OverlayAddr = state.OverlayAddr
 	node.PubKey = state.PubKey.String()
 
 	return &state, node, nil
-}
-
-// overlayAddr picks the address for name inside prefix deterministically:
-// the host bits are the tail of an FNV-1a 128 hash of the name.
-func overlayAddr(prefix netip.Prefix, name string) netip.Addr {
-	ip := prefix.Addr().AsSlice()
-
-	h := fnv.New128a()
-	h.Write([]byte(name))
-	hb := h.Sum(nil)
-
-	for i := 1; i <= (prefix.Addr().BitLen()-prefix.Bits())/8; i++ {
-		ip[len(ip)-i] = hb[len(hb)-i]
-	}
-
-	addr, _ := netip.AddrFromSlice(ip) // ip is a valid 4- or 16-byte slice
-	return addr
 }
 
 // DownInterface deletes the associated network interface; a missing interface is not an error.

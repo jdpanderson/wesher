@@ -44,7 +44,7 @@ func enterTestNetns(t *testing.T) {
 func testConfig() Config {
 	return Config{
 		Interface: "wgtest0", Port: 51820, OverlayNet: netip.MustParsePrefix(testPrefix), Name: "test",
-		MTU: 1400, PersistentKeepalive: 25 * time.Second,
+		OverlayAddr: netip.MustParseAddr("10.99.0.100"), MTU: 1400, PersistentKeepalive: 25 * time.Second,
 	}
 }
 

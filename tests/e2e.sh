@@ -73,6 +73,9 @@ test_3_node_up() {
 
     ping_ok test1-orig test2 test2-orig
     ping_ok test1-orig test3 test3-orig
+    # addresses are allocated from the bottom of the overlay net: the root takes .1
+    docker exec test1-orig ip -4 addr show wgoverlay | grep -q "inet 10.0.0.1/32" || { docker exec test1-orig ip addr; false; }
+    docker exec test2-orig ip -4 addr show wgoverlay | grep -qE "inet 10.0.0.[23]/32" || { docker exec test2-orig ip addr; false; }
     # the token is spent: a fourth node cannot use it
     run_test_container test4-orig test4 --join test1-orig --join-key "$token"
     if [ "$(docker wait test4-orig)" = 0 ]; then echo "spent token was accepted"; docker logs test4-orig; false; fi

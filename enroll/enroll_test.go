@@ -27,11 +27,12 @@ func member(t *testing.T) (*Server, *trust.Set, string) {
 	require.NoError(t, err)
 	srv := &Server{
 		Identity: id, Tokens: NewTokenStore(), Root: id.Public(), GossipAddr: "192.0.2.1:7946",
-		Admit: func(a trust.Admission) (trust.Records, error) {
+		Admit: func(joiner trust.PublicKey, dh trust.DHKey, name string) (trust.Admission, trust.Records, error) {
+			a := trust.Admit(id, joiner, dh, name, 2, time.Now())
 			if _, aerr := set.AddAdmission(a); aerr != nil {
-				return trust.Records{}, aerr
+				return trust.Admission{}, trust.Records{}, aerr
 			}
-			return set.Records(), nil
+			return a, set.Records(), nil
 		},
 	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -113,7 +114,9 @@ func Test_Join_memberMustProveToken(t *testing.T) {
 
 	// impostor: same token id (it saw the hello), different key
 	impostor := &Server{Identity: newID(t), Tokens: NewTokenStore(), Root: srv.Root, GossipAddr: "x",
-		Admit: func(a trust.Admission) (trust.Records, error) { return trust.Records{}, nil }}
+		Admit: func(trust.PublicKey, trust.DHKey, string) (trust.Admission, trust.Records, error) {
+			return trust.Admission{}, trust.Records{}, nil
+		}}
 	wrong := make([]byte, len(key))
 	copy(wrong, key)
 	wrong[0] ^= 1
@@ -134,7 +137,9 @@ func Test_Join_welcomeMustBeConsistent(t *testing.T) {
 	id := newID(t)
 	otherRoot := newID(t)
 	srv := &Server{Identity: id, Tokens: NewTokenStore(), Root: otherRoot.Public(), GossipAddr: "x",
-		Admit: func(a trust.Admission) (trust.Records, error) { return trust.Records{}, nil }}
+		Admit: func(trust.PublicKey, trust.DHKey, string) (trust.Admission, trust.Records, error) {
+			return trust.Admission{}, trust.Records{}, nil
+		}}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer func() { _ = ln.Close() }()

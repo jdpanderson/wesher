@@ -23,11 +23,12 @@ import (
 
 // Config is what New needs; the agent assembles it from a Bootstrap.
 type Config struct {
-	Name          string     // state name; the wireguard interface in practice
-	BindAddr      netip.Addr // may be a wildcard
-	AdvertiseAddr netip.Addr // what other nodes are told to reach us at
-	BindPort      int        // gossip, TCP and UDP
-	EnrolPort     int        // enrolment, TCP; the wireguard port in practice
+	Name          string       // state name; the wireguard interface in practice
+	BindAddr      netip.Addr   // may be a wildcard
+	AdvertiseAddr netip.Addr   // what other nodes are told to reach us at
+	BindPort      int          // gossip, TCP and UDP
+	EnrolPort     int          // enrolment, TCP; the wireguard port in practice
+	OverlayNet    netip.Prefix // overlay addresses are admission slots inside it
 	LocalNode     *common.Node
 	Identity      *trust.Identity
 	Root          trust.PublicKey
@@ -44,6 +45,7 @@ type Cluster struct {
 	local     *common.Node
 	id        *trust.Identity
 	set       *trust.Set
+	overlay   netip.Prefix
 	book      *addrBook
 	tokens    *enroll.TokenStore
 	queue     *memberlist.TransmitLimitedQueue
@@ -73,6 +75,12 @@ func New(cfg Config) (*Cluster, error) {
 		return nil, fmt.Errorf("this node (%s) is not a member of the cluster rooted at %s", cfg.Identity.Public().Short(), cfg.Root.Short())
 	}
 
+	if want, err := assignedAddr(set, cfg.OverlayNet, cfg.Identity.Public()); err != nil {
+		return nil, err
+	} else if want != cfg.LocalNode.OverlayAddr {
+		return nil, fmt.Errorf("local overlay address %s is not the assigned %s", cfg.LocalNode.OverlayAddr, want)
+	}
+
 	// bind our ephemeral wireguard key and overlay address to our identity
 	cfg.LocalNode.Identity = cfg.Identity.Public()
 	cfg.LocalNode.Signature = cfg.Identity.Sign(trust.MetaDigest(cfg.LocalNode.Name, cfg.LocalNode.OverlayAddr, cfg.LocalNode.PubKey))
@@ -83,7 +91,7 @@ func New(cfg Config) (*Cluster, error) {
 	}
 	for i := range cfg.Peers {
 		n := cfg.Peers[i]
-		if id, err := verifyMeta(set, &n); err == nil {
+		if id, err := verifyMeta(set, cfg.OverlayNet, &n); err == nil {
 			book.set(hostPort(n.Addr, cfg.BindPort), id)
 		}
 	}
@@ -94,6 +102,7 @@ func New(cfg Config) (*Cluster, error) {
 		local:     cfg.LocalNode,
 		id:        cfg.Identity,
 		set:       set,
+		overlay:   cfg.OverlayNet,
 		book:      book,
 		tokens:    enroll.NewTokenStore(),
 		events:    make(chan memberlist.NodeEvent, 16),
@@ -188,16 +197,23 @@ func (c *Cluster) Revoke(id trust.PublicKey) error {
 	return nil
 }
 
-// admit is called by the enrolment server once a joiner has proven the token.
-func (c *Cluster) admit(a trust.Admission) (trust.Records, error) {
+// admit is called by the enrolment server once a joiner has proven the token:
+// it gives the joiner the lowest free overlay slot and signs its admission.
+// Serialised under stateMu so two joiners cannot be handed the same slot.
+func (c *Cluster) admit(joiner trust.PublicKey, dh trust.DHKey, name string) (trust.Admission, trust.Records, error) {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	host, err := c.set.FreeHost(common.MaxHost(c.overlay))
+	if err != nil {
+		return trust.Admission{}, trust.Records{}, fmt.Errorf("%w in %s", err, c.overlay)
+	}
+	a := trust.Admit(c.id, joiner, dh, name, host, time.Now())
 	if _, err := c.set.AddAdmission(a); err != nil {
-		return trust.Records{}, err
+		return trust.Admission{}, trust.Records{}, err
 	}
 	c.broadcast(recordMsg{Admission: &a})
-	c.stateMu.Lock()
 	c.saveState()
-	c.stateMu.Unlock()
-	return c.set.Records(), nil
+	return a, c.set.Records(), nil
 }
 
 // saveState persists the state, logging rather than failing on error: the
@@ -209,14 +225,37 @@ func (c *Cluster) saveState() {
 	}
 }
 
-// verifyMeta decodes a node's metadata and checks that a valid member signed it.
-func verifyMeta(set *trust.Set, n *common.Node) (trust.PublicKey, error) {
+// assignedAddr is the overlay address id's admission entitles it to. It fails
+// if id is not a member, the slot does not fit the overlay net, or another
+// member holds the slot with a stronger claim (see trust.Set.HostConflict).
+func assignedAddr(set *trust.Set, overlay netip.Prefix, id trust.PublicKey) (netip.Addr, error) {
+	if !set.Valid(id) {
+		return netip.Addr{}, fmt.Errorf("identity %s is not a member", id.Short())
+	}
+	adm, _ := set.Lookup(id)
+	addr, ok := common.OverlayAddr(overlay, adm.Host)
+	if !ok {
+		return netip.Addr{}, fmt.Errorf("overlay slot %d of %s does not fit in %s", adm.Host, adm.Name, overlay)
+	}
+	if other, clash := set.HostConflict(id); clash {
+		return netip.Addr{}, fmt.Errorf("overlay address %s of %s collides with %s, admitted earlier; %s must be enrolled again", addr, adm.Name, other.Name, adm.Name)
+	}
+	return addr, nil
+}
+
+// verifyMeta decodes a node's metadata and checks that a valid member signed
+// it and that it claims the overlay address its admission assigns.
+func verifyMeta(set *trust.Set, overlay netip.Prefix, n *common.Node) (trust.PublicKey, error) {
 	if err := n.DecodeMeta(); err != nil {
 		return trust.PublicKey{}, err
 	}
 	id := trust.PublicKey(n.Identity)
-	if !set.Valid(id) {
-		return id, fmt.Errorf("identity %s is not a member", id.Short())
+	want, err := assignedAddr(set, overlay, id)
+	if err != nil {
+		return id, err
+	}
+	if n.OverlayAddr != want {
+		return id, fmt.Errorf("%s claims overlay address %s but is assigned %s", n.Name, n.OverlayAddr, want)
 	}
 	if !trust.Verify(id, trust.MetaDigest(n.Name, n.OverlayAddr, n.PubKey), n.Signature) {
 		return id, fmt.Errorf("metadata signature of %s does not verify", n.Name)
@@ -248,7 +287,7 @@ func (c *Cluster) forwardEvents() {
 		}
 		if event.Event != memberlist.NodeLeave {
 			n := common.Node{Name: event.Node.Name, Addr: event.Node.Addr, Meta: event.Node.Meta}
-			if id, err := verifyMeta(c.set, &n); err == nil {
+			if id, err := verifyMeta(c.set, c.overlay, &n); err == nil {
 				c.book.set(event.Node.Address(), id)
 			}
 		}
@@ -320,6 +359,9 @@ func (c *Cluster) Members() <-chan []common.Node {
 			case <-c.changed:
 			}
 
+			if _, err := assignedAddr(c.set, c.overlay, c.id.Public()); err != nil {
+				slog.Error("this node lost its overlay address; peers will drop it", "err", err)
+			}
 			ml := c.ml.Load()
 			nodes := make([]common.Node, 0, ml.NumMembers())
 			for _, n := range ml.Members() {
@@ -327,7 +369,7 @@ func (c *Cluster) Members() <-chan []common.Node {
 					continue
 				}
 				node := common.Node{Name: n.Name, Addr: n.Addr, Meta: n.Meta}
-				id, err := verifyMeta(c.set, &node)
+				id, err := verifyMeta(c.set, c.overlay, &node)
 				if err != nil {
 					slog.Warn("ignoring node with unverified metadata", "name", n.Name, "addr", n.Addr, "err", err)
 					continue

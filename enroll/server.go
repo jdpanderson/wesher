@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net"
 	"sync"
-	"time"
 
 	"github.com/jdpanderson/cheesecloth/trust"
 )
@@ -17,9 +16,9 @@ type Server struct {
 	Identity *trust.Identity
 	Tokens   *TokenStore
 	Root     trust.PublicKey
-	// Admit records a new admission (and distributes it); it must return the
-	// records the joiner should start with.
-	Admit func(trust.Admission) (trust.Records, error)
+	// Admit signs and records an admission of the joiner (and distributes it);
+	// it must return the admission and the records the joiner should start with.
+	Admit func(joiner trust.PublicKey, dh trust.DHKey, name string) (trust.Admission, trust.Records, error)
 	// GossipAddr is this node's memberlist ip:port, handed to the joiner.
 	GossipAddr string
 
@@ -91,8 +90,7 @@ func (s *Server) handle(conn net.Conn) error {
 	}
 	s.Tokens.consume(id)
 
-	adm := trust.Admit(s.Identity, h.Identity, h.DH, h.Name, time.Now())
-	records, err := s.Admit(adm)
+	adm, records, err := s.Admit(h.Identity, h.DH, h.Name)
 	if err != nil {
 		return err
 	}
