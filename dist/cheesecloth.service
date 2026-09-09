@@ -5,7 +5,9 @@ After=network-online.target
 [Service]
 ExecStart=/usr/local/sbin/cheesecloth
 Restart=on-failure
-Type=simple
+# cheesecloth reports READY=1 once it has joined the cluster and configured the
+# interface, so units ordered After= this one can rely on the overlay.
+Type=notify
 
 [Install]
 WantedBy = multi-user.target

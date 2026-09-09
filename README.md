@@ -77,7 +77,10 @@ A minimal `systemd` unit file is provided under the `dist` folder and can be cop
 # systemctl daemon-reload
 # systemctl enable cheesecloth
 ```
-The provided unit file assumes `cheesecloth` is installed to `/usr/local/sbin`.
+The provided unit file assumes `cheesecloth` is installed to `/usr/local/sbin`. It is a `Type=notify` service:
+`cheesecloth` tells systemd it is ready once it has joined the cluster and configured the interface, so a unit with
+`After=cheesecloth.service` and `Requires=cheesecloth.service` starts with the overlay in place. `systemctl status`
+shows the current peer count.
 
 Put the node's settings in `/etc/cheesecloth/config.yaml` (see [configuration options](#configuration-options) below).
 The join key never goes in the file: enrol the node once by hand, or from a provisioning step, with

@@ -271,7 +271,11 @@ before starting; none are committed yet.
 - [x] `status` subcommand listing peers, handshake age, and overlay addresses
       (`wesher status [--interface DEV] [--json]`; names come from the
       persisted cluster state). A health endpoint remains a separate candidate.
-- [ ] systemd `sd_notify` readiness and a `Type=notify` unit file.
+- [x] systemd `sd_notify` readiness and a `Type=notify` unit file. 2026-09-09:
+      `internal/sdnotify` (stdlib only) sends READY after the first snapshot
+      is applied, STATUS with the peer count on every change and STOPPING on
+      shutdown. `Members()` now emits a first snapshot at once, so a lone
+      node brings its interface up without waiting for a peer.
 - [x] Cluster key rotation (upstream roadmap item; largest effort, needs a
       protocol design). Superseded by phase 7: there is no cluster key to
       rotate.

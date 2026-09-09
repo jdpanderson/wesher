@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/jdpanderson/cheesecloth/common"
+	"github.com/jdpanderson/cheesecloth/internal/sdnotify"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
@@ -30,18 +31,28 @@ type hostsWriter interface {
 	WriteEntries(map[string][]string) error
 }
 
-// loop applies each membership update until ctx is done, then leaves and tears down.
+// loop applies each membership update until ctx is done, then leaves and
+// tears down. systemd is told the service is ready once the interface has been
+// configured from the first snapshot, and kept posted on the peer count.
 func (a *AgentCmd) loop(ctx context.Context, nodec <-chan []common.Node, cl clusterController, wgstate wgController, hosts hostsWriter) error {
 	slog.Debug("waiting for cluster events")
+	notify := sdnotify.Ready
 	for {
 		select {
 		case rawNodes, ok := <-nodec:
 			if !ok {
 				return errors.New("cluster membership channel closed")
 			}
-			a.apply(rawNodes, wgstate, hosts)
+			peers := a.apply(rawNodes, wgstate, hosts)
+			if err := notify(fmt.Sprintf("%d peers", peers)); err != nil {
+				slog.Warn("could not notify systemd", "err", err)
+			}
+			notify = sdnotify.Status
 		case <-ctx.Done():
 			slog.Info("terminating")
+			if err := sdnotify.Stopping(); err != nil {
+				slog.Warn("could not notify systemd", "err", err)
+			}
 			cl.Leave()
 			if !a.NoEtcHosts {
 				if err := hosts.WriteEntries(map[string][]string{}); err != nil {
@@ -56,11 +67,11 @@ func (a *AgentCmd) loop(ctx context.Context, nodec <-chan []common.Node, cl clus
 	}
 }
 
-// apply pushes one membership snapshot to wireguard and /etc/hosts; nodes with
-// undecodable or invalid metadata are skipped. A network advertised by more
-// than one node goes to the first by name, so every snapshot resolves the
-// same way.
-func (a *AgentCmd) apply(rawNodes []common.Node, wgstate wgController, hosts hostsWriter) {
+// apply pushes one membership snapshot to wireguard and /etc/hosts and returns
+// the number of peers installed; nodes with undecodable or invalid metadata are
+// skipped. A network advertised by more than one node goes to the first by
+// name, so every snapshot resolves the same way.
+func (a *AgentCmd) apply(rawNodes []common.Node, wgstate wgController, hosts hostsWriter) int {
 	nodes := make([]common.Node, 0, len(rawNodes))
 	hostEntries := make(map[string][]string, len(rawNodes))
 	routedBy := map[netip.Prefix]string{}
@@ -101,6 +112,7 @@ func (a *AgentCmd) apply(rawNodes []common.Node, wgstate wgController, hosts hos
 			slog.Error("could not write hosts entries", "err", err)
 		}
 	}
+	return len(nodes)
 }
 
 // validateNode rejects peer metadata we would not want to install: an overlay

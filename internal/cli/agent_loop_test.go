@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/netip"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -121,6 +122,32 @@ func Test_AgentCmd_apply_allowedIPs(t *testing.T) {
 	assert.Equal(t, []netip.Prefix{netip.MustParsePrefix("192.168.7.0/24")}, wg.ups[0][0].AllowedIPs)
 	assert.Equal(t, "z", wg.ups[0][1].Name)
 	assert.Equal(t, []netip.Prefix{netip.MustParsePrefix("172.16.0.0/12")}, wg.ups[0][1].AllowedIPs)
+}
+
+func Test_AgentCmd_loop_notifiesSystemd(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "notify.sock")
+	conn, err := net.ListenUnixgram("unixgram", &net.UnixAddr{Name: path, Net: "unixgram"})
+	require.NoError(t, err)
+	defer func() { _ = conn.Close() }()
+	t.Setenv("NOTIFY_SOCKET", path)
+	read := func() string {
+		buf := make([]byte, 1024)
+		require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
+		n, rerr := conn.Read(buf)
+		require.NoError(t, rerr)
+		return string(buf[:n])
+	}
+
+	cl := &fakeCluster{ch: make(chan []common.Node)}
+	cancel, errc := runLoop(t, &AgentCmd{OverlayNet: testOverlay, NoEtcHosts: true}, cl, &fakeWG{}, &fakeHosts{})
+
+	cl.ch <- nil // a lone node: ready with no peers
+	assert.Equal(t, "READY=1\nSTATUS=0 peers", read())
+	cl.ch <- []common.Node{encodedNode(t, "n", "192.0.2.1", "10.0.0.1")}
+	assert.Equal(t, "STATUS=1 peers", read())
+	cancel()
+	assert.Equal(t, "STOPPING=1", read())
+	require.NoError(t, waitErr(t, errc))
 }
 
 func Test_AgentCmd_loop_noEtcHosts(t *testing.T) {

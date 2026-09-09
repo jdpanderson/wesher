@@ -342,11 +342,13 @@ func (c *Cluster) Leave() {
 }
 
 // Members returns a channel that receives the current list of other verified
-// nodes whenever the membership changes; bursts of changes may be coalesced
-// into one snapshot. Nodes whose metadata is not signed by a valid member are
-// left out. Call it at most once. The channel is closed after Leave.
+// nodes right away and then whenever the membership changes; bursts of changes
+// may be coalesced into one snapshot. Nodes whose metadata is not signed by a
+// valid member are left out. Call it at most once. The channel is closed after
+// Leave.
 func (c *Cluster) Members() <-chan []common.Node {
 	changes := make(chan []common.Node)
+	c.signalChanged() // the first snapshot may well be empty; the interface still needs to come up
 
 	c.routines.Add(1)
 	go func() {
