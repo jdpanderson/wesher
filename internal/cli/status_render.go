@@ -62,7 +62,7 @@ func renderStatus(w io.Writer, r *wg.Report, local trust.PublicKey, names map[st
 
 	// tabwriter reports write errors from Flush, so the per-row results are dropped.
 	tw := tabwriter.NewWriter(w, 0, 8, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "\nNAME\tIDENTITY\tOVERLAY\tENDPOINT\tHANDSHAKE\tRX\tTX")
+	_, _ = fmt.Fprintln(tw, "\nNAME\tIDENTITY\tOVERLAY\tENDPOINT\tHANDSHAKE\tRX\tTX\tROUTES")
 	for _, p := range peers {
 		overlay := "-"
 		if a, ok := p.OverlayAddr(); ok {
@@ -76,9 +76,17 @@ func renderStatus(w io.Writer, r *wg.Report, local trust.PublicKey, names map[st
 		if info, ok := names[p.PublicKey]; ok && info.Identity != "" {
 			identity = info.Identity[:8]
 		}
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		routes := "-"
+		if rs := p.Routes(); len(rs) > 0 {
+			strs := make([]string, len(rs))
+			for i, r := range rs {
+				strs[i] = r.String()
+			}
+			routes = strings.Join(strs, ",")
+		}
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			peerName(p, names), identity, overlay, endpoint, handshakeAge(p.LastHandshake, now),
-			humanBytes(p.ReceiveBytes), humanBytes(p.TransmitBytes))
+			humanBytes(p.ReceiveBytes), humanBytes(p.TransmitBytes), routes)
 	}
 	return tw.Flush()
 }

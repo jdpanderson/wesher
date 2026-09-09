@@ -48,11 +48,14 @@ func encodedNode(t *testing.T, name, addr, overlay string) common.Node {
 	return encodedNodeWithKey(t, name, addr, overlay, key.PublicKey().String())
 }
 
-func encodedNodeWithKey(t *testing.T, name, addr, overlay, pubKey string) common.Node {
+func encodedNodeWithKey(t *testing.T, name, addr, overlay, pubKey string, routes ...string) common.Node {
 	t.Helper()
 	src := common.Node{}
 	src.OverlayAddr = netip.MustParseAddr(overlay)
 	src.PubKey = pubKey
+	for _, r := range routes {
+		src.AllowedIPs = append(src.AllowedIPs, netip.MustParsePrefix(r))
+	}
 	meta, err := src.EncodeMeta(512)
 	require.NoError(t, err)
 	return common.Node{Name: name, Addr: net.ParseIP(addr), Meta: meta}
@@ -100,6 +103,24 @@ func Test_AgentCmd_loop_appliesAndTearsDown(t *testing.T) {
 	assert.Empty(t, hosts.writes[1], "hosts entries cleared on shutdown")
 	assert.True(t, cl.left)
 	assert.Equal(t, 1, wg.downs)
+}
+
+func Test_AgentCmd_apply_allowedIPs(t *testing.T) {
+	wg := &fakeWG{}
+	a := &AgentCmd{OverlayNet: testOverlay, NoEtcHosts: true}
+	k1, _ := wgtypes.GeneratePrivateKey()
+	k2, _ := wgtypes.GeneratePrivateKey()
+	// z is listed first but b wins the shared network by name; the overlay-net prefix is dropped
+	z := encodedNodeWithKey(t, "z", "192.0.2.1", "10.0.0.1", k1.PublicKey().String(), "192.168.7.0/24", "10.9.0.0/16", "172.16.0.0/12")
+	b := encodedNodeWithKey(t, "b", "192.0.2.2", "10.0.0.2", k2.PublicKey().String(), "192.168.7.0/24")
+	a.apply([]common.Node{z, b}, wg, &fakeHosts{})
+
+	require.Len(t, wg.ups, 1)
+	require.Len(t, wg.ups[0], 2)
+	assert.Equal(t, "b", wg.ups[0][0].Name)
+	assert.Equal(t, []netip.Prefix{netip.MustParsePrefix("192.168.7.0/24")}, wg.ups[0][0].AllowedIPs)
+	assert.Equal(t, "z", wg.ups[0][1].Name)
+	assert.Equal(t, []netip.Prefix{netip.MustParsePrefix("172.16.0.0/12")}, wg.ups[0][1].AllowedIPs)
 }
 
 func Test_AgentCmd_loop_noEtcHosts(t *testing.T) {

@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/netip"
+	"slices"
+	"strings"
 
 	"github.com/jdpanderson/cheesecloth/common"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
@@ -53,10 +56,15 @@ func (a *AgentCmd) loop(ctx context.Context, nodec <-chan []common.Node, cl clus
 	}
 }
 
-// apply pushes one membership snapshot to wireguard and /etc/hosts; nodes with undecodable or invalid metadata are skipped.
+// apply pushes one membership snapshot to wireguard and /etc/hosts; nodes with
+// undecodable or invalid metadata are skipped. A network advertised by more
+// than one node goes to the first by name, so every snapshot resolves the
+// same way.
 func (a *AgentCmd) apply(rawNodes []common.Node, wgstate wgController, hosts hostsWriter) {
 	nodes := make([]common.Node, 0, len(rawNodes))
 	hostEntries := make(map[string][]string, len(rawNodes))
+	routedBy := map[netip.Prefix]string{}
+	slices.SortFunc(rawNodes, func(x, y common.Node) int { return strings.Compare(x.Name, y.Name) })
 	for _, node := range rawNodes {
 		if err := node.DecodeMeta(); err != nil {
 			slog.Warn("could not decode node metadata, skipping", "addr", node.Addr, "err", err)
@@ -66,7 +74,19 @@ func (a *AgentCmd) apply(rawNodes []common.Node, wgstate wgController, hosts hos
 			slog.Warn("invalid node metadata, skipping", "name", node.Name, "addr", node.Addr, "err", err)
 			continue
 		}
-		slog.Info("cluster member", "addr", node.Addr, "overlay", node.OverlayAddr, "pubkey", node.PubKey)
+		node.AllowedIPs = slices.DeleteFunc(node.AllowedIPs, func(p netip.Prefix) bool {
+			if p.Overlaps(a.OverlayNet) {
+				slog.Warn("ignoring advertised network inside the overlay net", "name", node.Name, "net", p)
+				return true
+			}
+			if by, taken := routedBy[p]; taken {
+				slog.Warn("network advertised by two nodes, keeping the first", "net", p, "kept", by, "ignored", node.Name)
+				return true
+			}
+			routedBy[p] = node.Name
+			return false
+		})
+		slog.Info("cluster member", "addr", node.Addr, "overlay", node.OverlayAddr, "pubkey", node.PubKey, "routes", node.AllowedIPs)
 		nodes = append(nodes, node)
 		hostEntries[node.OverlayAddr.String()] = []string{node.Name}
 	}

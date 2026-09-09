@@ -28,6 +28,11 @@ func Test_AgentCmd_Validate_errors(t *testing.T) {
 			"no room for two nodes",
 		},
 		{
+			"allowed ips inside the overlay",
+			AgentCmd{OverlayNet: testOverlay, MTU: 1420, AllowedIPs: []netip.Prefix{netip.MustParsePrefix("10.5.0.0/16")}},
+			"overlaps the overlay network",
+		},
+		{
 			"mtu too small",
 			AgentCmd{OverlayNet: testOverlay, MTU: 500},
 			"unsupported MTU",
@@ -45,6 +50,13 @@ func Test_AgentCmd_Validate_errors(t *testing.T) {
 			assert.Contains(t, err.Error(), tt.wantErr)
 		})
 	}
+}
+
+func Test_AgentCmd_Validate_masksAllowedIPs(t *testing.T) {
+	cmd := validCmd()
+	cmd.AllowedIPs = []netip.Prefix{netip.MustParsePrefix("192.168.7.9/24")}
+	require.NoError(t, cmd.Validate())
+	assert.Equal(t, "192.168.7.0/24", cmd.AllowedIPs[0].String())
 }
 
 func Test_AgentCmd_Validate_joinKey(t *testing.T) {

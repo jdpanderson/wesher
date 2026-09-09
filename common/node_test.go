@@ -20,6 +20,7 @@ func Test_Node_Encode_Decode(t *testing.T) {
 			nodeMeta: nodeMeta{
 				OverlayAddr: ip,
 				PubKey:      pubKey,
+				AllowedIPs:  []netip.Prefix{netip.MustParsePrefix("192.168.7.0/24"), netip.MustParsePrefix("2001:db8:1::/48")},
 			},
 		}
 		encoded, _ := node.EncodeMeta(1024)

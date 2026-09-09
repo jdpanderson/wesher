@@ -148,6 +148,18 @@ node keeps its position in the network.
 **Note**: the node's hostname is also used by the underlying cluster management (using [memberlist](https://github.com/hashicorp/memberlist))
 to identify nodes and must therefore be unique in the cluster.
 
+### Routing networks through a node
+
+A node can advertise networks behind it with `--allowed-ips` (for example a LAN, or a cloud VPC's private range).
+Every peer adds them to that node's wireguard allowed IPs and routes them over the overlay interface, so hosts on those
+networks are reachable from the whole mesh through the advertising node. The advertising node must have IP forwarding
+enabled (`sysctl net.ipv4.ip_forward=1` or the IPv6 equivalent) and the hosts behind it need a way back, typically a
+route for the overlay network via that node or masquerading on it.
+
+Advertised networks are signed with the rest of the node's metadata. They must not overlap the overlay network, and a
+network advertised by two nodes is routed via the first by name; both cases are logged and otherwise ignored. Routes
+on the overlay interface are managed by `cheesecloth`: anything added by hand is removed on the next membership change.
+
 ### Automatic /etc/hosts management
 
 To ease intra-node communication, `cheesecloth` also adds entries to `/etc/hosts` for each peer in the mesh. This enables using the nodes' hostnames to ensure communication over the secured overlay network (assuming `files` is the first entry for `hosts` in `/etc/nsswitch.conf`).
@@ -177,6 +189,7 @@ An annotated example lives in [`dist/config.yaml`](dist/config.yaml).
 | `--cluster-port PORT` | `cluster-port` | port used for membership gossip traffic (both TCP and UDP); must be the same across cluster | `7946` |
 | `--wireguard-port PORT` | `wireguard-port` | port used for wireguard traffic (UDP); must be the same across cluster | `51820` |
 | `--overlay-net ADDR/MASK` | `overlay-net` | the network in which to allocate addresses for the overlay mesh network (CIDR format); must be the same across cluster | `10.0.0.0/8` |
+| `--allowed-ips NET/MASK,...` | `allowed-ips` | extra networks reachable through this node, see [Routing networks through a node](#routing-networks-through-a-node); must not overlap `--overlay-net` |  |
 | `--interface DEV` | `interface` | name of the wireguard interface to create and manage | `wgoverlay` |
 | `--mtu MTU` | `mtu` | MTU of the wireguard interface | `1420` |
 | `--persistent-keepalive DURATION` | `persistent-keepalive` | interval at which peers send keepalives, to keep NAT mappings open (e.g. `25s`); `0` disables | `0` |
@@ -223,6 +236,8 @@ Compromise of a node yields that node's identity, which any member can revoke wi
 attacker holding it can:
 - access services exposed on the overlay network
 - impersonate that node and disrupt traffic to and from it
+- attract traffic for any network outside the overlay by advertising it with `--allowed-ips`, since every member
+  trusts every other member's advertisements
 It cannot decrypt traffic between other nodes, and it cannot admit new nodes without also minting a token on a member.
 
 Node metadata received over the cluster is validated before use: peers whose metadata is not signed by a valid member,

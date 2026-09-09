@@ -81,9 +81,9 @@ func New(cfg Config) (*Cluster, error) {
 		return nil, fmt.Errorf("local overlay address %s is not the assigned %s", cfg.LocalNode.OverlayAddr, want)
 	}
 
-	// bind our ephemeral wireguard key and overlay address to our identity
+	// bind our ephemeral wireguard key, overlay address and routes to our identity
 	cfg.LocalNode.Identity = cfg.Identity.Public()
-	cfg.LocalNode.Signature = cfg.Identity.Sign(trust.MetaDigest(cfg.LocalNode.Name, cfg.LocalNode.OverlayAddr, cfg.LocalNode.PubKey))
+	cfg.LocalNode.Signature = cfg.Identity.Sign(trust.MetaDigest(cfg.LocalNode.Name, cfg.LocalNode.OverlayAddr, cfg.LocalNode.PubKey, cfg.LocalNode.AllowedIPs))
 
 	book := newAddrBook()
 	for addr, id := range cfg.Known {
@@ -257,7 +257,7 @@ func verifyMeta(set *trust.Set, overlay netip.Prefix, n *common.Node) (trust.Pub
 	if n.OverlayAddr != want {
 		return id, fmt.Errorf("%s claims overlay address %s but is assigned %s", n.Name, n.OverlayAddr, want)
 	}
-	if !trust.Verify(id, trust.MetaDigest(n.Name, n.OverlayAddr, n.PubKey), n.Signature) {
+	if !trust.Verify(id, trust.MetaDigest(n.Name, n.OverlayAddr, n.PubKey, n.AllowedIPs), n.Signature) {
 		return id, fmt.Errorf("metadata signature of %s does not verify", n.Name)
 	}
 	return id, nil

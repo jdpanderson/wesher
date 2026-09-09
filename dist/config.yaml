@@ -14,6 +14,9 @@ bind-addr: 0.0.0.0
 cluster-port: 7946
 wireguard-port: 51820
 overlay-net: 10.0.0.0/8
+# networks behind this node that peers should route through it
+#allowed-ips:
+#  - 192.168.7.0/24
 interface: wgoverlay
 mtu: 1420
 #persistent-keepalive: 25s

@@ -19,7 +19,7 @@ func statusFixture() (*wg.Report, map[string]peerInfo, time.Time) {
 		Interface: "wgoverlay", PublicKey: "LOCALKEY", ListenPort: 51820,
 		Addrs: []netip.Prefix{netip.MustParsePrefix("10.0.0.1/32")},
 		Peers: []wg.PeerReport{
-			{PublicKey: "KEYB", Endpoint: "192.0.2.2:51820", AllowedIPs: []netip.Prefix{netip.MustParsePrefix("10.0.0.2/32")},
+			{PublicKey: "KEYB", Endpoint: "192.0.2.2:51820", AllowedIPs: []netip.Prefix{netip.MustParsePrefix("10.0.0.2/32"), netip.MustParsePrefix("192.168.7.0/24")},
 				LastHandshake: now.Add(-42 * time.Second), ReceiveBytes: 1536, TransmitBytes: 3 * 1024 * 1024},
 			{PublicKey: "KEYUNKNOWN1234567890", AllowedIPs: []netip.Prefix{netip.MustParsePrefix("10.0.0.3/32")}},
 		},
@@ -37,8 +37,8 @@ func Test_renderStatus(t *testing.T) {
 	assert.Contains(t, out, "interface: wgoverlay\n")
 	assert.Contains(t, out, "address:   10.0.0.1/32\n")
 	assert.Contains(t, out, "peers:     2\n")
-	assert.Regexp(t, `KEYUNKNOWN12\.\.\.\s+-\s+10\.0\.0\.3\s+-\s+never\s+0 B\s+0 B`, out, "unknown peer: short key, no identity, no endpoint, never")
-	assert.Regexp(t, `\nb\s+IDENTITY\s+10\.0\.0\.2\s+192\.0\.2\.2:51820\s+42s ago\s+1\.5 KiB\s+3\.0 MiB`, out)
+	assert.Regexp(t, `KEYUNKNOWN12\.\.\.\s+-\s+10\.0\.0\.3\s+-\s+never\s+0 B\s+0 B\s+-`, out, "unknown peer: short key, no identity, no endpoint, never, no routes")
+	assert.Regexp(t, `\nb\s+IDENTITY\s+10\.0\.0\.2\s+192\.0\.2\.2:51820\s+42s ago\s+1\.5 KiB\s+3\.0 MiB\s+192\.168\.7\.0/24`, out)
 	assert.Less(t, bytes.Index(buf.Bytes(), []byte("\nKEYUNKNOWN")), bytes.Index(buf.Bytes(), []byte("\nb ")), "sorted by name")
 }
 

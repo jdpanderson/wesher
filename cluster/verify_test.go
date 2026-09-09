@@ -40,7 +40,7 @@ func Test_assignedAddr_and_verifyMeta(t *testing.T) {
 		n.OverlayAddr = netip.MustParseAddr(overlay)
 		n.PubKey = "pubkey-" + name
 		n.Identity = id.Public()
-		n.Signature = id.Sign(trust.MetaDigest(n.Name, n.OverlayAddr, n.PubKey))
+		n.Signature = id.Sign(trust.MetaDigest(n.Name, n.OverlayAddr, n.PubKey, nil))
 		var encErr error
 		n.Meta, encErr = n.EncodeMeta(512)
 		require.NoError(t, encErr)

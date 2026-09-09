@@ -101,8 +101,13 @@ func (r *Revocation) VerifySignature() error {
 	return nil
 }
 
-// MetaDigest is what a node signs to bind its (ephemeral) wireguard key and
-// overlay address to its identity in gossiped metadata.
-func MetaDigest(name string, overlay netip.Addr, wgPubKey string) []byte {
-	return canonical(metaDomain, []byte(name), overlay.AsSlice(), []byte(wgPubKey))
+// MetaDigest is what a node signs to bind its (ephemeral) wireguard key,
+// overlay address and the extra networks it routes to its identity in
+// gossiped metadata.
+func MetaDigest(name string, overlay netip.Addr, wgPubKey string, allowedIPs []netip.Prefix) []byte {
+	fields := [][]byte{[]byte(name), overlay.AsSlice(), []byte(wgPubKey)}
+	for _, p := range allowedIPs {
+		fields = append(fields, append(p.Addr().AsSlice(), byte(p.Bits())))
+	}
+	return canonical(metaDomain, fields...)
 }

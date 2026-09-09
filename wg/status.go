@@ -30,12 +30,28 @@ type PeerReport struct {
 	PersistentKeepalive time.Duration  `json:"persistentKeepalive"`
 }
 
-// OverlayAddr returns the peer's /32 or /128 allowed address, if it has exactly one.
+// OverlayAddr returns the peer's single-address allowed IP, if it has exactly
+// one; the other allowed IPs are networks routed through the peer.
 func (p PeerReport) OverlayAddr() (netip.Addr, bool) {
-	if len(p.AllowedIPs) == 1 && p.AllowedIPs[0].IsSingleIP() {
-		return p.AllowedIPs[0].Addr(), true
+	var found netip.Addr
+	n := 0
+	for _, a := range p.AllowedIPs {
+		if a.IsSingleIP() {
+			found, n = a.Addr(), n+1
+		}
 	}
-	return netip.Addr{}, false
+	return found, n == 1
+}
+
+// Routes lists the networks routed through the peer: its allowed IPs other than single addresses.
+func (p PeerReport) Routes() []netip.Prefix {
+	var out []netip.Prefix
+	for _, a := range p.AllowedIPs {
+		if !a.IsSingleIP() {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // Status reports on the wireguard interface iface. It needs the same privileges as the agent.

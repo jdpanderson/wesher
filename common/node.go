@@ -8,13 +8,15 @@ import (
 	"net/netip"
 )
 
-// nodeMeta holds metadata sent over the cluster. Identity is the node's
-// membership identity and Signature binds Name, OverlayAddr and PubKey to it
+// nodeMeta holds metadata sent over the cluster. AllowedIPs are extra
+// networks reachable through the node. Identity is the node's membership
+// identity and Signature binds Name, OverlayAddr, PubKey and AllowedIPs to it
 // (see trust.MetaDigest); both are raw bytes so this package stays free of
 // crypto dependencies.
 type nodeMeta struct {
 	OverlayAddr netip.Addr
 	PubKey      string
+	AllowedIPs  []netip.Prefix
 	Identity    [32]byte
 	Signature   []byte
 }

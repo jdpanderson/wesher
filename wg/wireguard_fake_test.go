@@ -3,6 +3,7 @@ package wg
 import (
 	"errors"
 	"net"
+	"net/netip"
 	"os"
 	"testing"
 
@@ -148,23 +149,28 @@ func Test_State_SetUpInterface_fake_removesStaleRoutes(t *testing.T) {
 	p1 := testPeer(t, "p1", "192.0.2.1", "10.99.0.1")
 	p2 := testPeer(t, "p2", "192.0.2.2", "10.99.0.2")
 
-	// a host route outside the overlay net, a non-host route, and the kernel's route to
-	// our own address are not ours to touch
+	p1.AllowedIPs = []netip.Prefix{netip.MustParsePrefix("192.168.7.0/24")}
+
+	// leftovers on the interface from a previous run, and the kernel's route to our own address
 	_, foreign, _ := net.ParseCIDR("192.0.2.9/32")
 	_, wide, _ := net.ParseCIDR("10.99.0.0/24")
-	nl.routes = append(nl.routes, &netlink.Route{Dst: foreign}, &netlink.Route{Dst: wide}, &netlink.Route{Dst: addrToIPNet(s.OverlayAddr)})
+	nl.routes = append(nl.routes, &netlink.Route{Dst: foreign}, &netlink.Route{Dst: wide}, &netlink.Route{Dst: addrToIPNet(s.OverlayAddr)}, &netlink.Route{Dst: nil})
 
 	require.NoError(t, s.SetUpInterface([]common.Node{p1, p2}))
-	require.Len(t, nl.routes, 5)
+	dsts := func() []string {
+		out := make([]string, 0, len(nl.routes))
+		for _, r := range nl.routes {
+			out = append(out, r.Dst.String())
+		}
+		return out
+	}
+	assert.ElementsMatch(t, []string{"<nil>", s.OverlayAddr.String() + "/32", "10.99.0.1/32", "192.168.7.0/24", "10.99.0.2/32"}, dsts(),
+		"routes nobody advertises are removed, routes without a destination are left alone")
 
 	nl.calls = nil
-	require.NoError(t, s.SetUpInterface([]common.Node{p1}))
+	require.NoError(t, s.SetUpInterface([]common.Node{p2}))
 	assert.Contains(t, nl.calls, "RouteDel")
-	dsts := make([]string, 0, len(nl.routes))
-	for _, r := range nl.routes {
-		dsts = append(dsts, r.Dst.String())
-	}
-	assert.ElementsMatch(t, []string{"192.0.2.9/32", "10.99.0.0/24", s.OverlayAddr.String() + "/32", "10.99.0.1/32"}, dsts)
+	assert.ElementsMatch(t, []string{"<nil>", s.OverlayAddr.String() + "/32", "10.99.0.2/32"}, dsts(), "p1's address and network went with it")
 
 	// route del failure is reported
 	nl.errs = map[string]error{"RouteDel": errors.New("boom")}

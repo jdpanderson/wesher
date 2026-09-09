@@ -275,11 +275,14 @@ func Test_Set_HostConflict(t *testing.T) {
 
 func Test_MetaDigest(t *testing.T) {
 	id := newID(t)
-	d := MetaDigest("node", netip.MustParseAddr("10.0.0.1"), "wgkey")
+	routes := []netip.Prefix{netip.MustParsePrefix("192.168.7.0/24")}
+	d := MetaDigest("node", netip.MustParseAddr("10.0.0.1"), "wgkey", routes)
 	sig := id.Sign(d)
 	assert.True(t, Verify(id.Public(), d, sig))
-	assert.False(t, Verify(id.Public(), MetaDigest("node", netip.MustParseAddr("10.0.0.2"), "wgkey"), sig))
-	assert.False(t, Verify(id.Public(), MetaDigest("other", netip.MustParseAddr("10.0.0.1"), "wgkey"), sig))
+	assert.False(t, Verify(id.Public(), MetaDigest("node", netip.MustParseAddr("10.0.0.2"), "wgkey", routes), sig))
+	assert.False(t, Verify(id.Public(), MetaDigest("other", netip.MustParseAddr("10.0.0.1"), "wgkey", routes), sig))
+	assert.False(t, Verify(id.Public(), MetaDigest("node", netip.MustParseAddr("10.0.0.1"), "wgkey", nil), sig))
+	assert.False(t, Verify(id.Public(), MetaDigest("node", netip.MustParseAddr("10.0.0.1"), "wgkey", []netip.Prefix{netip.MustParsePrefix("192.168.7.0/23")}), sig))
 	// length-prefixing: moving bytes between fields changes the digest
 	assert.NotEqual(t, canonical("d", []byte("ab"), []byte("c")), canonical("d", []byte("a"), []byte("bc")))
 }

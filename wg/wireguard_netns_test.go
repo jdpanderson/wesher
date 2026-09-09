@@ -74,6 +74,7 @@ func Test_State_SetUpInterface_and_Down(t *testing.T) {
 	require.NoError(t, err)
 
 	p1 := testPeer(t, "p1", "192.0.2.1", "10.99.0.1")
+	p1.AllowedIPs = []netip.Prefix{netip.MustParsePrefix("192.168.7.0/24")}
 	p2 := testPeer(t, "p2", "192.0.2.2", "10.99.0.2")
 	require.NoError(t, s.SetUpInterface([]common.Node{p1, p2}))
 
@@ -94,12 +95,14 @@ func Test_State_SetUpInterface_and_Down(t *testing.T) {
 	assert.Equal(t, 51820, dev.ListenPort)
 	require.Len(t, dev.Peers, 2)
 	assert.Equal(t, "192.0.2.1:51820", dev.Peers[0].Endpoint.String())
+	require.Len(t, dev.Peers[0].AllowedIPs, 2)
 	assert.Equal(t, "10.99.0.1/32", dev.Peers[0].AllowedIPs[0].String())
+	assert.Equal(t, "192.168.7.0/24", dev.Peers[0].AllowedIPs[1].String())
 	assert.Equal(t, 25*time.Second, dev.Peers[0].PersistentKeepaliveInterval)
 
 	routes, err := netlink.RouteList(link, netlink.FAMILY_V4)
 	require.NoError(t, err)
-	assert.Len(t, routes, 2)
+	assert.Len(t, routes, 3, "two peer addresses and one advertised network")
 
 	report, err := Status("wgtest0")
 	require.NoError(t, err)
@@ -112,14 +115,14 @@ func Test_State_SetUpInterface_and_Down(t *testing.T) {
 	require.NoError(t, s.SetUpInterface([]common.Node{p1, p2}))
 
 	// peers and their routes are replaced, not accumulated
-	require.NoError(t, s.SetUpInterface([]common.Node{p1}))
+	require.NoError(t, s.SetUpInterface([]common.Node{p2}))
 	dev, err = s.client.Device("wgtest0")
 	require.NoError(t, err)
 	assert.Len(t, dev.Peers, 1)
 	routes, err = netlink.RouteList(link, netlink.FAMILY_V4)
 	require.NoError(t, err)
 	require.Len(t, routes, 1)
-	assert.Equal(t, "10.99.0.1/32", routes[0].Dst.String())
+	assert.Equal(t, "10.99.0.2/32", routes[0].Dst.String())
 
 	require.NoError(t, s.DownInterface())
 	_, err = netlink.LinkByName("wgtest0")

@@ -262,6 +262,26 @@ test_revoke() {
     stop_test_container test1-orig
 }
 
+# a network advertised with --allowed-ips is routed through the advertising node
+test_allowed_ips() {
+    run_test_container test1-orig test1 --init --allowed-ips 192.168.77.0/24
+    token=$(invite test1-orig 1)
+    run_test_container test2-orig test2 --join test1-orig --join-key "$token"
+
+    sleep 3
+
+    ping_ok test2-orig test1 test1-orig
+    docker exec test2-orig ip route show dev wgoverlay | grep -q "^192.168.77.0/24" || { docker exec test2-orig ip route; docker logs test2-orig; false; }
+    docker exec test2-orig wg show wgoverlay allowed-ips | grep -q "192.168.77.0/24" || { docker exec test2-orig wg show wgoverlay; false; }
+    docker exec test2-orig /app/cheesecloth status | grep test1 | grep -q "192.168.77.0/24" || { docker exec test2-orig /app/cheesecloth status; false; }
+    # a host "behind" test1 answers through the mesh
+    docker exec test1-orig ip addr add 192.168.77.1/32 dev lo
+    ping_ok test2-orig 192.168.77.1 test1-orig
+
+    stop_test_container test2-orig
+    stop_test_container test1-orig
+}
+
 # run the named tests, or all of them
 tests=("$@")
 if [ ${#tests[@]} -eq 0 ]; then

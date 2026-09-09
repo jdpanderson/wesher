@@ -147,42 +147,44 @@ func (s *State) SetUpInterface(nodes []common.Node) error {
 	if err := s.nl.LinkSetUp(link); err != nil {
 		return fmt.Errorf("enabling interface %s: %w", s.iface, err)
 	}
-	wanted := make(map[netip.Addr]bool, len(nodes))
+	wanted := make(map[netip.Prefix]bool, len(nodes))
 	for _, node := range nodes {
-		wanted[node.OverlayAddr] = true
-		if err := s.nl.RouteAdd(&netlink.Route{
-			LinkIndex: link.Attrs().Index,
-			Dst:       addrToIPNet(node.OverlayAddr),
-			Scope:     netlink.SCOPE_LINK,
-		}); err != nil && !errors.Is(err, os.ErrExist) {
-			return fmt.Errorf("adding route %s to %s: %w", node.OverlayAddr, s.iface, err)
+		for _, dst := range peerPrefixes(node) {
+			wanted[dst] = true
+			if err := s.nl.RouteAdd(&netlink.Route{
+				LinkIndex: link.Attrs().Index,
+				Dst:       prefixToIPNet(dst),
+				Scope:     netlink.SCOPE_LINK,
+			}); err != nil && !errors.Is(err, os.ErrExist) {
+				return fmt.Errorf("adding route %s to %s: %w", dst, s.iface, err)
+			}
 		}
 	}
 
 	return s.removeStaleRoutes(link, wanted)
 }
 
-// removeStaleRoutes deletes host routes to overlay addresses on link that no
-// current peer owns. The route to our own address (the kernel adds one for
-// IPv6 /128 addresses) is left alone.
-func (s *State) removeStaleRoutes(link netlink.Link, wanted map[netip.Addr]bool) error {
-	wanted[s.OverlayAddr] = true
+// peerPrefixes lists what is reachable through node: its overlay address and
+// the extra networks it advertises.
+func peerPrefixes(node common.Node) []netip.Prefix {
+	out := make([]netip.Prefix, 0, 1+len(node.AllowedIPs))
+	out = append(out, netip.PrefixFrom(node.OverlayAddr, node.OverlayAddr.BitLen()))
+	return append(out, node.AllowedIPs...)
+}
+
+// removeStaleRoutes deletes the routes on link that no current peer owns; the
+// interface is ours, so every route on it is. The route to our own address
+// (the kernel adds one for IPv6 /128 addresses) is left alone.
+func (s *State) removeStaleRoutes(link netlink.Link, wanted map[netip.Prefix]bool) error {
+	wanted[netip.PrefixFrom(s.OverlayAddr, s.OverlayAddr.BitLen())] = true
 	routes, err := s.nl.RouteList(link, netlink.FAMILY_ALL)
 	if err != nil {
 		return fmt.Errorf("listing routes on %s: %w", s.iface, err)
 	}
 	for i := range routes {
 		route := &routes[i]
-		if route.Dst == nil {
-			continue
-		}
-		dst, ok := netip.AddrFromSlice(route.Dst.IP)
-		if !ok {
-			continue
-		}
-		dst = dst.Unmap()
-		ones, _ := route.Dst.Mask.Size()
-		if ones != dst.BitLen() || !s.overlayNet.Contains(dst) || wanted[dst] {
+		dst, ok := prefixFromIPNet(route.Dst)
+		if !ok || wanted[dst] {
 			continue
 		}
 		slog.Debug("removing stale route", "dst", dst, "iface", s.iface)
@@ -210,9 +212,13 @@ func prefixFromIPNet(n *net.IPNet) (netip.Prefix, bool) {
 }
 
 func addrToIPNet(addr netip.Addr) *net.IPNet {
+	return prefixToIPNet(netip.PrefixFrom(addr, addr.BitLen()))
+}
+
+func prefixToIPNet(p netip.Prefix) *net.IPNet {
 	return &net.IPNet{
-		IP:   addr.AsSlice(),
-		Mask: net.CIDRMask(addr.BitLen(), addr.BitLen()),
+		IP:   p.Addr().AsSlice(),
+		Mask: net.CIDRMask(p.Bits(), p.Addr().BitLen()),
 	}
 }
 
@@ -227,6 +233,11 @@ func (s *State) nodesToPeerConfigs(nodes []common.Node) ([]wgtypes.PeerConfig, e
 		if s.keepalive > 0 {
 			keepalive = &s.keepalive
 		}
+		prefixes := peerPrefixes(node)
+		allowed := make([]net.IPNet, len(prefixes))
+		for j, p := range prefixes {
+			allowed[j] = *prefixToIPNet(p)
+		}
 		peerCfgs[i] = wgtypes.PeerConfig{
 			PublicKey:                   pubKey,
 			ReplaceAllowedIPs:           true,
@@ -235,9 +246,7 @@ func (s *State) nodesToPeerConfigs(nodes []common.Node) ([]wgtypes.PeerConfig, e
 				IP:   node.Addr,
 				Port: s.Port,
 			},
-			AllowedIPs: []net.IPNet{
-				*addrToIPNet(node.OverlayAddr),
-			},
+			AllowedIPs: allowed,
 		}
 	}
 	return peerCfgs, nil

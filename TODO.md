@@ -247,8 +247,12 @@ before starting; none are committed yet.
 - [x] Remove stale routes and hosts entries when a peer leaves (overlaps with
       the phase 5 route item; may fall out of that fix). It did: hosts entries
       were already rewritten on every update, routes are now pruned too.
-- [ ] Extra `AllowedIPs` per node so a node can route a subnet into the mesh
-      (advertised via node metadata).
+- [x] Extra `AllowedIPs` per node so a node can route a subnet into the mesh
+      (advertised via node metadata). 2026-09-09: `--allowed-ips`, signed
+      with the metadata; peers add them to allowed IPs and route them over the
+      interface. Overlaps with the overlay net are dropped, a network
+      advertised twice goes to the first node by name. Route pruning now
+      removes every route on the interface nobody advertises.
 - [ ] Static / seed nodes to mitigate split-brain (upstream roadmap item):
       periodically re-join configured addresses.
 - [x] Overlay IP collision detection: warn or refuse when two members hash to

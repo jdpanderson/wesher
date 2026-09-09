@@ -146,8 +146,10 @@ gossip round, by which time the streamed push/pull has populated the book.
 ## Node metadata
 
 Gossiped per node (memberlist limit 512 bytes):
-`{ OverlayAddr, WGPubKey, Identity, Signature }` with
-`Signature = Ed25519(identity, "cheesecloth/meta/v1" || Name || OverlayAddr || WGPubKey)`.
+`{ OverlayAddr, WGPubKey, AllowedIPs, Identity, Signature }` with
+`Signature = Ed25519(identity, "cheesecloth/meta/v1" || Name || OverlayAddr || WGPubKey || AllowedIPs...)`.
+`AllowedIPs` are the extra networks the node routes (`--allowed-ips`), each
+encoded as address bytes plus prefix length.
 A node installs a peer's WireGuard key only if the identity is a valid member,
 the signature verifies, and `OverlayAddr` is the address the peer's admission
 assigns. This binds each node's ephemeral WireGuard key to its persisted
