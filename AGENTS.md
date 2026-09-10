@@ -10,7 +10,7 @@ Human and machine are working together to produce a stronger result than either 
 
 ## Quality
 
-Quality of the code and the interfaces exposed externally by this software must be high quality. No workarounds or hacks. We must work together to find a solution if one isn't clear (ask). Similarly, I expect you to tell me honestly if my request or proposed solution is hacky, incomplete, or a workaround. 
+Quality of the code and the interfaces exposed externally by this software must be high quality. No workarounds or hacks. We must work together to find a solution if one isn't clear (ask). Similarly, I expect you to tell me honestly if my request or proposed solution is hacky, incomplete, or a workaround.
 
 ## Task Tracking
 
@@ -21,10 +21,13 @@ Work is tracked in `todo.md`. Take items in order, one at a time, check them off
 - Message: terse 1-line summary, optional short detail paragraph.
 
 ## Code
-- Function docs: 1-line summary; a few more lines only if an algorithm needs it.
-- Code body comments: only where the code itself does not sufficiently explain what it does or why.
-- Algorithmic documentation: Name established patterns and algorithms used as building blocks; do not explain them.
-- Additional documentation: A description of how a file's algorithms fit together may be added in a header comment at the top.
+ - Code that can be tested should be tested.
+
+## Comments & Documentation
+ - Function docblock: 1-line summary; a few more lines only if an algorithm needs it.
+ - Code body comments: only where the code itself does not sufficiently explain what it does or why.
+ - Algorithmic documentation: Name established patterns and algorithms used as building blocks; do not explain them.
+ - Additional documentation: A description of how a file's algorithms fit together may be added in a header comment at the top.
 
 ## Verify
 ```
