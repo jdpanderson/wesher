@@ -2,12 +2,10 @@ package cli
 
 import (
 	"context"
-	"net"
 	"net/netip"
 	"testing"
 	"time"
 
-	"github.com/jdpanderson/cheesecloth/enroll"
 	"github.com/jdpanderson/cheesecloth/trust"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -73,45 +71,18 @@ func Test_AgentCmd_Validate_joinKey(t *testing.T) {
 	assert.ErrorContains(t, cmd.Validate(), "cannot be combined")
 }
 
-// enrolServer starts an enrolment server on a loopback port and returns the port and a token.
-func enrolServer(t *testing.T) (int, string) {
-	t.Helper()
-	id, err := trust.NewIdentity()
-	require.NoError(t, err)
-	set := trust.NewSet(id.Public())
-	set.Merge(trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(id, "root", time.Now())}})
-	srv := &enroll.Server{Identity: id, Tokens: enroll.NewTokenStore(), Root: id.Public(), GossipAddr: "127.0.0.1:7946",
-		Admit: func(joiner trust.PublicKey, dh trust.DHKey, name string) (trust.Admission, trust.Records, error) {
-			a := trust.Admit(id, joiner, dh, name, 2, time.Now())
-			set.Merge(trust.Records{Admissions: []trust.Admission{a}})
-			return a, set.Records(), nil
-		}}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = ln.Close() })
-	go srv.Serve(ln)
-	tok, err := srv.Tokens.Mint(time.Minute, 1)
-	require.NoError(t, err)
-	return ln.Addr().(*net.TCPAddr).Port, tok
+func Test_AgentCmd_enrolAddrs(t *testing.T) {
+	cmd := AgentCmd{ClusterPort: 7946, Join: []string{"member", "10.0.0.1:1234", "fd00::1", "[fd00::2]:99"}}
+	assert.Equal(t, []string{"member:7946", "10.0.0.1:1234", "[fd00::1]:7946", "[fd00::2]:99"}, cmd.enrolAddrs())
 }
 
-func Test_AgentCmd_enrol(t *testing.T) {
-	port, tok := enrolServer(t)
+func Test_AgentCmd_enrol_unreachable(t *testing.T) {
 	joiner, err := trust.NewIdentity()
 	require.NoError(t, err)
-	cmd := validCmd()
-	cmd.WireguardPort = port
-	cmd.JoinKey = tok
-	// the first host is down, the second carries a gossip port that must be replaced by the enrolment port
-	cmd.Join = []string{"127.0.0.1:1", "127.0.0.1:7946"}
-	unreachable := AgentCmd{WireguardPort: 1, JoinKey: tok, Join: []string{"127.0.0.1"}}
-
-	_, _, err = unreachable.enrol(context.Background(), joiner, "j")
-	assert.ErrorContains(t, err, "enrolling with 127.0.0.1:1")
-
-	w, memberID, err := cmd.enrol(context.Background(), joiner, "j")
-	require.NoError(t, err)
-	assert.Equal(t, "127.0.0.1:7946", w.GossipAddr)
-	assert.Equal(t, uint64(2), w.Admission.Host)
-	assert.Equal(t, w.Root, memberID)
+	cmd := AgentCmd{ClusterPort: 1, JoinKey: "token", Join: []string{"127.0.0.1", "127.0.0.1:2"}}
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	_, _, err = cmd.enrol(ctx, joiner, "j")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "enrolling with 127.0.0.1:2", "the last member tried is reported")
 }

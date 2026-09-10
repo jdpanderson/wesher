@@ -90,8 +90,11 @@ newnode$ cheesecloth --join member --join-key TOKEN
 
 The member keeps the 32-byte token only in memory, with its expiry and
 remaining uses. The joiner holds it only for the exchange. Nothing writes it
-to disk. Enrolment runs over TCP on the WireGuard port (WireGuard itself uses
-only UDP on that port), so no new port is opened.
+to disk. Enrolment runs as a QUIC stream on the cluster port under ALPN
+`cheesecloth-enrol/1`, so no new port is opened. The joiner is not a member
+yet, so on that ALPN both sides only parse the other's identity certificate;
+the exchange below then requires the identities named in the messages to be
+the ones on the wire, and decides on the token.
 
 Exchange, with `J`/`M` the joiner's and member's identities, `Jd`/`Md` their
 DH public keys, and `K` the token:
@@ -100,23 +103,23 @@ DH public keys, and `K` the token:
    `TokenID = SHA-256(K)[:8]` lets the member pick the pending token without
    revealing it.
 2. Both derive `ss = X25519(own DH private, other DH public)` and
-   `kMac, kEnc = HKDF-SHA256(ss || K, salt = nJ || nM, info="cheesecloth/enroll/v1")`.
+   `kMac = HKDF-SHA256(ss || K, salt = nJ || nM, info="cheesecloth/enroll/v1")`.
    Member -> Joiner: `M, Md, nM, HMAC(kMac, "member" || transcript)`.
 3. Joiner verifies; it now knows the member holds `K`. Joiner -> Member:
    `HMAC(kMac, "joiner" || transcript)`.
 4. Member verifies, consumes one token use, signs an admission for `J`,
-   broadcasts it, and sends the joiner, encrypted under `kEnc`: the root
-   record, the full record set, and its own gossip address. Both sides
-   discard `K`.
+   broadcasts it, and sends the joiner the root record, the full record set,
+   and its own gossip address. Both sides discard `K`.
 
 `transcript = J || Jd || M || Md || nJ || nM || Name`. Binding both identities
 and both DH keys into the MACs is what lets the token be dropped: after step 4
 the identities are the trust anchors. The distinct labels stop reflection;
-the nonces stop replay; mixing `ss` into the derivation means an eavesdropper
-who later learns `K` still cannot recover `kEnc`. A member that finds no
-pending token for `TokenID` closes the connection without a reply, so the
-server is not an oracle for token guessing. Tokens are 256-bit random, so a
-PAKE is unnecessary.
+the nonces stop replay; mixing `ss` into the derivation means the MACs cannot
+be forged by someone who learns `K` afterwards. Confidentiality comes from the
+QUIC stream, whose TLS peers are the same `J` and `M`. A member that finds no
+pending token for `TokenID` closes the stream without a reply, so the server
+is not an oracle for token guessing. Tokens are 256-bit random, so a PAKE is
+unnecessary.
 
 ## Gossip transport
 

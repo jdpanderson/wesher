@@ -10,7 +10,6 @@ import (
 
 	"github.com/hashicorp/memberlist"
 	"github.com/jdpanderson/cheesecloth/common"
-	"github.com/jdpanderson/cheesecloth/enroll"
 	"github.com/jdpanderson/cheesecloth/trust"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -42,35 +41,35 @@ func testNodeFor(t *testing.T, name string, b *Bootstrap) *common.Node {
 }
 
 // rootCluster starts a new cluster whose root is this node.
-func rootCluster(t *testing.T, name, bindAddr string, gossipPort, enrolPort int) *Cluster {
+func rootCluster(t *testing.T, name, bindAddr string, gossipPort int) *Cluster {
 	t.Helper()
 	b, err := Load(name, true)
 	require.NoError(t, err)
 	b.InitRoot(name, nil)
 	bind := netip.MustParseAddr(bindAddr)
 	c, err := New(Config{
-		Name: name, BindAddr: bind, AdvertiseAddr: bind, BindPort: gossipPort, EnrolPort: enrolPort, OverlayNet: testOverlay,
+		Name: name, BindAddr: bind, AdvertiseAddr: bind, BindPort: gossipPort, OverlayNet: testOverlay,
 		LocalNode: testNodeFor(t, name, b), Identity: b.Identity, Root: b.Root, Records: b.Records,
 	})
 	require.NoError(t, err)
 	return c
 }
 
-// enrolCluster enrols a new node with member (reachable at memberBind:memberEnrolPort)
+// enrolCluster enrols a new node with member (reachable at memberBind:memberPort)
 // and joins it to the gossip ring.
-func enrolCluster(t *testing.T, member *Cluster, memberBind string, memberEnrolPort int, name, bindAddr string, gossipPort, enrolPort int) *Cluster {
+func enrolCluster(t *testing.T, member *Cluster, memberBind string, memberPort int, name, bindAddr string, gossipPort int) *Cluster {
 	t.Helper()
 	token, err := member.Invite(time.Minute, 1)
 	require.NoError(t, err)
 	b, err := Load(name, true)
 	require.NoError(t, err)
-	w, memberID, err := enroll.Join(context.Background(), fmt.Sprintf("%s:%d", memberBind, memberEnrolPort), token, b.Identity, name)
+	w, memberID, err := Enrol(context.Background(), fmt.Sprintf("%s:%d", memberBind, memberPort), token, b.Identity, name)
 	require.NoError(t, err)
 	require.Equal(t, member.Identity(), memberID)
 	b.Enrol(w.Root, w.Records)
 	bind := netip.MustParseAddr(bindAddr)
 	c, err := New(Config{
-		Name: name, BindAddr: bind, AdvertiseAddr: bind, BindPort: gossipPort, EnrolPort: enrolPort, OverlayNet: testOverlay,
+		Name: name, BindAddr: bind, AdvertiseAddr: bind, BindPort: gossipPort, OverlayNet: testOverlay,
 		LocalNode: testNodeFor(t, name, b), Identity: b.Identity, Root: b.Root, Records: b.Records,
 	})
 	require.NoError(t, err)
@@ -110,13 +109,13 @@ func useFastMemberlist(t *testing.T) {
 
 func Test_Cluster_enrolJoinLeave(t *testing.T) {
 	useTempStatePaths(t)
-	gossip, enrol := freePort(t), freePort(t)
+	gossip := freePort(t)
 
-	a := rootCluster(t, "a", "127.0.0.1", gossip, enrol)
+	a := rootCluster(t, "a", "127.0.0.1", gossip)
 	defer a.Leave()
 	chA := a.Members()
 
-	b := enrolCluster(t, a, "127.0.0.1", enrol, "b", "127.0.0.2", gossip, enrol)
+	b := enrolCluster(t, a, "127.0.0.1", gossip, "b", "127.0.0.2", gossip)
 	drain(b.Members())
 
 	members := waitMembers(t, chA, 1)
@@ -145,13 +144,13 @@ func Test_Cluster_enrolJoinLeave(t *testing.T) {
 
 func Test_Cluster_rejectsUnenrolled(t *testing.T) {
 	useTempStatePaths(t)
-	gossip, enrol := freePort(t), freePort(t)
-	a := rootCluster(t, "a", "127.0.0.1", gossip, enrol)
+	gossip := freePort(t)
+	a := rootCluster(t, "a", "127.0.0.1", gossip)
 	defer a.Leave()
 	drain(a.Members())
 
 	// a node rooted elsewhere knows a's address and identity but is not a member of a's cluster
-	c := rootCluster(t, "c", "127.0.0.2", gossip, enrol)
+	c := rootCluster(t, "c", "127.0.0.2", gossip)
 	defer c.Leave()
 	err := c.Join([]string{fmt.Sprintf("127.0.0.1:%d", gossip)})
 	require.Error(t, err)
@@ -161,11 +160,11 @@ func Test_Cluster_rejectsUnenrolled(t *testing.T) {
 func Test_Cluster_revocation(t *testing.T) {
 	useTempStatePaths(t)
 	useFastMemberlist(t)
-	gossip, enrol := freePort(t), freePort(t)
-	a := rootCluster(t, "a", "127.0.0.1", gossip, enrol)
+	gossip := freePort(t)
+	a := rootCluster(t, "a", "127.0.0.1", gossip)
 	defer a.Leave()
 	chA := a.Members()
-	b := enrolCluster(t, a, "127.0.0.1", enrol, "b", "127.0.0.2", gossip, enrol)
+	b := enrolCluster(t, a, "127.0.0.1", gossip, "b", "127.0.0.2", gossip)
 	defer b.Leave()
 	chB := b.Members()
 	waitMembers(t, chA, 1)
@@ -181,18 +180,18 @@ func Test_Cluster_revocation(t *testing.T) {
 func Test_Cluster_recordsSpreadTransitively(t *testing.T) {
 	useTempStatePaths(t)
 	useFastMemberlist(t)
-	gossip, enrol := freePort(t), freePort(t)
-	a := rootCluster(t, "a", "127.0.0.1", gossip, enrol)
+	gossip := freePort(t)
+	a := rootCluster(t, "a", "127.0.0.1", gossip)
 	defer a.Leave()
 	chA := a.Members()
-	b := enrolCluster(t, a, "127.0.0.1", enrol, "b", "127.0.0.2", gossip, enrol)
+	b := enrolCluster(t, a, "127.0.0.1", gossip, "b", "127.0.0.2", gossip)
 	defer b.Leave()
 	chB := b.Members()
 	waitMembers(t, chA, 1)
 	waitMembers(t, chB, 1)
 
 	// c is enrolled by b, not by the root, and joins via b; a must still accept it
-	c := enrolCluster(t, b, "127.0.0.2", enrol, "c", "127.0.0.3", gossip, enrol)
+	c := enrolCluster(t, b, "127.0.0.2", gossip, "c", "127.0.0.3", gossip)
 	defer c.Leave()
 	drain(c.Members())
 	members := waitMembers(t, chA, 2)
@@ -207,7 +206,7 @@ func Test_New_badBindAddr(t *testing.T) {
 	require.NoError(t, err)
 	b.InitRoot("a", nil)
 	bad := netip.MustParseAddr("192.0.2.1") // TEST-NET, not a local address
-	_, err = New(Config{Name: "a", BindAddr: bad, AdvertiseAddr: bad, BindPort: 0, EnrolPort: 0, OverlayNet: testOverlay,
+	_, err = New(Config{Name: "a", BindAddr: bad, AdvertiseAddr: bad, BindPort: 0, OverlayNet: testOverlay,
 		LocalNode: testNodeFor(t, "a", b), Identity: b.Identity, Root: b.Root, Records: b.Records})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "gossip transport")
@@ -224,7 +223,7 @@ func Test_New_notAMember(t *testing.T) {
 
 func Test_Cluster_Leave_closesMembers(t *testing.T) {
 	useTempStatePaths(t)
-	c := rootCluster(t, "a", "127.0.0.1", freePort(t), freePort(t))
+	c := rootCluster(t, "a", "127.0.0.1", freePort(t))
 	ch := c.Members()
 
 	c.Leave()
@@ -241,16 +240,15 @@ func Test_Cluster_Leave_closesMembers(t *testing.T) {
 func Test_Cluster_detectsFailedNode(t *testing.T) {
 	useTempStatePaths(t)
 	useFastMemberlist(t)
-	gossip, enrol := freePort(t), freePort(t)
-	a := rootCluster(t, "a", "127.0.0.1", gossip, enrol)
+	gossip := freePort(t)
+	a := rootCluster(t, "a", "127.0.0.1", gossip)
 	defer a.Leave()
 	chA := a.Members()
-	b := enrolCluster(t, a, "127.0.0.1", enrol, "b", "127.0.0.2", gossip, enrol)
+	b := enrolCluster(t, a, "127.0.0.1", gossip, "b", "127.0.0.2", gossip)
 	drain(b.Members())
 	waitMembers(t, chA, 1)
 
 	// crash b without leaving; a must eventually mark it dead
-	_ = b.enrolLn.Close()
 	require.NoError(t, b.ml.Load().Shutdown())
 	close(b.done)
 	b.routines.Wait()

@@ -19,8 +19,8 @@ tokens rather than a shared cluster key.
    1. make sure the [wireguard](https://www.wireguard.com/) kernel module is available on all nodes. It is bundled with linux newer than 5.6 and can otherwise be installed following the instructions [here](https://www.wireguard.com/install/).
 
    2. The following ports must be accessible between all nodes (see [configuration options](#configuration-options) to change these):
-      - 51820 UDP (wireguard) and TCP (enrolment of new nodes)
-      - 7946 UDP (cluster gossip, over QUIC)
+      - 51820 UDP (wireguard)
+      - 7946 UDP (cluster gossip and enrolment of new nodes, over QUIC)
 
 1. Download the latest release for your architecture:
 
@@ -184,12 +184,12 @@ An annotated example lives in [`dist/config.yaml`](dist/config.yaml).
 
 | Option | Config key | Description | Default |
 |---|---|---|---|
-| `--join HOST,...` | `join` | comma separated list of hostnames or IP addresses of existing cluster members; if not provided, will attempt resuming any known state or otherwise wait for further members |  |
+| `--join HOST[:PORT],...` | `join` | comma separated list of hostnames or IP addresses of existing cluster members, with the cluster port unless given; if not provided, will attempt resuming any known state or otherwise wait for further members |  |
 | `--join-key TOKEN` | command line only | invitation token from `cheesecloth invite` on a member; needed only the first time this node joins, ignored afterwards |  |
 | `--init` | command line only | start a new cluster with this node as its root; any known state from previous runs will be forgotten | `false` |
 | `--control-socket PATH` | `control-socket` | unix socket used by `cheesecloth invite` and `cheesecloth revoke` | `/run/cheesecloth/<interface>.sock` |
 | `--bind-addr ADDR` | `bind-addr` | address to bind for cluster membership; `0.0.0.0` or `::` binds every interface of that family and advertises one of its addresses (public preferred). The family decides whether the cluster runs over IPv4 or IPv6, see [IPv4 and IPv6](#ipv4-and-ipv6) | `0.0.0.0` |
-| `--cluster-port PORT` | `cluster-port` | UDP port used for membership gossip traffic; must be the same across cluster | `7946` |
+| `--cluster-port PORT` | `cluster-port` | UDP port used for membership gossip and enrolment (QUIC); must be the same across cluster | `7946` |
 | `--wireguard-port PORT` | `wireguard-port` | port used for wireguard traffic (UDP); must be the same across cluster | `51820` |
 | `--overlay-net ADDR/MASK` | `overlay-net` | the network in which to allocate addresses for the overlay mesh network (CIDR format); must be the same across cluster | `10.0.0.0/8` |
 | `--allowed-ips NET/MASK,...` | `allowed-ips` | extra networks reachable through this node, see [Routing networks through a node](#routing-networks-through-a-node); must not overlap `--overlay-net` |  |

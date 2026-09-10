@@ -30,7 +30,7 @@ type AgentCmd struct {
 	JoinKey       string         `help:"invitation token from 'cheesecloth invite' on a member, needed only the first time this node joins"`
 	Init          bool           `help:"start a new cluster with this node as its root; any known state from previous runs will be forgotten"`
 	BindAddr      netip.Addr     `help:"address to bind for cluster membership traffic; 0.0.0.0 or :: binds every interface of that family and advertises one of its addresses. The address family decides whether the cluster runs over IPv4 or IPv6" default:"0.0.0.0"`
-	ClusterPort   int            `help:"UDP port used for membership gossip traffic (QUIC); must be the same across cluster" default:"7946"`
+	ClusterPort   int            `help:"UDP port used for membership gossip and enrolment (QUIC); must be the same across cluster" default:"7946"`
 	WireguardPort int            `help:"port used for wireguard traffic (UDP); must be the same across cluster" default:"51820"`
 	OverlayNet    netip.Prefix   `help:"the network in which to allocate addresses for the overlay mesh network (CIDR format); must be the same across cluster" default:"10.0.0.0/8"`
 	AllowedIPs    []netip.Prefix `name:"allowed-ips" help:"extra networks reachable through this node (CIDR, comma separated); peers route them over the mesh via this node, which must forward. Must not overlap --overlay-net"`
@@ -135,7 +135,7 @@ func (a *AgentCmd) Run() error {
 	localNode.AllowedIPs = a.AllowedIPs
 
 	cluster, err := cluster.New(cluster.Config{
-		Name: a.Interface, BindAddr: a.BindAddr, AdvertiseAddr: advertise, BindPort: a.ClusterPort, EnrolPort: a.WireguardPort,
+		Name: a.Interface, BindAddr: a.BindAddr, AdvertiseAddr: advertise, BindPort: a.ClusterPort,
 		OverlayNet: a.OverlayNet, LocalNode: localNode, Identity: boot.Identity, Root: boot.Root, Records: boot.Records,
 		Peers: boot.Peers,
 	})
@@ -180,15 +180,11 @@ func (a *AgentCmd) Run() error {
 	return a.loop(ctx, nodec, cluster, wgstate, hostsFile)
 }
 
-// enrol tries each --join host's enrolment port with the join key.
+// enrol tries each --join member in turn with the join key.
 func (a *AgentCmd) enrol(ctx context.Context, id *trust.Identity, name string) (*enroll.Welcome, trust.PublicKey, error) {
 	var lastErr error
-	for _, host := range a.Join {
-		if h, _, err := net.SplitHostPort(host); err == nil {
-			host = h // --join may carry the gossip port; enrolment uses the wireguard port
-		}
-		addr := net.JoinHostPort(host, strconv.Itoa(a.WireguardPort))
-		w, memberID, err := enroll.Join(ctx, addr, a.JoinKey, id, name)
+	for _, addr := range a.enrolAddrs() {
+		w, memberID, err := cluster.Enrol(ctx, addr, a.JoinKey, id, name)
 		if err == nil {
 			return w, memberID, nil
 		}
@@ -196,4 +192,16 @@ func (a *AgentCmd) enrol(ctx context.Context, id *trust.Identity, name string) (
 		slog.Warn("enrolment attempt failed", "member", addr, "err", err)
 	}
 	return nil, trust.PublicKey{}, lastErr
+}
+
+// enrolAddrs are the --join members as ip:port, defaulting to the cluster port.
+func (a *AgentCmd) enrolAddrs() []string {
+	addrs := make([]string, 0, len(a.Join))
+	for _, host := range a.Join {
+		if _, _, err := net.SplitHostPort(host); err != nil {
+			host = net.JoinHostPort(host, strconv.Itoa(a.ClusterPort))
+		}
+		addrs = append(addrs, host)
+	}
+	return addrs
 }

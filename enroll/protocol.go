@@ -2,8 +2,6 @@ package enroll
 
 import (
 	"bytes"
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -26,7 +24,6 @@ const (
 	maxFrame     = 1 << 20 // records for a large cluster fit comfortably
 	exchangeTime = 15 * time.Second
 	kdfInfo      = "cheesecloth/enroll/v1"
-	welcomeAD    = "cheesecloth/enroll/welcome/v1"
 	labelMember  = "member"
 	labelJoiner  = "joiner"
 )
@@ -54,7 +51,7 @@ type proof struct {
 	MAC []byte `json:"mac"`
 }
 
-// Welcome is what an admitted joiner receives, encrypted under the exchange key.
+// Welcome is what an admitted joiner receives; the transport's TLS protects it.
 type Welcome struct {
 	Root       trust.PublicKey `json:"root"`
 	Records    trust.Records   `json:"records"`
@@ -64,14 +61,13 @@ type Welcome struct {
 
 // keys derived for one exchange.
 type keys struct {
-	mac, enc []byte
+	mac []byte
 }
 
 // deriveKeys mixes the DH secret and the token so that neither alone suffices.
 func deriveKeys(ss, token, nJ, nM []byte) keys {
 	salt := append(append([]byte(nil), nJ...), nM...)
-	km := hkdfExpand(sha256.New, append(append([]byte(nil), ss...), token...), salt, kdfInfo, 64)
-	return keys{mac: km[:32], enc: km[32:]}
+	return keys{mac: hkdfExpand(sha256.New, append(append([]byte(nil), ss...), token...), salt, kdfInfo, 32)}
 }
 
 // transcript binds both identities, both DH keys, both nonces and the name.
@@ -90,32 +86,6 @@ func mac(key []byte, label string, transcript []byte) []byte {
 	h.Write([]byte{0})
 	h.Write(transcript)
 	return h.Sum(nil)
-}
-
-func seal(key, plaintext []byte) ([]byte, error) {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-	nonce := make([]byte, gcm.NonceSize()) // one message per key; a fixed nonce is safe
-	return gcm.Seal(nil, nonce, plaintext, []byte(welcomeAD)), nil
-}
-
-func open(key, ciphertext []byte) ([]byte, error) {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-	nonce := make([]byte, gcm.NonceSize())
-	return gcm.Open(nil, nonce, ciphertext, []byte(welcomeAD))
 }
 
 // writeFrame sends a length-prefixed JSON message.

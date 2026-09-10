@@ -26,8 +26,7 @@ type Config struct {
 	Name          string       // state name; the wireguard interface in practice
 	BindAddr      netip.Addr   // may be a wildcard
 	AdvertiseAddr netip.Addr   // what other nodes are told to reach us at
-	BindPort      int          // gossip, TCP and UDP
-	EnrolPort     int          // enrolment, TCP; the wireguard port in practice
+	BindPort      int          // gossip and enrolment, UDP (QUIC)
 	OverlayNet    netip.Prefix // overlay addresses are admission slots inside it
 	LocalNode     *common.Node
 	Identity      *trust.Identity
@@ -47,7 +46,6 @@ type Cluster struct {
 	overlay   netip.Prefix
 	tokens    *enroll.TokenStore
 	queue     *memberlist.TransmitLimitedQueue
-	enrolLn   net.Listener
 	enrolSrv  *enroll.Server
 	state     *state
 	stateMu   sync.Mutex // guards state and its saving
@@ -132,19 +130,14 @@ func New(cfg Config) (*Cluster, error) {
 	}
 	c.ml.Store(ml)
 
-	// enrolment listens on TCP alongside wireguard's UDP port
-	c.enrolLn, err = net.Listen("tcp", net.JoinHostPort(cfg.BindAddr.String(), strconv.Itoa(cfg.EnrolPort)))
-	if err != nil {
-		_ = ml.Shutdown()
-		return nil, fmt.Errorf("binding enrolment listener: %w", err)
-	}
+	// enrolment shares the gossip listener under its own ALPN
 	c.enrolSrv = &enroll.Server{
 		Identity: cfg.Identity, Tokens: c.tokens, Root: cfg.Root, Admit: c.admit,
 		GossipAddr: net.JoinHostPort(cfg.AdvertiseAddr.String(), strconv.Itoa(cfg.BindPort)),
 	}
 	c.routines.Add(2)
 	go c.forwardEvents()
-	go func() { defer c.routines.Done(); c.enrolSrv.Serve(c.enrolLn) }()
+	go func() { defer c.routines.Done(); c.enrolSrv.Serve(transport.enrolListener()) }()
 
 	c.stateMu.Lock()
 	c.saveState()
@@ -302,7 +295,6 @@ func (c *Cluster) Leave() {
 		c.stateMu.Lock()
 		c.saveState()
 		c.stateMu.Unlock()
-		_ = c.enrolLn.Close()
 		ml := c.ml.Load()
 		if err := ml.Leave(10 * time.Second); err != nil {
 			slog.Warn("could not announce leave to the cluster", "err", err)

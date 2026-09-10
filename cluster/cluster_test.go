@@ -29,7 +29,7 @@ func drainBroadcasts(c *Cluster) {
 
 func Test_Cluster_NotifyMsg(t *testing.T) {
 	useTempStatePaths(t)
-	a := rootCluster(t, "a", "127.0.0.1", freePort(t), freePort(t))
+	a := rootCluster(t, "a", "127.0.0.1", freePort(t))
 	defer a.Leave()
 	drain(a.Members())
 
@@ -62,7 +62,7 @@ func Test_Cluster_NotifyMsg(t *testing.T) {
 
 func Test_Cluster_state_pushPull(t *testing.T) {
 	useTempStatePaths(t)
-	a := rootCluster(t, "a", "127.0.0.1", freePort(t), freePort(t))
+	a := rootCluster(t, "a", "127.0.0.1", freePort(t))
 	defer a.Leave()
 	drain(a.Members())
 
@@ -88,7 +88,7 @@ func Test_Cluster_state_pushPull(t *testing.T) {
 
 func Test_Cluster_NodeMeta_and_Conflict(t *testing.T) {
 	useTempStatePaths(t)
-	a := rootCluster(t, "a", "127.0.0.1", freePort(t), freePort(t))
+	a := rootCluster(t, "a", "127.0.0.1", freePort(t))
 	defer a.Leave()
 
 	assert.Nil(t, a.NodeMeta(1), "metadata that does not fit is not sent")
@@ -98,7 +98,7 @@ func Test_Cluster_NodeMeta_and_Conflict(t *testing.T) {
 
 func Test_Cluster_Join(t *testing.T) {
 	useTempStatePaths(t)
-	a := rootCluster(t, "a", "127.0.0.1", freePort(t), freePort(t))
+	a := rootCluster(t, "a", "127.0.0.1", freePort(t))
 	defer a.Leave()
 
 	require.NoError(t, a.Join(nil), "nothing to join and nothing remembered: a cluster of one")

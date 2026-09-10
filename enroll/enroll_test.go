@@ -1,7 +1,6 @@
 package enroll
 
 import (
-	"context"
 	"net"
 	"testing"
 	"time"
@@ -16,6 +15,15 @@ func newID(t *testing.T) *trust.Identity {
 	id, err := trust.NewIdentity()
 	require.NoError(t, err)
 	return id
+}
+
+// joinTCP dials addr and runs the joiner's side of the exchange.
+func joinTCP(t *testing.T, addr, token string, id *trust.Identity, name string) (*Welcome, trust.PublicKey, error) {
+	t.Helper()
+	conn, err := net.Dial("tcp", addr)
+	require.NoError(t, err)
+	defer func() { _ = conn.Close() }()
+	return Join(conn, token, id, name)
 }
 
 // member starts an enrolment server for a one-node cluster rooted at its identity.
@@ -48,7 +56,7 @@ func Test_Join_happyPath(t *testing.T) {
 	require.NoError(t, err)
 
 	joiner := newID(t)
-	w, memberID, err := Join(context.Background(), addr, token, joiner, "joiner")
+	w, memberID, err := joinTCP(t, addr, token, joiner, "joiner")
 	require.NoError(t, err)
 	assert.Equal(t, srv.Identity.Public(), memberID)
 	assert.Equal(t, srv.Root, w.Root)
@@ -60,7 +68,7 @@ func Test_Join_happyPath(t *testing.T) {
 	assert.Equal(t, 0, srv.Tokens.Pending(), "single-use token is consumed")
 
 	// the token cannot be reused
-	_, _, err = Join(context.Background(), addr, token, newID(t), "again")
+	_, _, err = joinTCP(t, addr, token, newID(t), "again")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "closed the connection")
 }
@@ -69,10 +77,10 @@ func Test_Join_multiUseAndExpiry(t *testing.T) {
 	srv, _, addr := member(t)
 	token, err := srv.Tokens.Mint(time.Minute, 2)
 	require.NoError(t, err)
-	_, _, err = Join(context.Background(), addr, token, newID(t), "one")
+	_, _, err = joinTCP(t, addr, token, newID(t), "one")
 	require.NoError(t, err)
 	assert.Equal(t, 1, srv.Tokens.Pending())
-	_, _, err = Join(context.Background(), addr, token, newID(t), "two")
+	_, _, err = joinTCP(t, addr, token, newID(t), "two")
 	require.NoError(t, err)
 	assert.Equal(t, 0, srv.Tokens.Pending())
 
@@ -82,7 +90,7 @@ func Test_Join_multiUseAndExpiry(t *testing.T) {
 	token, err = srv.Tokens.Mint(time.Minute, 1)
 	require.NoError(t, err)
 	srv.Tokens.now = func() time.Time { return now.Add(2 * time.Minute) }
-	_, _, err = Join(context.Background(), addr, token, newID(t), "late")
+	_, _, err = joinTCP(t, addr, token, newID(t), "late")
 	require.Error(t, err)
 	assert.Equal(t, 0, srv.Tokens.Pending())
 }
@@ -95,13 +103,13 @@ func Test_Join_wrongToken(t *testing.T) {
 	// a different, well-formed token: unknown id, silent close
 	other, err := NewTokenStore().Mint(time.Minute, 1)
 	require.NoError(t, err)
-	_, _, err = Join(context.Background(), addr, other, newID(t), "x")
+	_, _, err = joinTCP(t, addr, other, newID(t), "x")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "closed the connection")
 	assert.Equal(t, 1, srv.Tokens.Pending(), "a failed attempt does not consume the token")
 
 	// malformed token
-	_, _, err = Join(context.Background(), addr, "nope", newID(t), "x")
+	_, _, err = joinTCP(t, addr, "nope", newID(t), "x")
 	assert.ErrorContains(t, err, "join key")
 }
 
@@ -126,7 +134,7 @@ func Test_Join_memberMustProveToken(t *testing.T) {
 	defer func() { _ = ln.Close() }()
 	go impostor.Serve(ln)
 
-	_, _, err = Join(context.Background(), ln.Addr().String(), real, newID(t), "victim")
+	_, _, err = joinTCP(t, ln.Addr().String(), real, newID(t), "victim")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "member could not prove knowledge")
 	_ = addr
@@ -147,7 +155,7 @@ func Test_Join_welcomeMustBeConsistent(t *testing.T) {
 	token, err := srv.Tokens.Mint(time.Minute, 1)
 	require.NoError(t, err)
 
-	_, _, err = Join(context.Background(), ln.Addr().String(), token, newID(t), "j")
+	_, _, err = joinTCP(t, ln.Addr().String(), token, newID(t), "j")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a valid member")
 }
@@ -182,11 +190,5 @@ func Test_transcriptAndKeys(t *testing.T) {
 	k1 := deriveKeys(ss, []byte("token"), nJ, nM)
 	k2 := deriveKeys(ss, []byte("other"), nJ, nM)
 	assert.NotEqual(t, k1.mac, k2.mac, "the token is mixed into the keys")
-	sealed, err := seal(k1.enc, []byte("hi"))
-	require.NoError(t, err)
-	plain, err := open(k1.enc, sealed)
-	require.NoError(t, err)
-	assert.Equal(t, "hi", string(plain))
-	_, err = open(k2.enc, sealed)
-	assert.Error(t, err)
+	assert.Len(t, k1.mac, 32)
 }

@@ -1,7 +1,6 @@
 package enroll
 
 import (
-	"context"
 	"crypto/hmac"
 	"errors"
 	"log/slog"
@@ -23,6 +22,21 @@ type Server struct {
 	GossipAddr string
 
 	wg sync.WaitGroup
+}
+
+// Authenticated is a connection whose peer identity the transport has verified
+// (a QUIC stream); the exchange then requires the identities in the messages
+// to match it.
+type Authenticated interface {
+	PeerIdentity() trust.PublicKey
+}
+
+// bound checks that the identity a message claims is the one on the wire.
+func bound(conn net.Conn, claimed trust.PublicKey) error {
+	if a, ok := conn.(Authenticated); ok && a.PeerIdentity() != claimed {
+		return errors.New("claimed identity does not match the connection's")
+	}
+	return nil
 }
 
 // Serve accepts enrolment connections until ln is closed.
@@ -56,6 +70,9 @@ func (s *Server) handle(conn net.Conn) error {
 	}
 	if h.Version != Version || len(h.TokenID) != tokenIDLen || len(h.Nonce) != nonceLen || h.Name == "" {
 		return errors.New("malformed hello")
+	}
+	if err := bound(conn, h.Identity); err != nil {
+		return err
 	}
 	var id tokenID
 	copy(id[:], h.TokenID)
@@ -94,32 +111,17 @@ func (s *Server) handle(conn net.Conn) error {
 	if err != nil {
 		return err
 	}
-	w := Welcome{Root: s.Root, Records: records, Admission: adm, GossipAddr: s.GossipAddr}
-	plain, err := marshal(w)
-	if err != nil {
-		return err
-	}
-	sealed, err := seal(k.enc, plain)
-	if err != nil {
-		return err
-	}
 	slog.Info("enrolled node", "name", h.Name, "identity", h.Identity.Short(), "from", conn.RemoteAddr())
-	return writeFrame(conn, sealed)
+	return writeFrame(conn, Welcome{Root: s.Root, Records: records, Admission: adm, GossipAddr: s.GossipAddr})
 }
 
-// Join enrols with the member at addr using token, proving knowledge of it and
-// verifying the member's proof in return.
-func Join(ctx context.Context, addr, token string, id *trust.Identity, name string) (*Welcome, trust.PublicKey, error) {
+// Join enrols with the member on conn using token, proving knowledge of it and
+// verifying the member's proof in return. The caller owns conn.
+func Join(conn net.Conn, token string, id *trust.Identity, name string) (*Welcome, trust.PublicKey, error) {
 	key, err := DecodeToken(token)
 	if err != nil {
 		return nil, trust.PublicKey{}, err
 	}
-	var d net.Dialer
-	conn, err := d.DialContext(ctx, "tcp", addr)
-	if err != nil {
-		return nil, trust.PublicKey{}, err
-	}
-	defer func() { _ = conn.Close() }()
 	setDeadline(conn)
 
 	nJ, err := randomNonce()
@@ -140,6 +142,9 @@ func Join(ctx context.Context, addr, token string, id *trust.Identity, name stri
 	if len(c.Nonce) != nonceLen {
 		return nil, trust.PublicKey{}, errors.New("malformed challenge")
 	}
+	if err = bound(conn, c.Identity); err != nil {
+		return nil, trust.PublicKey{}, err
+	}
 	ss, err := id.SharedSecret(c.DH)
 	if err != nil {
 		return nil, trust.PublicKey{}, err
@@ -153,16 +158,8 @@ func Join(ctx context.Context, addr, token string, id *trust.Identity, name stri
 		return nil, trust.PublicKey{}, err
 	}
 
-	var sealed []byte
-	if err = readFrame(conn, &sealed); err != nil {
-		return nil, trust.PublicKey{}, err
-	}
-	plain, err := open(k.enc, sealed)
-	if err != nil {
-		return nil, trust.PublicKey{}, errors.New("could not decrypt the welcome message")
-	}
 	var w Welcome
-	if err := unmarshal(plain, &w); err != nil {
+	if err = readFrame(conn, &w); err != nil {
 		return nil, trust.PublicKey{}, err
 	}
 

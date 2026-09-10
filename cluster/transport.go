@@ -25,10 +25,14 @@ import (
 // session per pair of nodes, authenticated on both sides by self-signed
 // certificates carrying the nodes' identity keys and accepted only for valid
 // members. memberlist packets travel as QUIC datagrams (RFC 9221), its
-// push/pull exchanges as streams. There is no cluster-wide key.
+// push/pull exchanges as streams. There is no cluster-wide key. The same
+// listener takes enrolment connections under their own ALPN: the joiner is
+// not a member yet, so its certificate is only parsed there, and the token
+// exchange on the stream decides.
 
 const (
 	alpnGossip    = "cheesecloth-gossip/1"
+	alpnEnrol     = "cheesecloth-enrol/1"
 	identityLen   = 32
 	handshakeTime = 10 * time.Second
 	idleTimeout   = time.Minute
@@ -49,6 +53,7 @@ type quicTransport struct {
 	qconf   *quic.Config
 	packets chan *memberlist.Packet
 	streams chan net.Conn
+	enrol   chan net.Conn
 	done    chan struct{}
 	wg      sync.WaitGroup
 	once    sync.Once
@@ -87,15 +92,29 @@ func newQUICTransport(bind netip.Addr, port int, id *trust.Identity, set *trust.
 		_ = udp.Close()
 		return nil, err
 	}
+	gossipServer := &tls.Config{
+		Certificates:          []tls.Certificate{cert},
+		ClientAuth:            tls.RequireAnyClientCert,
+		VerifyPeerCertificate: verify,
+		MinVersion:            tls.VersionTLS13,
+		NextProtos:            []string{alpnGossip},
+	}
+	enrolServer := enrolTLSConfig(cert)
 	t := &quicTransport{
 		id: id, set: set, udp: udp,
 		qt: &quic.Transport{Conn: udp, StatelessResetKey: &resetKey},
 		server: &tls.Config{
-			Certificates:          []tls.Certificate{cert},
-			ClientAuth:            tls.RequireAnyClientCert,
-			VerifyPeerCertificate: verify,
-			MinVersion:            tls.VersionTLS13,
-			NextProtos:            []string{alpnGossip},
+			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS13,
+			NextProtos:   []string{alpnGossip, alpnEnrol},
+			GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+				for _, proto := range hello.SupportedProtos {
+					if proto == alpnEnrol {
+						return enrolServer, nil
+					}
+				}
+				return gossipServer, nil
+			},
 		},
 		client: &tls.Config{
 			Certificates:          []tls.Certificate{cert},
@@ -110,6 +129,7 @@ func newQUICTransport(bind netip.Addr, port int, id *trust.Identity, set *trust.
 		},
 		packets: make(chan *memberlist.Packet),
 		streams: make(chan net.Conn),
+		enrol:   make(chan net.Conn),
 		done:    make(chan struct{}),
 		conns:   map[string]*quic.Conn{},
 		dialing: map[string]bool{},
@@ -122,6 +142,22 @@ func newQUICTransport(bind netip.Addr, port int, id *trust.Identity, set *trust.
 	t.wg.Add(1)
 	go t.accept()
 	return t, nil
+}
+
+// enrolTLSConfig accepts any identity certificate: enrolment authenticates by
+// the token exchange, with the message identities bound to the certificate.
+func enrolTLSConfig(cert tls.Certificate) *tls.Config {
+	return &tls.Config{
+		Certificates:       []tls.Certificate{cert},
+		ClientAuth:         tls.RequireAnyClientCert,
+		InsecureSkipVerify: true, // the peer is not a member yet; the exchange decides
+		VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+			_, err := certIdentity(rawCerts)
+			return err
+		},
+		MinVersion: tls.VersionTLS13,
+		NextProtos: []string{alpnEnrol},
+	}
 }
 
 // identityCertificate is a self-signed certificate carrying the node's Ed25519 key.
@@ -182,11 +218,17 @@ func (t *quicTransport) accept() {
 
 // adopt starts serving a connection: its datagrams become packets and its
 // streams are handed to memberlist. It replaces any earlier connection to the
-// same address, which dies on its own.
+// same address, which dies on its own. An enrolment connection instead yields
+// one stream for the enrolment server.
 func (t *quicTransport) adopt(conn *quic.Conn) {
 	peer, err := connIdentity(conn)
 	if err != nil {
 		_ = conn.CloseWithError(1, err.Error())
+		return
+	}
+	if conn.ConnectionState().TLS.NegotiatedProtocol == alpnEnrol {
+		t.wg.Add(1)
+		go t.serveEnrol(conn, peer)
 		return
 	}
 	addr := conn.RemoteAddr().String()
@@ -227,7 +269,7 @@ func (t *quicTransport) adopt(conn *quic.Conn) {
 				return
 			}
 			select {
-			case t.streams <- &streamConn{Stream: s, local: conn.LocalAddr(), remote: conn.RemoteAddr()}:
+			case t.streams <- &streamConn{Stream: s, local: conn.LocalAddr(), remote: conn.RemoteAddr(), peer: peer}:
 			case <-t.done:
 				_ = conn.CloseWithError(0, "shutdown")
 				return
@@ -235,6 +277,41 @@ func (t *quicTransport) adopt(conn *quic.Conn) {
 		}
 	}()
 }
+
+// serveEnrol hands the first stream of an enrolment connection to the
+// enrolment server; closing that stream closes the connection.
+func (t *quicTransport) serveEnrol(conn *quic.Conn, peer trust.PublicKey) {
+	defer t.wg.Done()
+	ctx, cancel := context.WithTimeout(context.Background(), handshakeTime)
+	defer cancel()
+	s, err := conn.AcceptStream(ctx)
+	if err != nil {
+		_ = conn.CloseWithError(1, "no enrolment stream")
+		return
+	}
+	select {
+	case t.enrol <- &enrolStream{streamConn: streamConn{Stream: s, local: conn.LocalAddr(), remote: conn.RemoteAddr(), peer: peer}, conn: conn}:
+	case <-t.done:
+		_ = conn.CloseWithError(0, "shutdown")
+	}
+}
+
+// enrolListener presents enrolment streams as a net.Listener for enroll.Server.
+func (t *quicTransport) enrolListener() net.Listener { return enrolListener{t} }
+
+type enrolListener struct{ t *quicTransport }
+
+func (l enrolListener) Accept() (net.Conn, error) {
+	select {
+	case c := <-l.t.enrol:
+		return c, nil
+	case <-l.t.done:
+		return nil, net.ErrClosed
+	}
+}
+
+func (l enrolListener) Close() error   { return nil } // closes with the transport
+func (l enrolListener) Addr() net.Addr { return l.t.udp.LocalAddr() }
 
 // forget drops conn from the table if it is still the one recorded for addr.
 func (t *quicTransport) forget(addr string, conn *quic.Conn) {
@@ -369,7 +446,7 @@ func (t *quicTransport) DialAddressTimeout(a memberlist.Address, timeout time.Du
 	conn := t.lookup(a.Addr)
 	if conn != nil {
 		if s, err := conn.OpenStreamSync(ctx); err == nil {
-			return &streamConn{Stream: s, local: conn.LocalAddr(), remote: conn.RemoteAddr()}, nil
+			return &streamConn{Stream: s, local: conn.LocalAddr(), remote: conn.RemoteAddr(), peer: peerOf(conn)}, nil
 		}
 		t.forget(a.Addr, conn)
 	}
@@ -381,7 +458,13 @@ func (t *quicTransport) DialAddressTimeout(a memberlist.Address, timeout time.Du
 	if err != nil {
 		return nil, fmt.Errorf("gossip to %s: %w", a.Addr, err)
 	}
-	return &streamConn{Stream: s, local: conn.LocalAddr(), remote: conn.RemoteAddr()}, nil
+	return &streamConn{Stream: s, local: conn.LocalAddr(), remote: conn.RemoteAddr(), peer: peerOf(conn)}, nil
+}
+
+// peerOf is the identity behind an established connection; zero if unknown.
+func peerOf(conn *quic.Conn) trust.PublicKey {
+	peer, _ := connIdentity(conn)
+	return peer
 }
 
 // StreamCh implements memberlist.Transport.
@@ -404,18 +487,43 @@ func (t *quicTransport) Shutdown() error {
 	return t.err
 }
 
-// streamConn presents a QUIC stream as a net.Conn.
+// streamConn presents a QUIC stream as a net.Conn that knows its peer.
 type streamConn struct {
 	*quic.Stream
 	local, remote net.Addr
+	peer          trust.PublicKey
 }
 
 func (s *streamConn) LocalAddr() net.Addr  { return s.local }
 func (s *streamConn) RemoteAddr() net.Addr { return s.remote }
+
+// PeerIdentity implements enroll.Authenticated.
+func (s *streamConn) PeerIdentity() trust.PublicKey { return s.peer }
 
 // Close ends both directions: the send side cleanly, the receive side by
 // telling the peer to stop.
 func (s *streamConn) Close() error {
 	s.CancelRead(0)
 	return s.Stream.Close()
+}
+
+// enrolStream is the single stream of an enrolment connection.
+type enrolStream struct {
+	streamConn
+	conn *quic.Conn
+}
+
+// Close finishes the stream and then the connection, once the joiner has
+// closed its side or a timeout passes: closing at once could discard the
+// welcome before the joiner has read it.
+func (s *enrolStream) Close() error {
+	err := s.streamConn.Close()
+	go func() {
+		select {
+		case <-s.conn.Context().Done():
+		case <-time.After(handshakeTime):
+		}
+		_ = s.conn.CloseWithError(0, "done")
+	}()
+	return err
 }

@@ -10,25 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_seal_open(t *testing.T) {
-	key := bytes.Repeat([]byte{7}, 32)
-	sealed, err := seal(key, []byte("hello"))
-	require.NoError(t, err)
-	plain, err := open(key, sealed)
-	require.NoError(t, err)
-	assert.Equal(t, []byte("hello"), plain)
-
-	sealed[0] ^= 1
-	_, err = open(key, sealed)
-	assert.Error(t, err, "tampering is detected")
-	_, err = open(bytes.Repeat([]byte{8}, 32), sealed)
-	assert.Error(t, err, "wrong key")
-	_, err = seal([]byte("short"), []byte("hello"))
-	assert.Error(t, err)
-	_, err = open([]byte("short"), sealed)
-	assert.Error(t, err)
-}
-
 func Test_frames(t *testing.T) {
 	var buf bytes.Buffer
 	require.NoError(t, writeFrame(&buf, proof{MAC: []byte{1, 2, 3}}))
