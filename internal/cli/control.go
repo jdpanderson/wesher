@@ -23,8 +23,18 @@ func (c *controlFlags) socket() string {
 	return control.DefaultSocket(c.Interface)
 }
 
+// membership is what agentControl needs from a *cluster.Cluster.
+type membership interface {
+	Invite(ttl time.Duration, uses int) (string, error)
+	Revoke(id trust.PublicKey) error
+	Trust() *trust.Set
+	Identity() trust.PublicKey
+}
+
+var _ membership = (*cluster.Cluster)(nil)
+
 // agentControl adapts a Cluster to the control.Handler interface.
-type agentControl struct{ cluster *cluster.Cluster }
+type agentControl struct{ cluster membership }
 
 func (a agentControl) Invite(ttl time.Duration, uses int) (string, error) {
 	return a.cluster.Invite(ttl, uses)

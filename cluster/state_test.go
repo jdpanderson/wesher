@@ -117,3 +117,27 @@ func Test_KnownNodes(t *testing.T) {
 	assert.Equal(t, "good", got[0].Name)
 	assert.Equal(t, "10.0.0.1", got[0].OverlayAddr.String())
 }
+
+func Test_LocalIdentity(t *testing.T) {
+	useTempStatePaths(t)
+	_, ok := LocalIdentity("none")
+	assert.False(t, ok)
+
+	b, err := Load("a", true)
+	require.NoError(t, err)
+	id, ok := LocalIdentity("a")
+	require.True(t, ok)
+	assert.Equal(t, b.Identity.Public(), id)
+
+	require.NoError(t, (&state{Seed: []byte("short")}).save("broken"))
+	_, ok = LocalIdentity("broken")
+	assert.False(t, ok)
+}
+
+func Test_Bootstrap_Host_withoutAdmission(t *testing.T) {
+	useTempStatePaths(t)
+	b, err := Load("a", true)
+	require.NoError(t, err)
+	_, err = b.Host()
+	assert.ErrorContains(t, err, "no admission record")
+}

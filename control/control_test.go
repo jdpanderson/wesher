@@ -73,3 +73,7 @@ func Test_Listen_replacesStaleSocket(t *testing.T) {
 	_, err = Call(path, Request{Op: "invite", TTL: "1m", Uses: 1})
 	assert.NoError(t, err)
 }
+
+func Test_DefaultSocket(t *testing.T) {
+	assert.Equal(t, "/run/cheesecloth/wgoverlay.sock", DefaultSocket("wgoverlay"))
+}
