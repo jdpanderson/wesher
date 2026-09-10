@@ -66,12 +66,12 @@ func enrolCluster(t *testing.T, member *Cluster, memberBind string, memberEnrolP
 	require.NoError(t, err)
 	w, memberID, err := enroll.Join(context.Background(), fmt.Sprintf("%s:%d", memberBind, memberEnrolPort), token, b.Identity, name)
 	require.NoError(t, err)
+	require.Equal(t, member.Identity(), memberID)
 	b.Enrol(w.Root, w.Records)
 	bind := netip.MustParseAddr(bindAddr)
 	c, err := New(Config{
 		Name: name, BindAddr: bind, AdvertiseAddr: bind, BindPort: gossipPort, EnrolPort: enrolPort, OverlayNet: testOverlay,
 		LocalNode: testNodeFor(t, name, b), Identity: b.Identity, Root: b.Root, Records: b.Records,
-		Known: map[string]trust.PublicKey{w.GossipAddr: memberID},
 	})
 	require.NoError(t, err)
 	require.NoError(t, c.Join([]string{w.GossipAddr}))
@@ -153,7 +153,6 @@ func Test_Cluster_rejectsUnenrolled(t *testing.T) {
 	// a node rooted elsewhere knows a's address and identity but is not a member of a's cluster
 	c := rootCluster(t, "c", "127.0.0.2", gossip, enrol)
 	defer c.Leave()
-	c.book.set(fmt.Sprintf("127.0.0.1:%d", gossip), a.Identity())
 	err := c.Join([]string{fmt.Sprintf("127.0.0.1:%d", gossip)})
 	require.Error(t, err)
 	assert.Equal(t, 1, a.ml.Load().NumMembers(), "a must not have admitted c")

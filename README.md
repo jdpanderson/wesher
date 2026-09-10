@@ -20,7 +20,7 @@ tokens rather than a shared cluster key.
 
    2. The following ports must be accessible between all nodes (see [configuration options](#configuration-options) to change these):
       - 51820 UDP (wireguard) and TCP (enrolment of new nodes)
-      - 7946 UDP and TCP (cluster gossip)
+      - 7946 UDP (cluster gossip, over QUIC)
 
 1. Download the latest release for your architecture:
 
@@ -189,7 +189,7 @@ An annotated example lives in [`dist/config.yaml`](dist/config.yaml).
 | `--init` | command line only | start a new cluster with this node as its root; any known state from previous runs will be forgotten | `false` |
 | `--control-socket PATH` | `control-socket` | unix socket used by `cheesecloth invite` and `cheesecloth revoke` | `/run/cheesecloth/<interface>.sock` |
 | `--bind-addr ADDR` | `bind-addr` | address to bind for cluster membership; `0.0.0.0` or `::` binds every interface of that family and advertises one of its addresses (public preferred). The family decides whether the cluster runs over IPv4 or IPv6, see [IPv4 and IPv6](#ipv4-and-ipv6) | `0.0.0.0` |
-| `--cluster-port PORT` | `cluster-port` | port used for membership gossip traffic (both TCP and UDP); must be the same across cluster | `7946` |
+| `--cluster-port PORT` | `cluster-port` | UDP port used for membership gossip traffic; must be the same across cluster | `7946` |
 | `--wireguard-port PORT` | `wireguard-port` | port used for wireguard traffic (UDP); must be the same across cluster | `51820` |
 | `--overlay-net ADDR/MASK` | `overlay-net` | the network in which to allocate addresses for the overlay mesh network (CIDR format); must be the same across cluster | `10.0.0.0/8` |
 | `--allowed-ips NET/MASK,...` | `allowed-ips` | extra networks reachable through this node, see [Routing networks through a node](#routing-networks-through-a-node); must not overlap `--overlay-net` |  |
@@ -230,9 +230,9 @@ The following settings are not required to be unique, but recommended:
 
 There is no cluster-wide secret. Each node has a persisted identity (an Ed25519 key), and membership is a set of
 signed admission records rooted at the node that ran `--init`. A new node is admitted when it and an existing member
-prove to each other that they know an invitation token; the token exists only during that exchange. Cluster gossip is
-encrypted and authenticated per pair of nodes with keys derived from their identities, and a node installs a peer's
-wireguard key only if the peer's identity is a valid member and signed its metadata. The design is described in
+prove to each other that they know an invitation token; the token exists only during that exchange. Cluster gossip runs
+over QUIC, inside a TLS 1.3 session per pair of nodes authenticated by their identity keys (self-signed certificates,
+no CA), and a node installs a peer's wireguard key only if the peer's identity is a valid member and signed its metadata. The design is described in
 [`docs/membership.md`](docs/membership.md).
 
 Compromise of a node yields that node's identity, which any member can revoke with `cheesecloth revoke`. Until revoked, an

@@ -33,8 +33,7 @@ type Config struct {
 	Identity      *trust.Identity
 	Root          trust.PublicKey
 	Records       trust.Records
-	Peers         []common.Node              // last known peers, to seed the address book
-	Known         map[string]trust.PublicKey // extra address -> identity, e.g. the enrolling member
+	Peers         []common.Node // last known peers, contacted again on start
 }
 
 // Cluster represents a running cluster configuration
@@ -46,7 +45,6 @@ type Cluster struct {
 	id        *trust.Identity
 	set       *trust.Set
 	overlay   netip.Prefix
-	book      *addrBook
 	tokens    *enroll.TokenStore
 	queue     *memberlist.TransmitLimitedQueue
 	enrolLn   net.Listener
@@ -85,17 +83,6 @@ func New(cfg Config) (*Cluster, error) {
 	cfg.LocalNode.Identity = cfg.Identity.Public()
 	cfg.LocalNode.Signature = cfg.Identity.Sign(trust.MetaDigest(cfg.LocalNode.Name, cfg.LocalNode.OverlayAddr, cfg.LocalNode.PubKey, cfg.LocalNode.AllowedIPs))
 
-	book := newAddrBook()
-	for addr, id := range cfg.Known {
-		book.set(addr, id)
-	}
-	for i := range cfg.Peers {
-		n := cfg.Peers[i]
-		if id, err := verifyMeta(set, cfg.OverlayNet, &n); err == nil {
-			book.set(hostPort(n.Addr, cfg.BindPort), id)
-		}
-	}
-
 	c := &Cluster{
 		name:      cfg.Name,
 		localName: cfg.LocalNode.Name,
@@ -103,7 +90,6 @@ func New(cfg Config) (*Cluster, error) {
 		id:        cfg.Identity,
 		set:       set,
 		overlay:   cfg.OverlayNet,
-		book:      book,
 		tokens:    enroll.NewTokenStore(),
 		events:    make(chan memberlist.NodeEvent, 16),
 		changed:   make(chan struct{}, 1),
@@ -121,15 +107,8 @@ func New(cfg Config) (*Cluster, error) {
 	}}
 
 	logger := slog.NewLogLogger(slog.Default().Handler(), slog.LevelDebug)
-	inner, err := memberlist.NewNetTransport(&memberlist.NetTransportConfig{
-		BindAddrs: []string{cfg.BindAddr.String()}, BindPort: cfg.BindPort, Logger: logger,
-	})
+	transport, err := newQUICTransport(cfg.BindAddr, cfg.BindPort, cfg.Identity, set)
 	if err != nil {
-		return nil, fmt.Errorf("binding gossip transport: %w", err)
-	}
-	transport, err := newSecureTransport(inner, cfg.Identity, set, book)
-	if err != nil {
-		_ = inner.Shutdown()
 		return nil, err
 	}
 
@@ -141,13 +120,14 @@ func New(cfg Config) (*Cluster, error) {
 	mlConfig.BindPort = cfg.BindPort
 	mlConfig.AdvertiseAddr = cfg.AdvertiseAddr.String()
 	mlConfig.AdvertisePort = cfg.BindPort
-	mlConfig.UDPBufferSize -= packetOverhead
+	mlConfig.UDPBufferSize = maxDatagram
 	mlConfig.Delegate = c
 	mlConfig.Conflict = c
 	mlConfig.Events = &memberlist.ChannelEventDelegate{Ch: c.events}
 
 	ml, err := memberlist.Create(mlConfig)
 	if err != nil {
+		_ = transport.Shutdown()
 		return nil, fmt.Errorf("creating memberlist: %w", err)
 	}
 	c.ml.Store(ml)
@@ -285,12 +265,6 @@ func (c *Cluster) forwardEvents() {
 		case memberlist.NodeLeave:
 			slog.Info("node left", "name", event.Node.Name, "addr", event.Node.Addr)
 		}
-		if event.Event != memberlist.NodeLeave {
-			n := common.Node{Name: event.Node.Name, Addr: event.Node.Addr, Meta: event.Node.Meta}
-			if id, err := verifyMeta(c.set, c.overlay, &n); err == nil {
-				c.book.set(event.Node.Address(), id)
-			}
-		}
 		select {
 		case c.changed <- struct{}{}:
 		default: // a signal is already pending
@@ -371,12 +345,10 @@ func (c *Cluster) Members() <-chan []common.Node {
 					continue
 				}
 				node := common.Node{Name: n.Name, Addr: n.Addr, Meta: n.Meta}
-				id, err := verifyMeta(c.set, c.overlay, &node)
-				if err != nil {
+				if _, err := verifyMeta(c.set, c.overlay, &node); err != nil {
 					slog.Warn("ignoring node with unverified metadata", "name", n.Name, "addr", n.Addr, "err", err)
 					continue
 				}
-				c.book.set(n.Address(), id)
 				nodes = append(nodes, node)
 			}
 			c.stateMu.Lock()

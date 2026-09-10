@@ -30,7 +30,7 @@ type AgentCmd struct {
 	JoinKey       string         `help:"invitation token from 'cheesecloth invite' on a member, needed only the first time this node joins"`
 	Init          bool           `help:"start a new cluster with this node as its root; any known state from previous runs will be forgotten"`
 	BindAddr      netip.Addr     `help:"address to bind for cluster membership traffic; 0.0.0.0 or :: binds every interface of that family and advertises one of its addresses. The address family decides whether the cluster runs over IPv4 or IPv6" default:"0.0.0.0"`
-	ClusterPort   int            `help:"port used for membership gossip traffic (both TCP and UDP); must be the same across cluster" default:"7946"`
+	ClusterPort   int            `help:"UDP port used for membership gossip traffic (QUIC); must be the same across cluster" default:"7946"`
 	WireguardPort int            `help:"port used for wireguard traffic (UDP); must be the same across cluster" default:"51820"`
 	OverlayNet    netip.Prefix   `help:"the network in which to allocate addresses for the overlay mesh network (CIDR format); must be the same across cluster" default:"10.0.0.0/8"`
 	AllowedIPs    []netip.Prefix `name:"allowed-ips" help:"extra networks reachable through this node (CIDR, comma separated); peers route them over the mesh via this node, which must forward. Must not overlap --overlay-net"`
@@ -89,7 +89,6 @@ func (a *AgentCmd) Run() error {
 		return err
 	}
 
-	known := map[string]trust.PublicKey{}
 	joinAddrs := a.Join
 	switch {
 	case boot.Enrolled():
@@ -105,9 +104,8 @@ func (a *AgentCmd) Run() error {
 			return enrolErr
 		}
 		boot.Enrol(w.Root, w.Records)
-		known[w.GossipAddr] = memberID
 		joinAddrs = []string{w.GossipAddr}
-		slog.Info("enrolled in cluster", "root", w.Root.Short(), "via", w.GossipAddr)
+		slog.Info("enrolled in cluster", "root", w.Root.Short(), "via", w.GossipAddr, "member", memberID.Short())
 	default:
 		return errors.New("this node is not a member of any cluster: use --init to start one, or --join HOST --join-key TOKEN to enrol (get a token with 'cheesecloth invite' on a member)")
 	}
@@ -139,7 +137,7 @@ func (a *AgentCmd) Run() error {
 	cluster, err := cluster.New(cluster.Config{
 		Name: a.Interface, BindAddr: a.BindAddr, AdvertiseAddr: advertise, BindPort: a.ClusterPort, EnrolPort: a.WireguardPort,
 		OverlayNet: a.OverlayNet, LocalNode: localNode, Identity: boot.Identity, Root: boot.Root, Records: boot.Records,
-		Peers: boot.Peers, Known: known,
+		Peers: boot.Peers,
 	})
 	if err != nil {
 		return fmt.Errorf("creating cluster: %w", err)

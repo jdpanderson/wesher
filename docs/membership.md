@@ -120,28 +120,24 @@ PAKE is unnecessary.
 
 ## Gossip transport
 
-memberlist's own encryption is disabled; cheesecloth supplies a `Transport` that
-wraps memberlist's `NetTransport` and authenticates every message with node
-identities.
+memberlist's own encryption is disabled; cheesecloth supplies a `Transport`
+that runs memberlist over QUIC (quic-go) on the cluster port, one UDP socket
+for both listening and dialling so that peers see a node's gossip address as
+the source of everything it sends.
 
-**Packets (UDP)**: `0x01 || sender identity (32) || nonce (12) || AES-256-GCM(
-key = pairKey, ad = header || recipient identity, plaintext)`. `pairKey =
-HKDF-SHA256(X25519(sender DH, recipient DH), salt = sorted identities,
-info="cheesecloth/gossip/v1")`, cached per peer. A receiver drops packets from
-identities that are not valid members. The 61-byte overhead is subtracted
-from memberlist's UDP buffer size.
+Each pair of nodes shares one QUIC connection, authenticated on both sides by
+TLS 1.3 with self-signed certificates for the nodes' Ed25519 identity keys:
+there is no CA. Certificate verification ignores chains and asks the
+membership set whether the peer's key is a valid member (root pinning is
+implicit because validity derives from the root). ALPN `cheesecloth-gossip/1`
+is required. memberlist packets travel as QUIC datagrams (RFC 9221), so its
+packet budget is set to 1100 bytes; push/pull exchanges travel as streams.
 
-**Streams (TCP)**: TLS 1.3 with mutual authentication. Each node presents a
-self-signed certificate for its Ed25519 signing key; the peer certificate is
-accepted only if its public key is a valid member (root pinning is implicit
-because validity derives from the root). Streams carry the join push/pull,
-so a node that knows a member's address can rejoin with no other knowledge.
-
-To encrypt a packet the sender needs the recipient's identity for a given
-`ip:port`. The cluster keeps an address book filled from node metadata as
-memberlist reports members, and from the enrolment reply. A packet to an
-address not yet in the book fails to send; memberlist retries on its next
-gossip round, by which time the streamed push/pull has populated the book.
+A packet to a node with no connection yet is dropped while a connection is
+dialled in the background, as UDP would drop it, and memberlist's next round
+gets through. Failure detection relies on this: memberlist treats a lost probe
+as evidence, and a send error as its own fault. A member that is revoked while
+connected has its connection closed on the next packet or stream it sends.
 
 ## Node metadata
 

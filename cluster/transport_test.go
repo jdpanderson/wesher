@@ -1,12 +1,12 @@
 package cluster
 
 import (
-	"log"
+	"io"
 	"net"
+	"net/netip"
 	"testing"
 	"time"
 
-	"github.com/hashicorp/memberlist"
 	"github.com/jdpanderson/cheesecloth/trust"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -15,28 +15,21 @@ import (
 // testNode is a node with its own transport, for exercising the transport alone.
 type testNode struct {
 	id   *trust.Identity
-	tr   *secureTransport
+	tr   *quicTransport
 	addr string
 }
 
-func newTestNode(t *testing.T, id *trust.Identity, set *trust.Set, book *addrBook) *testNode {
+func newTestNode(t *testing.T, id *trust.Identity, set *trust.Set) *testNode {
 	t.Helper()
-	inner, err := memberlist.NewNetTransport(&memberlist.NetTransportConfig{
-		BindAddrs: []string{"127.0.0.1"}, BindPort: 0, Logger: log.New(nopWriter{}, "", 0),
-	})
-	require.NoError(t, err)
-	tr, err := newSecureTransport(inner, id, set, book)
+	tr, err := newQUICTransport(netip.MustParseAddr("127.0.0.1"), 0, id, set)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = tr.Shutdown() })
-	return &testNode{id: id, tr: tr, addr: hostPort(net.ParseIP("127.0.0.1"), inner.GetAutoBindPort())}
+	return &testNode{id: id, tr: tr, addr: tr.udp.LocalAddr().String()}
 }
 
-type nopWriter struct{}
-
-func (nopWriter) Write(p []byte) (int, error) { return len(p), nil }
-
-func Test_secureTransport_packetsAndStreams(t *testing.T) {
-	// a is root, b admitted by a; each has its own view of the same records
+// twoMembers builds root a and member b, each with its own copy of the records.
+func twoMembers(t *testing.T) (a, b *testNode) {
+	t.Helper()
 	rootID, bID := testIdentity(t), testIdentity(t)
 	recs := trust.Records{Admissions: []trust.Admission{
 		trust.SelfAdmit(rootID, "a", time.Now()),
@@ -45,96 +38,179 @@ func Test_secureTransport_packetsAndStreams(t *testing.T) {
 	setA, setB := trust.NewSet(rootID.Public()), trust.NewSet(rootID.Public())
 	setA.Merge(recs)
 	setB.Merge(recs)
-	bookA, bookB := newAddrBook(), newAddrBook()
-	a := newTestNode(t, rootID, setA, bookA)
-	b := newTestNode(t, bID, setB, bookB)
-	bookA.set(b.addr, bID.Public())
-	bookB.set(a.addr, rootID.Public())
+	return newTestNode(t, rootID, setA), newTestNode(t, bID, setB)
+}
 
-	// a -> b packet
-	_, err := a.tr.WriteTo([]byte("ping"), b.addr)
-	require.NoError(t, err)
-	select {
-	case p := <-b.tr.PacketCh():
-		assert.Equal(t, "ping", string(p.Buf))
-		assert.Equal(t, a.addr, p.From.String())
-	case <-time.After(2 * time.Second):
-		t.Fatal("packet not delivered")
+// sendUntilConnected sends msg until a connection exists to carry it; the
+// first sends are dropped while the transport connects, as UDP would drop them.
+func sendUntilConnected(t *testing.T, from *testNode, to string, msg string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for from.tr.lookup(to) == nil {
+		_, err := from.tr.WriteTo([]byte(msg), to)
+		require.NoError(t, err)
+		if time.Now().After(deadline) {
+			t.Fatalf("never connected to %s", to)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	// b learned a's identity from the packet; b -> a works even without a prior book entry check
-	_, err = b.tr.WriteTo([]byte("pong"), a.addr)
+	_, err := from.tr.WriteTo([]byte(msg), to)
 	require.NoError(t, err)
-	select {
-	case p := <-a.tr.PacketCh():
-		assert.Equal(t, "pong", string(p.Buf))
-	case <-time.After(2 * time.Second):
-		t.Fatal("packet not delivered")
+}
+
+// waitForgotten waits for n to drop its connection to addr.
+func waitForgotten(t *testing.T, n *testNode, addr string) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for n.tr.lookup(addr) != nil && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
 	}
+	assert.Nil(t, n.tr.lookup(addr), "connection to %s still present", addr)
+}
 
-	// unknown destination
-	_, err = a.tr.WriteTo([]byte("x"), "127.0.0.1:1")
-	assert.ErrorContains(t, err, "no identity known")
+// streamDies checks that a stream the peer will not accept fails on first use.
+func streamDies(t *testing.T, conn net.Conn) {
+	t.Helper()
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+	_, _ = conn.Write([]byte("intrude"))
+	_, err := conn.Read(make([]byte, 1))
+	assert.Error(t, err, "peer must have closed the connection")
+	_ = conn.Close()
+}
 
-	// stream a -> b with mutual TLS
+func expectPacket(t *testing.T, n *testNode, want string) {
+	t.Helper()
+	select {
+	case p := <-n.tr.PacketCh():
+		assert.Equal(t, want, string(p.Buf))
+	case <-time.After(3 * time.Second):
+		t.Fatalf("packet %q not delivered", want)
+	}
+}
+
+func Test_quicTransport_packetsAndStreams(t *testing.T) {
+	a, b := twoMembers(t)
+
+	// the first packet to an unknown address is dropped and starts a connection; packets flow once it is up
+	assert.Nil(t, a.tr.lookup(b.addr))
+	sendUntilConnected(t, a, b.addr, "ping")
+	expectPacket(t, b, "ping")
+
+	// the accepting side reuses the same connection in the other direction
+	_, err := b.tr.WriteTo([]byte("pong"), a.addr)
+	require.NoError(t, err)
+	expectPacket(t, a, "pong")
+
+	// oversized packets are refused rather than truncated
+	_, err = a.tr.WriteTo(make([]byte, 65000), b.addr)
+	assert.Error(t, err)
+
+	// a stream a -> b on the same connection
 	conn, err := a.tr.DialTimeout(b.addr, 2*time.Second)
 	require.NoError(t, err)
+	assert.Equal(t, b.addr, conn.RemoteAddr().String())
 	go func() { _, _ = conn.Write([]byte("hello")); _ = conn.Close() }()
 	select {
 	case s := <-b.tr.StreamCh():
 		buf := make([]byte, 5)
-		_, err := s.Read(buf)
+		_, err = io.ReadFull(s, buf)
 		require.NoError(t, err)
 		assert.Equal(t, "hello", string(buf))
+		assert.Equal(t, a.addr, s.RemoteAddr().String())
 		_ = s.Close()
-	case <-time.After(2 * time.Second):
+	case <-time.After(3 * time.Second):
 		t.Fatal("stream not delivered")
 	}
+
+	// a peer that shuts down takes its connection with it; dialling it anew fails
+	_ = b.tr.Shutdown()
+	waitForgotten(t, a, b.addr)
+	_, err = a.tr.DialTimeout(b.addr, time.Second)
+	assert.Error(t, err)
+	_, err = a.tr.WriteTo([]byte("lost"), b.addr)
+	assert.NoError(t, err, "packets to a dead peer are dropped, not failed")
+	_, err = a.tr.DialTimeout("127.0.0.1:1", time.Second)
+	assert.ErrorContains(t, err, "gossip to 127.0.0.1:1")
 }
 
-func Test_secureTransport_rejectsStrangers(t *testing.T) {
+func Test_quicTransport_advertiseAddr(t *testing.T) {
+	a, _ := twoMembers(t)
+	ip, port, err := a.tr.FinalAdvertiseAddr("", 0)
+	require.NoError(t, err)
+	assert.Equal(t, a.addr, hostPortOf(ip.String(), port))
+	ip, port, err = a.tr.FinalAdvertiseAddr("192.0.2.1", 7946)
+	require.NoError(t, err)
+	assert.Equal(t, "192.0.2.1:7946", hostPortOf(ip.String(), port))
+	_, port, err = a.tr.FinalAdvertiseAddr("192.0.2.1", 0)
+	require.NoError(t, err)
+	assert.NotZero(t, port, "the bound port fills in")
+	_, _, err = a.tr.FinalAdvertiseAddr("nonsense", 0)
+	assert.Error(t, err)
+
+	wild, err := newQUICTransport(netip.IPv4Unspecified(), 0, a.id, a.tr.set)
+	require.NoError(t, err)
+	defer func() { _ = wild.Shutdown() }()
+	_, _, err = wild.FinalAdvertiseAddr("", 0)
+	assert.ErrorContains(t, err, "advertise address is required")
+}
+
+func hostPortOf(ip string, port int) string {
+	return netip.AddrPortFrom(netip.MustParseAddr(ip), uint16(port)).String()
+}
+
+func Test_quicTransport_rejectsStrangers(t *testing.T) {
 	rootID := testIdentity(t)
 	set := trust.NewSet(rootID.Public())
 	set.Merge(trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(rootID, "a", time.Now())}})
-	member := newTestNode(t, rootID, set, newAddrBook())
+	member := newTestNode(t, rootID, set)
 
-	// stranger trusts a different root (itself) and knows the member's address and identity
+	// stranger trusts a different root (itself) and "admits" the member in its own world
 	strangerID := testIdentity(t)
 	strangerSet := trust.NewSet(strangerID.Public())
 	strangerSet.Merge(trust.Records{Admissions: []trust.Admission{
 		trust.SelfAdmit(strangerID, "s", time.Now()),
-		trust.Admit(strangerID, rootID.Public(), rootID.DHPublic(), "a", 2, time.Now()), // it "admits" the member in its own world
+		trust.Admit(strangerID, rootID.Public(), rootID.DHPublic(), "a", 2, time.Now()),
 	}})
-	stranger := newTestNode(t, strangerID, strangerSet, newAddrBook())
-	stranger.tr.book.set(member.addr, rootID.Public())
+	stranger := newTestNode(t, strangerID, strangerSet)
 
-	_, err := stranger.tr.WriteTo([]byte("intrude"), member.addr)
-	require.NoError(t, err, "the stranger can send")
-	select {
-	case p := <-member.tr.PacketCh():
-		t.Fatalf("member must drop packets from non-members, got %q", p.Buf)
-	case <-time.After(500 * time.Millisecond):
-	}
-
-	// TLS 1.3 reports client-certificate rejection to the client only on its next
-	// read, so the dial itself may succeed; the member must still never surface
-	// the stream, and the stranger's connection must be dead.
-	if conn, dialErr := stranger.tr.DialTimeout(member.addr, 2*time.Second); dialErr == nil {
-		_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
-		_, _ = conn.Write([]byte("intrude"))
-		_, readErr := conn.Read(make([]byte, 1))
-		assert.Error(t, readErr, "member must have closed the stranger's stream")
-		_ = conn.Close()
+	// TLS 1.3 rejects a client certificate after the client's handshake has
+	// completed, so the dial itself may succeed; the stream must then be dead
+	// and the member must never surface it.
+	if conn, err := stranger.tr.DialTimeout(member.addr, 2*time.Second); err == nil {
+		streamDies(t, conn)
 	}
 	select {
 	case s := <-member.tr.StreamCh():
 		t.Fatalf("member must not surface a stream from a non-member (%s)", s.RemoteAddr())
-	case <-time.After(500 * time.Millisecond):
+	case p := <-member.tr.PacketCh():
+		t.Fatalf("member must not surface a packet from a non-member (%q)", p.Buf)
+	case <-time.After(300 * time.Millisecond):
 	}
+	assert.Nil(t, member.tr.lookup(stranger.addr))
 
 	// and a member refuses to talk to a stranger posing as a server
-	member.tr.book.set(stranger.addr, stranger.id.Public())
-	_, err = member.tr.WriteTo([]byte("x"), stranger.addr)
+	_, err := member.tr.DialTimeout(stranger.addr, 2*time.Second)
 	assert.ErrorContains(t, err, "not a member")
-	_, err = member.tr.DialTimeout(stranger.addr, 2*time.Second)
-	assert.Error(t, err)
+}
+
+func Test_quicTransport_revocationCutsConnection(t *testing.T) {
+	a, b := twoMembers(t)
+	sendUntilConnected(t, a, b.addr, "ping")
+	expectPacket(t, b, "ping")
+
+	// a revokes b; b's next packet closes the connection instead of being delivered
+	_, err := a.tr.set.AddRevocation(trust.Revoke(a.id, b.id.Public(), time.Now()))
+	require.NoError(t, err)
+	_, err = b.tr.WriteTo([]byte("still here?"), a.addr)
+	require.NoError(t, err)
+	select {
+	case p := <-a.tr.PacketCh():
+		t.Fatalf("packet from a revoked node delivered: %q", p.Buf)
+	case <-time.After(300 * time.Millisecond):
+	}
+	waitForgotten(t, a, b.addr)
+	if conn, err := b.tr.DialTimeout(a.addr, 2*time.Second); err == nil {
+		streamDies(t, conn)
+	}
+	assert.Nil(t, a.tr.lookup(b.addr), "and b cannot come back")
 }

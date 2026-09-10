@@ -271,6 +271,13 @@ before starting; none are committed yet.
 - [x] `status` subcommand listing peers, handshake age, and overlay addresses
       (`wesher status [--interface DEV] [--json]`; names come from the
       persisted cluster state). A health endpoint remains a separate candidate.
+- [ ] QUIC for all of cheesecloth's own traffic. Decided 2026-09-10: one
+      UDP port carries memberlist gossip (QUIC datagrams), push/pull (streams)
+      and enrolment (streams under a second ALPN), all inside per-pair TLS 1.3
+      authenticated by the identity certificates. Replaces the hand-rolled
+      AES-GCM packet layer, the address book and the enrolment TCP listener on
+      the wireguard port. WireGuard keeps its own UDP port: the kernel owns it.
+      Steps: gossip transport (done), then enrolment on the same listener.
 - [x] systemd `sd_notify` readiness and a `Type=notify` unit file. 2026-09-09:
       `internal/sdnotify` (stdlib only) sends READY after the first snapshot
       is applied, STATUS with the peer count on every change and STOPPING on
