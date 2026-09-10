@@ -1,7 +1,6 @@
 package common
 
 import (
-	"net"
 	"net/netip"
 	"reflect"
 	"testing"
@@ -33,11 +32,6 @@ func Test_Node_Encode_Decode(t *testing.T) {
 			t.Errorf("node encoding then decoding mismatch: %s / %s", node.nodeMeta, new.nodeMeta)
 		}
 	}
-}
-
-func Test_Node_String(t *testing.T) {
-	n := Node{Name: "host", Addr: net.ParseIP("192.0.2.1")}
-	assert.Equal(t, "192.0.2.1", n.String())
 }
 
 func Test_Node_EncodeMeta_limit(t *testing.T) {

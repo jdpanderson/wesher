@@ -39,7 +39,6 @@ type Config struct {
 type Cluster struct {
 	name      string
 	ml        atomic.Pointer[memberlist.Memberlist]
-	localName string
 	local     *common.Node
 	id        *trust.Identity
 	set       *trust.Set
@@ -82,17 +81,16 @@ func New(cfg Config) (*Cluster, error) {
 	cfg.LocalNode.Signature = cfg.Identity.Sign(trust.MetaDigest(cfg.LocalNode.Name, cfg.LocalNode.OverlayAddr, cfg.LocalNode.PubKey, cfg.LocalNode.AllowedIPs))
 
 	c := &Cluster{
-		name:      cfg.Name,
-		localName: cfg.LocalNode.Name,
-		local:     cfg.LocalNode,
-		id:        cfg.Identity,
-		set:       set,
-		overlay:   cfg.OverlayNet,
-		tokens:    enroll.NewTokenStore(),
-		events:    make(chan memberlist.NodeEvent, 16),
-		changed:   make(chan struct{}, 1),
-		done:      make(chan struct{}),
-		state:     &state{Seed: cfg.Identity.Seed(), Nodes: cfg.Peers},
+		name:    cfg.Name,
+		local:   cfg.LocalNode,
+		id:      cfg.Identity,
+		set:     set,
+		overlay: cfg.OverlayNet,
+		tokens:  enroll.NewTokenStore(),
+		events:  make(chan memberlist.NodeEvent, 16),
+		changed: make(chan struct{}, 1),
+		done:    make(chan struct{}),
+		state:   &state{Seed: cfg.Identity.Seed(), Nodes: cfg.Peers},
 	}
 	root := cfg.Root
 	c.state.Root = &root
@@ -247,7 +245,7 @@ func (c *Cluster) forwardEvents() {
 			return
 		case event = <-c.events:
 		}
-		if event.Node.Name == c.localName {
+		if event.Node.Name == c.local.Name {
 			continue
 		}
 		switch event.Event {
@@ -333,7 +331,7 @@ func (c *Cluster) Members() <-chan []common.Node {
 			ml := c.ml.Load()
 			nodes := make([]common.Node, 0, ml.NumMembers())
 			for _, n := range ml.Members() {
-				if n.Name == c.localName {
+				if n.Name == c.local.Name {
 					continue
 				}
 				node := common.Node{Name: n.Name, Addr: n.Addr, Meta: n.Meta}

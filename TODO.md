@@ -279,6 +279,12 @@ before starting; none are committed yet.
       the wireguard port. WireGuard keeps its own UDP port: the kernel owns it.
       Done the same day; the welcome message lost its own encryption since
       the stream carries it, and `--join` takes an optional port.
+- [ ] **DECISION** Drop the X25519 key from identities and admission records.
+      It fed the pairwise gossip keys, which QUIC replaced, and the enrolment
+      MAC key, where the identity-to-TLS-peer binding now does the same job:
+      an intermediary cannot pass the MAC check with its own identity and
+      cannot compute one without the token. Removing it shrinks the identity,
+      the admission record and the exchange messages. Breaking for state files.
 - [x] systemd `sd_notify` readiness and a `Type=notify` unit file. 2026-09-09:
       `internal/sdnotify` (stdlib only) sends READY after the first snapshot
       is applied, STATUS with the peer count on every change and STOPPING on

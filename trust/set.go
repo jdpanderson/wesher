@@ -2,7 +2,6 @@ package trust
 
 import (
 	"errors"
-	"fmt"
 	"math"
 	"sort"
 	"sync"
@@ -146,18 +145,6 @@ func (s *Set) Lookup(id PublicKey) (Admission, bool) {
 	defer s.mu.RUnlock()
 	a, ok := s.admissions[id]
 	return a, ok
-}
-
-// DHKeyOf returns the DH public key of a valid member.
-func (s *Set) DHKeyOf(id PublicKey) (DHKey, error) {
-	if !s.Valid(id) {
-		return DHKey{}, fmt.Errorf("%s is not a member", id.Short())
-	}
-	a, ok := s.Lookup(id)
-	if !ok {
-		return DHKey{}, fmt.Errorf("no admission record for %s", id.Short())
-	}
-	return a.DHKey, nil
 }
 
 // ByName returns the valid member with the given name, if exactly one exists.

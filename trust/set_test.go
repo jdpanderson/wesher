@@ -49,14 +49,8 @@ func Test_Set_Merge_skipsBadRecords(t *testing.T) {
 	assert.True(t, set.Valid(c.Public()))
 }
 
-func Test_Set_DHKeyOf_and_ByName(t *testing.T) {
-	root, a, _, stranger, set := cluster(t)
-	_, err := set.DHKeyOf(stranger.Public())
-	assert.ErrorContains(t, err, "not a member")
-	dh, err := set.DHKeyOf(root.Public())
-	require.NoError(t, err)
-	assert.Equal(t, root.DHPublic(), dh)
-
+func Test_Set_ByName_and_Members(t *testing.T) {
+	root, a, _, _, set := cluster(t)
 	got, ok := set.ByName("a")
 	require.True(t, ok)
 	assert.Equal(t, a.Public(), got.Identity)
@@ -65,7 +59,7 @@ func Test_Set_DHKeyOf_and_ByName(t *testing.T) {
 
 	// two valid members with one name: ambiguous
 	twin := newID(t)
-	_, err = set.AddAdmission(Admit(root, twin.Public(), twin.DHPublic(), "a", 9, t0))
+	_, err := set.AddAdmission(Admit(root, twin.Public(), twin.DHPublic(), "a", 9, t0))
 	require.NoError(t, err)
 	_, ok = set.ByName("a")
 	assert.False(t, ok)

@@ -111,12 +111,6 @@ func Test_Set_validity(t *testing.T) {
 	_, err = set.AddAdmission(adm)
 	assert.ErrorContains(t, err, "overlay slot")
 
-	dh, err := set.DHKeyOf(b.Public())
-	require.NoError(t, err)
-	assert.Equal(t, b.DHPublic(), dh)
-	_, err = set.DHKeyOf(stranger.Public())
-	assert.Error(t, err)
-
 	names := []string{}
 	for _, m := range set.Members() {
 		names = append(names, m.Name)

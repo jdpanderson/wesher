@@ -9,17 +9,16 @@ Status: design accepted and implemented 2026-09-08.
   token is then gone from every machine.
 - A stolen node yields one revocable identity, not the cluster.
 - Nodes restart unattended, including all of them at once.
-- Protocol versions are explicit (enrolment message, packet version byte,
-  TLS ALPN) so mismatched nodes fail closed rather than half-working.
+- Protocol versions are explicit (enrolment message, TLS ALPN) so mismatched
+  nodes fail closed rather than half-working.
 
 ## Roles of the two key layers
 
-WireGuard already gives every node a key pair and protects the data plane
-with a Noise handshake. It stays exactly as it is. What changes is how a
-node decides *which* WireGuard public keys it will install as peers, and how
-the gossip that carries them is protected. Today both rest on one symmetric
-key that every node holds forever. They now rest on per-node identities and
-a signed admission list.
+WireGuard gives every node a key pair and protects the data plane with a
+Noise handshake; cheesecloth leaves that alone. What cheesecloth decides is
+*which* WireGuard public keys a node installs as peers, and how the gossip
+that carries them is protected. Both rest on per-node identities and a signed
+admission list; there is no shared key.
 
 ## Identity
 
@@ -28,8 +27,8 @@ in its state file (mode 0600). Two keys derive from it:
 
 | Key | Derivation | Used for |
 |---|---|---|
-| signing key (Ed25519) | `ed25519.NewKeyFromSeed(seed)` | signing admission records and node metadata; TLS certificate for gossip streams |
-| DH key (X25519) | `HKDF-SHA256(seed, info="cheesecloth/dh/v1")` | pairwise keys for gossip packets and the enrolment exchange |
+| signing key (Ed25519) | `ed25519.NewKeyFromSeed(seed)` | signing admission records and node metadata; TLS certificate for gossip and enrolment |
+| DH key (X25519) | `HKDF-SHA256(seed, info="cheesecloth/dh/v1")` | the enrolment exchange |
 
 A node's **identity** is its Ed25519 public key. The DH public key travels
 inside the node's admission record, so it is bound to the identity by the
@@ -158,7 +157,7 @@ claiming another's address.
 ## Restart and recovery
 
 A restarting node has its seed, the pinned root, the record set, and its last
-known peers on disk. It reconnects over TLS to any of them and rejoins. No
+known peers on disk. It reconnects over QUIC to any of them and rejoins. No
 token and no operator are involved. If every node restarts at once, each still
 has everything it needs; nothing has to be fetched. Losing a node's disk loses
 that node's identity; it re-enrols with a fresh token and the old identity
@@ -177,5 +176,4 @@ can be revoked.
 ## Out of scope for now
 
 Rotation of the pinned root; cascading revocation; a PAKE for short human
-codes; gossip forward secrecy (packets use static-static DH; WireGuard traffic
-has forward secrecy already).
+codes.

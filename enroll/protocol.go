@@ -2,6 +2,7 @@ package enroll
 
 import (
 	"bytes"
+	"crypto/hkdf"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -67,7 +68,11 @@ type keys struct {
 // deriveKeys mixes the DH secret and the token so that neither alone suffices.
 func deriveKeys(ss, token, nJ, nM []byte) keys {
 	salt := append(append([]byte(nil), nJ...), nM...)
-	return keys{mac: hkdfExpand(sha256.New, append(append([]byte(nil), ss...), token...), salt, kdfInfo, 32)}
+	km, err := hkdf.Key(sha256.New, append(append([]byte(nil), ss...), token...), salt, kdfInfo, 32)
+	if err != nil {
+		panic("hkdf: " + err.Error()) // only for absurd output lengths
+	}
+	return keys{mac: km}
 }
 
 // transcript binds both identities, both DH keys, both nonces and the name.

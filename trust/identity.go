@@ -29,15 +29,18 @@ func (k PublicKey) Short() string { return k.String()[:8] }
 func (k PublicKey) MarshalText() ([]byte, error) { return []byte(k.String()), nil }
 
 // UnmarshalText implements encoding.TextUnmarshaler.
-func (k *PublicKey) UnmarshalText(text []byte) error {
+func (k *PublicKey) UnmarshalText(text []byte) error { return decodeKey("identity", text, k[:]) }
+
+// decodeKey fills dst from the base64 text of a key, naming what in errors.
+func decodeKey(what string, text, dst []byte) error {
 	b, err := base64.StdEncoding.DecodeString(string(text))
 	if err != nil {
-		return fmt.Errorf("identity: %w", err)
+		return fmt.Errorf("%s: %w", what, err)
 	}
-	if len(b) != len(k) {
-		return fmt.Errorf("identity: want %d bytes, got %d", len(k), len(b))
+	if len(b) != len(dst) {
+		return fmt.Errorf("%s: want %d bytes, got %d", what, len(dst), len(b))
 	}
-	copy(k[:], b)
+	copy(dst, b)
 	return nil
 }
 
@@ -57,17 +60,7 @@ func (k DHKey) MarshalText() ([]byte, error) {
 }
 
 // UnmarshalText implements encoding.TextUnmarshaler.
-func (k *DHKey) UnmarshalText(text []byte) error {
-	b, err := base64.StdEncoding.DecodeString(string(text))
-	if err != nil {
-		return fmt.Errorf("dh key: %w", err)
-	}
-	if len(b) != len(k) {
-		return fmt.Errorf("dh key: want %d bytes, got %d", len(k), len(b))
-	}
-	copy(k[:], b)
-	return nil
-}
+func (k *DHKey) UnmarshalText(text []byte) error { return decodeKey("dh key", text, k[:]) }
 
 // Identity is a node's long-lived key material, all derived from one seed.
 type Identity struct {

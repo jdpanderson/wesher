@@ -133,8 +133,8 @@ several nodes across multiple cloud providers, or simply to secure inter-node co
 Each node has a persisted identity, created on its first start. The wireguard private key is created fresh on every
 start and its public key is gossiped across the cluster, signed by the node's identity.
 
-Cluster communication is encrypted and authenticated per pair of nodes with keys derived from their identities; there
-is no shared cluster key. New nodes are admitted with a short-lived invitation token minted on an existing member (see
+Cluster communication runs over QUIC, authenticated per pair of nodes by certificates of their identities; there is
+no shared cluster key. New nodes are admitted with a short-lived invitation token minted on an existing member (see
 [Quickstart](#quickstart)).
 
 ### Automatic IP address management
