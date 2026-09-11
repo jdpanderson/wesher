@@ -273,11 +273,10 @@ func (c *Cluster) forwardEvents() {
 	}
 }
 
-// Join tries to join the cluster by contacting provided addresses
-// Provided addresses are passed as is, if no address is provided, known
-// cluster nodes are contacted instead.
-// Joining fail if none of the provided addresses or none of the known
-// nodes can be joined.
+// Join contacts addrs to join the cluster; given none, it tries the peers
+// remembered from the last run. It fails if there were addresses to try and
+// none could be joined. No addresses and no remembered peers is a cluster of
+// one, which is not an error.
 func (c *Cluster) Join(addrs []string) error {
 	if len(addrs) == 0 {
 		c.stateMu.Lock()
@@ -286,14 +285,9 @@ func (c *Cluster) Join(addrs []string) error {
 		}
 		c.stateMu.Unlock()
 	}
-
-	ml := c.ml.Load()
-	if _, err := ml.Join(addrs); err != nil {
+	if _, err := c.ml.Load().Join(addrs); err != nil {
 		return fmt.Errorf("joining cluster: %w", err)
-	} else if len(addrs) > 0 && ml.NumMembers() < 2 {
-		return fmt.Errorf("could not join to any of the provided addresses")
 	}
-
 	return nil
 }
 
