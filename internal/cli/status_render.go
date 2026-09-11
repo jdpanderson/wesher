@@ -71,8 +71,8 @@ func renderStatus(w io.Writer, r *wg.Report, local trust.PublicKey, names map[st
 			endpoint = "-"
 		}
 		identity := "-"
-		if info, ok := names[p.PublicKey]; ok && info.Identity != "" {
-			identity = info.Identity[:8]
+		if info, ok := names[p.PublicKey]; ok && info.Identity != nil {
+			identity = info.Identity.Short()
 		}
 		routes := "-"
 		if rs := p.Routes(); len(rs) > 0 {

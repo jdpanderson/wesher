@@ -23,7 +23,8 @@ func (c *StatusCmd) Run() error {
 	}
 	names := make(map[string]peerInfo) // wireguard public key -> node
 	for _, n := range cluster.KnownNodes(c.Interface) {
-		names[n.PubKey] = peerInfo{Name: n.Name, Identity: trust.PublicKey(n.Identity).String()}
+		id := trust.PublicKey(n.Identity)
+		names[n.PubKey] = peerInfo{Name: n.Name, Identity: &id}
 	}
 	local, _ := cluster.LocalIdentity(c.Interface)
 	if c.JSON {
@@ -34,6 +35,6 @@ func (c *StatusCmd) Run() error {
 
 // peerInfo is what the cluster state knows about a wireguard peer.
 type peerInfo struct {
-	Name     string `json:"name,omitempty"`
-	Identity string `json:"identity,omitempty"`
+	Name     string           `json:"name,omitempty"`
+	Identity *trust.PublicKey `json:"identity,omitempty"`
 }
