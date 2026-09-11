@@ -278,5 +278,5 @@ func Test_MetaDigest(t *testing.T) {
 	assert.False(t, Verify(id.Public(), MetaDigest("node", netip.MustParseAddr("10.0.0.1"), "wgkey", nil), sig))
 	assert.False(t, Verify(id.Public(), MetaDigest("node", netip.MustParseAddr("10.0.0.1"), "wgkey", []netip.Prefix{netip.MustParsePrefix("192.168.7.0/23")}), sig))
 	// length-prefixing: moving bytes between fields changes the digest
-	assert.NotEqual(t, canonical("d", []byte("ab"), []byte("c")), canonical("d", []byte("a"), []byte("bc")))
+	assert.NotEqual(t, MetaDigest("ab", netip.MustParseAddr("10.0.0.1"), "c", nil), MetaDigest("a", netip.MustParseAddr("10.0.0.1"), "bc", nil))
 }

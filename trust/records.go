@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/netip"
 	"time"
+
+	"github.com/jdpanderson/cheesecloth/internal/wire"
 )
 
 // Admission says that Admitter vouches for Identity as a member and assigns
@@ -37,26 +39,16 @@ const (
 	metaDomain       = "cheesecloth/meta/v1"
 )
 
-// canonical builds the signed bytes: domain, then each field length-prefixed.
-func canonical(domain string, fields ...[]byte) []byte {
-	out := append([]byte(domain), 0)
-	for _, f := range fields {
-		out = binary.BigEndian.AppendUint32(out, uint32(len(f)))
-		out = append(out, f...)
-	}
-	return out
-}
-
 func i64(v int64) []byte { return binary.BigEndian.AppendUint64(nil, uint64(v)) }
 
 func u64(v uint64) []byte { return binary.BigEndian.AppendUint64(nil, v) }
 
 func (a *Admission) signedBytes() []byte {
-	return canonical(admissionDomain, a.Identity[:], a.DHKey[:], []byte(a.Name), u64(a.Host), a.Admitter[:], i64(a.IssuedAt))
+	return wire.Canonical(admissionDomain, a.Identity[:], a.DHKey[:], []byte(a.Name), u64(a.Host), a.Admitter[:], i64(a.IssuedAt))
 }
 
 func (r *Revocation) signedBytes() []byte {
-	return canonical(revocationDomain, r.Identity[:], r.Revoker[:], i64(r.IssuedAt))
+	return wire.Canonical(revocationDomain, r.Identity[:], r.Revoker[:], i64(r.IssuedAt))
 }
 
 // Admit creates an admission of (identity, dh, name) at overlay slot host,
@@ -109,5 +101,5 @@ func MetaDigest(name string, overlay netip.Addr, wgPubKey string, allowedIPs []n
 	for _, p := range allowedIPs {
 		fields = append(fields, append(p.Addr().AsSlice(), byte(p.Bits())))
 	}
-	return canonical(metaDomain, fields...)
+	return wire.Canonical(metaDomain, fields...)
 }

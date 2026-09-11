@@ -45,8 +45,3 @@ func Test_Revocation_VerifySignature(t *testing.T) {
 	x.Revoker = a.Public()
 	assert.Error(t, x.VerifySignature())
 }
-
-func Test_canonical(t *testing.T) {
-	assert.Equal(t, []byte("d\x00\x00\x00\x00\x02ab\x00\x00\x00\x00"), canonical("d", []byte("ab"), nil))
-	assert.NotEqual(t, canonical("d", []byte("a")), canonical("e", []byte("a")), "domain separation")
-}

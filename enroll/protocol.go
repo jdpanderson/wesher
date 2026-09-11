@@ -1,7 +1,6 @@
 package enroll
 
 import (
-	"bytes"
 	"crypto/hkdf"
 	"crypto/hmac"
 	"crypto/rand"
@@ -14,6 +13,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/jdpanderson/cheesecloth/internal/wire"
 	"github.com/jdpanderson/cheesecloth/trust"
 )
 
@@ -58,6 +58,9 @@ type Welcome struct {
 	Records    trust.Records   `json:"records"`
 	Admission  trust.Admission `json:"admission"`  // the joiner's own
 	GossipAddr string          `json:"gossipAddr"` // member's ip:port for memberlist
+	// Member is the identity of the member that ran the exchange, verified
+	// against the connection by Join; it is not part of the message.
+	Member trust.PublicKey `json:"-"`
 }
 
 // deriveKey derives the exchange's MAC key, mixing the DH secret and the token
@@ -73,12 +76,7 @@ func deriveKey(ss, token, nJ, nM []byte) []byte {
 
 // transcript binds both identities, both DH keys, both nonces and the name.
 func transcript(j trust.PublicKey, jd trust.DHKey, m trust.PublicKey, md trust.DHKey, nJ, nM []byte, name string) []byte {
-	var b bytes.Buffer
-	for _, f := range [][]byte{j[:], jd[:], m[:], md[:], nJ, nM, []byte(name)} {
-		_ = binary.Write(&b, binary.BigEndian, uint32(len(f)))
-		b.Write(f)
-	}
-	return b.Bytes()
+	return wire.Fields(j[:], jd[:], m[:], md[:], nJ, nM, []byte(name))
 }
 
 func mac(key []byte, label string, transcript []byte) []byte {
