@@ -2,6 +2,7 @@ package trust
 
 import (
 	"errors"
+	"iter"
 	"math"
 	"sort"
 	"sync"
@@ -109,11 +110,23 @@ func (s *Set) Records() Records {
 func (s *Set) Valid(id PublicKey) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.valid(id, map[PublicKey]bool{})
+	return s.valid(id)
 }
 
-func (s *Set) valid(id PublicKey, visiting map[PublicKey]bool) bool {
-	return s.validAt(id, math.MaxInt64, visiting)
+// valid is Valid with the lock held.
+func (s *Set) valid(id PublicKey) bool {
+	return s.validAt(id, math.MaxInt64, map[PublicKey]bool{})
+}
+
+// validAdmissions iterates over the valid members' records; callers hold the lock.
+func (s *Set) validAdmissions() iter.Seq[Admission] {
+	return func(yield func(Admission) bool) {
+		for id, a := range s.admissions {
+			if s.valid(id) && !yield(a) {
+				return
+			}
+		}
+	}
 }
 
 // validAt evaluates membership as of unix time at: revocations issued later
@@ -153,8 +166,8 @@ func (s *Set) ByName(name string) (Admission, bool) {
 	defer s.mu.RUnlock()
 	var found Admission
 	n := 0
-	for id, a := range s.admissions {
-		if a.Name == name && s.valid(id, map[PublicKey]bool{}) {
+	for a := range s.validAdmissions() {
+		if a.Name == name {
 			found, n = a, n+1
 		}
 	}
@@ -174,7 +187,7 @@ func (s *Set) FreeHost(limit uint64) (uint64, error) {
 	validTaken := map[uint64]bool{}
 	for id, a := range s.admissions {
 		taken[a.Host] = true
-		if s.valid(id, map[PublicKey]bool{}) {
+		if s.valid(id) {
 			validTaken[a.Host] = true
 		}
 	}
@@ -198,8 +211,8 @@ func (s *Set) HostConflict(id PublicKey) (Admission, bool) {
 	if !ok {
 		return Admission{}, false
 	}
-	for other, a := range s.admissions {
-		if other == id || a.Host != mine.Host || !s.valid(other, map[PublicKey]bool{}) {
+	for a := range s.validAdmissions() {
+		if a.Identity == id || a.Host != mine.Host {
 			continue
 		}
 		if a.IssuedAt < mine.IssuedAt || (a.IssuedAt == mine.IssuedAt && a.Identity.String() < id.String()) {
@@ -213,8 +226,8 @@ func (s *Set) HostConflict(id PublicKey) (Admission, bool) {
 func (s *Set) NameTaken(name string, except PublicKey) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	for id, a := range s.admissions {
-		if a.Name == name && id != except && s.valid(id, map[PublicKey]bool{}) {
+	for a := range s.validAdmissions() {
+		if a.Name == name && a.Identity != except {
 			return true
 		}
 	}
@@ -226,10 +239,8 @@ func (s *Set) Members() []Admission {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var out []Admission
-	for id, a := range s.admissions {
-		if s.valid(id, map[PublicKey]bool{}) {
-			out = append(out, a)
-		}
+	for a := range s.validAdmissions() {
+		out = append(out, a)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
