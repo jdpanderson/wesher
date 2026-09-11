@@ -20,6 +20,8 @@ func Test_Node_Encode_Decode(t *testing.T) {
 				OverlayAddr: ip,
 				PubKey:      pubKey,
 				AllowedIPs:  []netip.Prefix{netip.MustParsePrefix("192.168.7.0/24"), netip.MustParsePrefix("2001:db8:1::/48")},
+				Identity:    [32]byte{1, 2, 3, 31: 32},
+				Signature:   []byte("sig"),
 			},
 		}
 		encoded, _ := node.EncodeMeta(1024)
@@ -45,7 +47,7 @@ func Test_Node_EncodeMeta_limit(t *testing.T) {
 }
 
 func Test_Node_DecodeMeta_garbage(t *testing.T) {
-	for _, meta := range [][]byte{nil, {}, []byte("not gob")} {
+	for _, meta := range [][]byte{nil, {}, []byte("not json"), []byte(`{"id":"YWJj"}`)} {
 		n := Node{Meta: meta}
 		err := n.DecodeMeta()
 		require.Error(t, err)
