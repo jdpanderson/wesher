@@ -75,6 +75,27 @@ func Test_Listen_replacesStaleSocket(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func Test_Listen_ownerOnly(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ctl.sock")
+	srv, err := Listen(path, &fakeHandler{})
+	require.NoError(t, err)
+	defer srv.Close()
+
+	fi, err := os.Lstat(path)
+	require.NoError(t, err)
+	assert.NotZero(t, fi.Mode()&os.ModeSocket)
+	assert.Equal(t, os.FileMode(0o600), fi.Mode().Perm())
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	assert.Len(t, entries, 1, "no staging directory left behind")
+
+	// the renamed socket serves requests
+	resp, err := Call(path, Request{Op: OpInvite, TTL: "1m", Uses: 1})
+	require.NoError(t, err)
+	assert.NotEmpty(t, resp.Token)
+}
+
 func Test_Listen_refusesToReplaceAFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "notes.txt")
 	require.NoError(t, os.WriteFile(path, []byte("keep me"), 0o600))

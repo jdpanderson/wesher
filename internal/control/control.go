@@ -50,23 +50,35 @@ type Server struct {
 	path    string
 }
 
-// Listen creates the socket at path (owner-only) and starts serving.
+// Listen creates the socket at path (owner-only) and starts serving. The
+// socket is created in a private directory and renamed into place once its
+// mode is set, so it is never reachable by anyone else, not even briefly.
 func Listen(path string, h Handler) (*Server, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("creating control socket directory: %w", err)
 	}
 	// a stale socket from an unclean exit is replaced; anything else at the path is not ours to remove
 	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSocket == 0 {
 		return nil, fmt.Errorf("control socket path %s exists and is not a socket", path)
 	}
-	_ = os.Remove(path)
-	ln, err := net.Listen("unix", path)
+	staging, err := os.MkdirTemp(dir, ".control-*") // 0700
+	if err != nil {
+		return nil, fmt.Errorf("creating control socket: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(staging) }()
+	tmp := filepath.Join(staging, filepath.Base(path))
+	ln, err := net.Listen("unix", tmp)
 	if err != nil {
 		return nil, fmt.Errorf("listening on control socket %s: %w", path, err)
 	}
-	if err := os.Chmod(path, 0o600); err != nil {
+	if err = os.Chmod(tmp, 0o600); err != nil {
 		_ = ln.Close()
 		return nil, fmt.Errorf("securing control socket: %w", err)
+	}
+	if err = os.Rename(tmp, path); err != nil {
+		_ = ln.Close()
+		return nil, fmt.Errorf("placing control socket at %s: %w", path, err)
 	}
 	s := &Server{handler: h, ln: ln, path: path}
 	go s.serve()
