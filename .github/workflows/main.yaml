@@ -24,8 +24,7 @@ jobs:
       - run: go test -race -v ./...
 
       - run: make e2e
-
-      - run: make release GOARCHES="amd64 arm arm64 mips mipsle mips64 mips64le"
+      - run: make release GOARCHES="amd64 arm arm64 mipsle riscv64"
 
       - name: Upload binary artifacts
         uses: actions/upload-artifact@v7
