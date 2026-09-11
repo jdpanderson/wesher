@@ -3,7 +3,6 @@ package cluster
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"io"
 	"net"
 	"net/netip"
@@ -353,8 +352,7 @@ func openEnrol(t *testing.T, addr string, id *trust.Identity) (*quic.Conn, *quic
 	t.Helper()
 	cert, err := identityCertificate(id)
 	require.NoError(t, err)
-	tlsConf := enrolTLSConfig(cert)
-	tlsConf.ClientAuth = tls.NoClientCert
+	tlsConf := enrolClientTLSConfig(cert)
 	ua, err := net.ResolveUDPAddr("udp", addr)
 	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

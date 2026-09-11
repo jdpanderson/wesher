@@ -173,11 +173,19 @@ func newQUICTransport(bind netip.Addr, port int, id *trust.Identity, set *trust.
 
 // enrolTLSConfig accepts any identity certificate: enrolment authenticates by
 // the token exchange, with the message identities bound to the certificate.
+// The server side additionally requires the joiner to present one.
 func enrolTLSConfig(cert tls.Certificate) *tls.Config {
+	conf := enrolClientTLSConfig(cert)
+	conf.ClientAuth = tls.RequireAnyClientCert
+	return conf
+}
+
+// enrolClientTLSConfig is the joiner's side of the same: present our identity
+// certificate, parse the member's, and let the exchange decide.
+func enrolClientTLSConfig(cert tls.Certificate) *tls.Config {
 	return &tls.Config{
 		Certificates:       []tls.Certificate{cert},
-		ClientAuth:         tls.RequireAnyClientCert,
-		InsecureSkipVerify: true, // the peer is not a member yet; the exchange decides
+		InsecureSkipVerify: true, // the peer is not known to be a member; the exchange decides
 		VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 			_, err := certIdentity(rawCerts)
 			return err
