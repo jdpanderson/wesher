@@ -4,6 +4,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"sync"
 	"testing"
 	"time"
 
@@ -213,4 +214,43 @@ func Test_quicTransport_revocationCutsConnection(t *testing.T) {
 		streamDies(t, conn)
 	}
 	assert.Nil(t, a.tr.lookup(b.addr), "and b cannot come back")
+}
+
+func Test_quicTransport_oneConnectionPerPair(t *testing.T) {
+	a, b := twoMembers(t)
+
+	// both sides dial each other at once, several times over
+	var wg sync.WaitGroup
+	for i := 0; i < 3; i++ {
+		wg.Add(2)
+		go func() { defer wg.Done(); _, _ = a.tr.DialTimeout(b.addr, 2*time.Second) }()
+		go func() { defer wg.Done(); _, _ = b.tr.DialTimeout(a.addr, 2*time.Second) }()
+	}
+	wg.Wait()
+	time.Sleep(200 * time.Millisecond) // closes propagate
+
+	preferred := a.id.Public()
+	if b.id.Public().String() < preferred.String() {
+		preferred = b.id.Public()
+	}
+	a.tr.mu.Lock()
+	ca := a.tr.conns[b.addr]
+	a.tr.mu.Unlock()
+	b.tr.mu.Lock()
+	cb := b.tr.conns[a.addr]
+	b.tr.mu.Unlock()
+	require.NotNil(t, ca.conn)
+	require.NotNil(t, cb.conn)
+	assert.Equal(t, preferred, ca.client, "a kept the connection dialled by the smaller identity")
+	assert.Equal(t, preferred, cb.client, "and so did b")
+	assert.NoError(t, ca.conn.Context().Err())
+	assert.NoError(t, cb.conn.Context().Err())
+
+	// the survivor carries traffic both ways
+	_, err := a.tr.WriteTo([]byte("ping"), b.addr)
+	require.NoError(t, err)
+	expectPacket(t, b, "ping")
+	_, err = b.tr.WriteTo([]byte("pong"), a.addr)
+	require.NoError(t, err)
+	expectPacket(t, a, "pong")
 }

@@ -61,8 +61,14 @@ type quicTransport struct {
 	life    sync.RWMutex // held for writing while Shutdown closes the QUIC transport
 
 	mu      sync.Mutex
-	conns   map[string]*quic.Conn // by the peer's gossip address
+	conns   map[string]peerConn // by the peer's gossip address
 	dialing map[string]bool
+}
+
+// peerConn is a live connection and the identity that dialled it.
+type peerConn struct {
+	conn   *quic.Conn
+	client trust.PublicKey
 }
 
 var _ memberlist.NodeAwareTransport = (*quicTransport)(nil)
@@ -132,7 +138,7 @@ func newQUICTransport(bind netip.Addr, port int, id *trust.Identity, set *trust.
 		streams: make(chan net.Conn),
 		enrol:   enrol,
 		done:    make(chan struct{}),
-		conns:   map[string]*quic.Conn{},
+		conns:   map[string]peerConn{},
 		dialing: map[string]bool{},
 	}
 	t.ln, err = t.qt.Listen(t.server, t.qconf)
@@ -213,34 +219,53 @@ func (t *quicTransport) accept() {
 		if err != nil {
 			return
 		}
-		t.adopt(conn)
+		t.adopt(conn, true)
 	}
 }
 
 // adopt starts serving a connection: its datagrams become packets and its
-// streams are handed to memberlist. It replaces any earlier connection to the
-// same address, which dies on its own. An enrolment connection instead yields
-// one stream for the enrolment server.
-func (t *quicTransport) adopt(conn *quic.Conn) {
+// streams are handed to memberlist. It returns the connection to use for the
+// peer, which is an existing one when both sides dialled each other at once:
+// the connection dialled by the smaller identity wins, so both sides keep the
+// same one and close the other. An enrolment connection instead yields one
+// stream for the enrolment handler and returns nil.
+func (t *quicTransport) adopt(conn *quic.Conn, accepted bool) *quic.Conn {
 	peer, err := connIdentity(conn)
 	if err != nil {
 		_ = conn.CloseWithError(1, err.Error())
-		return
+		return nil
 	}
 	if conn.ConnectionState().TLS.NegotiatedProtocol == alpnEnrol {
 		if t.enrol == nil {
 			_ = conn.CloseWithError(1, "enrolment not offered")
-			return
+			return nil
 		}
 		t.wg.Add(1)
 		go t.serveEnrol(conn, peer)
-		return
+		return nil
+	}
+	me := t.id.Public()
+	client := me
+	if accepted {
+		client = peer
+	}
+	preferred := me
+	if peer.String() < me.String() {
+		preferred = peer
 	}
 	addr := conn.RemoteAddr().String()
 	t.mu.Lock()
-	t.conns[addr] = conn
+	if cur, ok := t.conns[addr]; ok && cur.conn.Context().Err() == nil {
+		if cur.client == preferred && client != preferred {
+			t.mu.Unlock()
+			_ = conn.CloseWithError(0, "duplicate connection")
+			return cur.conn
+		}
+		_ = cur.conn.CloseWithError(0, "superseded")
+	}
+	t.conns[addr] = peerConn{conn: conn, client: client}
 	t.mu.Unlock()
-	slog.Debug("gossip connection", "peer", peer.Short(), "addr", addr)
+	slog.Debug("gossip connection", "peer", peer.Short(), "addr", addr, "accepted", accepted)
 
 	t.wg.Add(2)
 	go func() {
@@ -281,6 +306,7 @@ func (t *quicTransport) adopt(conn *quic.Conn) {
 			}
 		}
 	}()
+	return conn
 }
 
 // serveEnrol runs the enrolment handler on the first stream of an enrolment
@@ -300,7 +326,7 @@ func (t *quicTransport) serveEnrol(conn *quic.Conn, peer trust.PublicKey) {
 // forget drops conn from the table if it is still the one recorded for addr.
 func (t *quicTransport) forget(addr string, conn *quic.Conn) {
 	t.mu.Lock()
-	if t.conns[addr] == conn {
+	if t.conns[addr].conn == conn {
 		delete(t.conns, addr)
 	}
 	t.mu.Unlock()
@@ -309,7 +335,7 @@ func (t *quicTransport) forget(addr string, conn *quic.Conn) {
 func (t *quicTransport) lookup(addr string) *quic.Conn {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.conns[addr]
+	return t.conns[addr].conn
 }
 
 // dial connects to a peer's gossip address and adopts the connection.
@@ -326,8 +352,10 @@ func (t *quicTransport) dial(ctx context.Context, addr string) (*quic.Conn, erro
 		_ = conn.CloseWithError(1, "wrong protocol")
 		return nil, fmt.Errorf("gossip to %s: peer does not speak %s", addr, alpnGossip)
 	}
-	t.adopt(conn)
-	return conn, nil
+	if kept := t.adopt(conn, false); kept != nil {
+		return kept, nil
+	}
+	return nil, fmt.Errorf("gossip to %s: connection not usable", addr)
 }
 
 // dialAsync starts a connection attempt to addr unless one is under way.
@@ -461,7 +489,7 @@ func (t *quicTransport) Shutdown() error {
 		_ = t.ln.Close()
 		t.mu.Lock()
 		for _, c := range t.conns {
-			_ = c.CloseWithError(0, "shutdown")
+			_ = c.conn.CloseWithError(0, "shutdown")
 		}
 		t.mu.Unlock()
 		t.err = t.qt.Close()
