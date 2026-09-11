@@ -60,7 +60,13 @@ invite() {
 ping_ok() { # ping_ok <from-container> <to-host> [containers whose logs to dump on failure...]
     local from=$1 to=$2
     shift 2
-    docker exec "$from" ping -c1 -W1 "$to" || { for c in "$from" "$@"; do docker logs "$c"; done; false; }
+    docker exec "$from" ping -c1 -W1 "$to" || { for c in "$from" "$@"; do dump_logs "$c"; done; false; }
+}
+
+# dump_logs <container>: the container's output, then that of any agent started with 'docker exec'
+dump_logs() {
+    docker logs "$1"
+    docker exec "$1" sh -c 'cat /var/log/cheesecloth-*.log 2>/dev/null' || true
 }
 
 test_3_node_up() {
@@ -152,13 +158,13 @@ test_multiple_clusters_restart() {
     token1=$(invite test1-orig 1 --interface wg1)
     token2=$(invite test2-orig 1 --interface wg2)
     run_test_container test3-orig test3 --join test1-orig --join-key "$token1" $cluster1
-    docker exec -d test3-orig bash -c "/entrypoint.sh --join test2-orig --join-key $token2 $cluster2"
+    docker exec -d test3-orig bash -c "/entrypoint.sh --join test2-orig --join-key $token2 $cluster2 >> /var/log/cheesecloth-wg2.log 2>&1"
 
     sleep 3
 
     docker stop test3-orig
     docker start test3-orig
-    docker exec -d test3-orig bash -c "/entrypoint.sh $cluster2" # rejoins from state, no token
+    docker exec -d test3-orig bash -c "/entrypoint.sh $cluster2 >> /var/log/cheesecloth-wg2.log 2>&1" # rejoins from state, no token
 
     sleep 3
 
