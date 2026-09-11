@@ -18,14 +18,14 @@ import (
 )
 
 // Version identifies this exchange format; a mismatch fails closed.
-const Version = 2
+const Version = 3
 
 const (
 	nonceLen         = 32
 	maxFrame         = 1 << 20 // records for a large cluster fit comfortably
 	exchangeTime     = 15 * time.Second
-	kdfInfo          = "cheesecloth/enrol/v2"
-	transcriptDomain = "cheesecloth/enrol/transcript/v2"
+	kdfInfo          = "cheesecloth/enrol/v3"
+	transcriptDomain = "cheesecloth/enrol/transcript/v3"
 	labelMember      = "member"
 	labelJoiner      = "joiner"
 )
@@ -52,6 +52,9 @@ type challenge struct {
 type proof struct {
 	MAC []byte `json:"mac"`
 }
+
+// ack is the joiner's last word: it has the welcome, the member may hang up.
+type ack struct{}
 
 // Welcome is what an admitted joiner receives; the transport's TLS protects it.
 type Welcome struct {

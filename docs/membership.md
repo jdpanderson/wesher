@@ -107,15 +107,17 @@ DH public keys, and `K` the token:
    `TokenID = SHA-256(K)[:8]` lets the member pick the pending token without
    revealing it.
 2. Both derive `ss = X25519(own DH private, other DH public)` and
-   `kMac = HKDF-SHA256(ss || K, salt = nJ || nM, info="cheesecloth/enrol/v2")`.
+   `kMac = HKDF-SHA256(ss || K, salt = nJ || nM, info="cheesecloth/enrol/v3")`.
    Member -> Joiner: `M, Md, nM, HMAC(kMac, "member" || transcript)`.
 3. Joiner verifies; it now knows the member holds `K`. Joiner -> Member:
    `HMAC(kMac, "joiner" || transcript)`.
 4. Member verifies, consumes one token use, signs an admission for `J`,
    broadcasts it, and sends the joiner the root record, the full record set,
    and its own gossip address. Both sides discard `K`.
+5. Joiner -> Member: an acknowledgement once it has checked the welcome, so
+   the member knows it arrived and closes the connection.
 
-`transcript = "cheesecloth/enrol/transcript/v2" || 0 || J || Jd || M || Md || nJ || nM || Name`,
+`transcript = "cheesecloth/enrol/transcript/v3" || 0 || J || Jd || M || Md || nJ || nM || Name`,
 each field length-prefixed: the canonical encoding the signed records use,
 under its own domain string. Because both identities and both DH keys are
 included in the MACs, the token can be discarded after

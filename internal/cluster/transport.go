@@ -38,10 +38,8 @@ const (
 	identityLen   = 32
 	handshakeTime = 10 * time.Second // QUIC handshake, and the whole of an outbound dial
 	// enrolStreamTime is how long an enrolment connection may sit without
-	// opening its stream; enrolCloseGrace how long to wait for the joiner to
-	// close after the exchange before closing on it (see enrolStream.Close).
+	// opening its stream.
 	enrolStreamTime = 10 * time.Second
-	enrolCloseGrace = 10 * time.Second
 	// keepAlive stays under the 30-second UDP conntrack timeout some routers
 	// use, so a node behind such a NAT keeps its mapping; idleTimeout is long
 	// enough that a few lost keep-alives do not cost a connection.
@@ -393,18 +391,19 @@ func (t *quicTransport) serve(conn *quic.Conn, peer trust.PublicKey) {
 }
 
 // serveEnrol runs the enrolment handler on the first stream of an enrolment
-// connection; closing that stream closes the connection.
+// connection and then closes the connection. The exchange ends with the
+// joiner's acknowledgement, so by then nothing is left in flight to cut short.
 func (t *quicTransport) serveEnrol(conn *quic.Conn, peer trust.PublicKey) {
 	defer t.wg.Done()
 	defer func() { <-t.enrolSem }()
+	defer func() { _ = conn.CloseWithError(0, "done") }()
 	ctx, cancel := context.WithTimeout(context.Background(), enrolStreamTime)
 	defer cancel()
 	s, err := conn.AcceptStream(ctx)
 	if err != nil {
-		_ = conn.CloseWithError(1, "no enrolment stream")
 		return
 	}
-	t.enrol(&enrolStream{streamConn: *newStreamConn(conn, s, peer), conn: conn, wg: &t.wg})
+	t.enrol(newStreamConn(conn, s, peer))
 }
 
 // forget drops conn from the table if it is still the one recorded for addr,
@@ -656,30 +655,4 @@ func (s *streamConn) PeerIdentity() trust.PublicKey { return s.peer }
 func (s *streamConn) Close() error {
 	s.CancelRead(0)
 	return s.Stream.Close()
-}
-
-// enrolStream is the single stream of an enrolment connection.
-type enrolStream struct {
-	streamConn
-	conn *quic.Conn
-	wg   *sync.WaitGroup // the transport's; Shutdown waits for the deferred close
-}
-
-// Close finishes the stream and then the connection, once the joiner has
-// closed its side or a timeout passes: closing at once could discard the
-// welcome before the joiner has read it. Close is called from the enrolment
-// handler, which serveEnrol runs inside the wait group, so the count is
-// still positive when the deferred close joins it.
-func (s *enrolStream) Close() error {
-	err := s.streamConn.Close()
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		select {
-		case <-s.conn.Context().Done():
-		case <-time.After(enrolCloseGrace):
-		}
-		_ = s.conn.CloseWithError(0, "done")
-	}()
-	return err
 }

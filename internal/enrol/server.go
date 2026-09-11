@@ -100,8 +100,17 @@ func (s *Server) handle(conn Conn) error {
 	if err != nil {
 		return err
 	}
+	if err = writeFrame(conn, Welcome{Root: s.Root, Records: records, Admission: adm, GossipAddr: s.GossipAddr}); err != nil {
+		return err
+	}
+	// the ack says the welcome arrived, so the connection can be closed
+	// without cutting it short; without it the joiner is still admitted
+	var a ack
+	if err = readFrame(conn, &a); err != nil {
+		return fmt.Errorf("joiner did not acknowledge the welcome: %w", err)
+	}
 	slog.Info("enrolled node", "name", h.Name, "identity", h.Identity.Short(), "from", conn.RemoteAddr())
-	return writeFrame(conn, Welcome{Root: s.Root, Records: records, Admission: adm, GossipAddr: s.GossipAddr})
+	return nil
 }
 
 // Join enrols with the member on conn using token, proving knowledge of it and
@@ -161,11 +170,14 @@ func Join(conn Conn, token string, id *trust.Identity, name string) (*Welcome, e
 	if w.Admission.Identity != id.Public() || w.Admission.Admitter != c.Identity {
 		return nil, errors.New("welcome carries an admission for someone else")
 	}
-	if _, err := set.AddAdmission(w.Admission); err != nil {
+	if _, err = set.AddAdmission(w.Admission); err != nil {
 		return nil, err
 	}
 	if !set.Valid(id.Public()) {
 		return nil, errors.New("admission does not make us a member")
+	}
+	if err = writeFrame(conn, ack{}); err != nil {
+		return nil, err
 	}
 	w.Member = c.Identity
 	return &w, nil
