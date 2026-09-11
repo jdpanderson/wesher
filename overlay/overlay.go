@@ -16,11 +16,11 @@ func MaxHost(prefix netip.Prefix) uint64 {
 	if bits >= 64 {
 		return math.MaxUint64 - 1
 	}
-	max := uint64(1)<<bits - 1
-	if prefix.Addr().Is4() && max > 0 {
-		max-- // broadcast
+	top := uint64(1)<<bits - 1
+	if prefix.Addr().Is4() && top > 0 {
+		top-- // broadcast
 	}
-	return max
+	return top
 }
 
 // Addr is the address of slot host inside prefix; false if the slot
