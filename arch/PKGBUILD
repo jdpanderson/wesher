@@ -13,19 +13,25 @@ provides=('cheesecloth')
 conflicts=('cheesecloth')
 backup=('etc/cheesecloth/config.yaml')
 install=cheesecloth.install
+# a static Go binary: no separate debug package (trimpath leaves it empty)
+options=('!debug')
 source=("$pkgname::git+$url.git")
 sha256sums=('SKIP')
 
 pkgver() {
   cd "$pkgname"
-  git describe --long --tags 2>/dev/null | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g' ||
+  local desc
+  if desc=$(git describe --long --tags 2>/dev/null); then
+    echo "$desc" | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g'
+  else
     printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+  fi
 }
 
 build() {
   cd "$pkgname"
   export CGO_ENABLED=0
-  export GOFLAGS="-trimpath -mod=mod -buildvcs=false"
+  export GOFLAGS="-buildmode=pie -trimpath -mod=mod -buildvcs=false"
   go build -ldflags "-X main.version=$(git describe --tags --always) -buildid=" -o cheesecloth ./cmd/cheesecloth
   sed 's|/usr/local/sbin/cheesecloth|/usr/bin/cheesecloth|' dist/cheesecloth.service > cheesecloth.service
 }
