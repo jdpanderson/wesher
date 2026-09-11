@@ -1,10 +1,28 @@
 #!/usr/bin/make -f
 # Targets Ubuntu 26.04, whose golang-go is 1.26. Modules are downloaded during
-# the build unless a vendor/ directory is present.
+# the build unless a vendor/ directory is present. Cross builds
+# (dpkg-buildpackage -a<arch>) work because Go cross-compiles; they skip the
+# tests, and need binutils for the target so dh_strip can run.
+
+include /usr/share/dpkg/architecture.mk
 
 export CGO_ENABLED = 0
 export GOCACHE = $(CURDIR)/debian/.gocache
 export GOFLAGS = -trimpath -mod=mod -buildvcs=false
+export GOARCH = $(or $(GOARCH_$(DEB_HOST_ARCH)),$(DEB_HOST_ARCH))
+GOARCH_armhf = arm
+GOARCH_armel = arm
+GOARCH_i386 = 386
+GOARCH_ppc64el = ppc64le
+GOARCH_mipsel = mipsle
+GOARCH_mips64el = mips64le
+ifeq ($(DEB_HOST_ARCH),armhf)
+export GOARM = 7
+endif
+ifeq ($(DEB_HOST_ARCH),armel)
+export GOARM = 5
+endif
+
 VERSION := $(shell dpkg-parsechangelog -SVersion)
 BUILD := debian/build
 
@@ -16,9 +34,12 @@ override_dh_auto_build:
 	go build -ldflags "-X main.version=$(VERSION) -buildid=" -o $(BUILD)/cheesecloth ./cmd/cheesecloth
 	sed 's|/usr/local/sbin/cheesecloth|/usr/sbin/cheesecloth|' dist/cheesecloth.service > $(BUILD)/cheesecloth.service
 
+# tests run only for native builds and unless nocheck is set
 override_dh_auto_test:
 ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+ifeq ($(DEB_BUILD_GNU_TYPE),$(DEB_HOST_GNU_TYPE))
 	go test ./...
+endif
 endif
 
 override_dh_auto_install:

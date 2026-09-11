@@ -1,12 +1,19 @@
-This packaging targets Ubuntu 26.04 (resolute), whose golang-go package is
-Go 1.26. Build a package from a checkout with:
+Build a package from a checkout with:
 
     sudo apt install debhelper golang-go
     dpkg-buildpackage -us -uc -b
 
+The module requires Go 1.26 or newer. Ubuntu 26.04 ships that as golang-go;
+on Debian trixie, whose golang-go is older, use a toolchain from go.dev or the
+golang:1.27-trixie container image and pass `-d` to skip the build-dependency
+check. The resulting package installs on either, since the binary is static.
+CI builds the release packages this way (see .github/workflows/main.yaml) and
+stamps debian/changelog with the version from dist/version.sh.
+
 The build needs network access to download the Go modules, or a vendor/
 directory made with `go mod vendor`. `DEB_BUILD_OPTIONS=nocheck` skips the
-tests.
+tests; cross builds (`-a arm64`) skip them automatically and need binutils for
+the target architecture.
 
 After installing, initialise or enrol the node once by hand (see
 /usr/share/doc/cheesecloth/README.md), put its settings in

@@ -26,3 +26,11 @@
 /debian/*.debhelper
 /debian/*.debhelper.log
 /debian/debhelper-build-stamp
+
+# Arch package build artifacts
+/arch/**/*.pkg.tar.zst
+/arch/release/*.tar.gz
+/arch/release/src/
+/arch/release/pkg/
+/arch/src/
+/arch/pkg/

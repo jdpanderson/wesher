@@ -285,9 +285,13 @@ before starting; none are committed yet.
       an intermediary cannot pass the MAC check with its own identity and
       cannot compute one without the token. Removing it shrinks the identity,
       the admission record and the exchange messages. Breaking for state files.
-- [x] Packaging: `debian/` for Ubuntu 26.04 (dh 13, native source, unit
-      installed disabled, config as conffile) and `arch/PKGBUILD` (`cheesecloth-git`, VCS
-      package until there is a release tag). 2026-09-11.
+- [x] Packaging: `debian/` (dh 13, native source, unit installed disabled,
+      config as conffile, cross builds from `DEB_HOST_ARCH`) and
+      `arch/PKGBUILD` (`cheesecloth-git`). 2026-09-11.
+- [x] Release packages: CI builds `.deb` for amd64 and arm64 in the
+      `golang:1.27-trixie` image (installs on trixie and Ubuntu 26.04) and an
+      x86_64 Arch package from `arch/release/PKGBUILD`, versions stamped by
+      `dist/version.sh`; `v*` tags attach them to the release. 2026-09-11.
 - [x] README stripped to pitch, quickstart, how it works and links; the
       option table, IPv6, routing, multiple clusters moved to
       `docs/configuration.md`, permissions/systemd/status/security/limitations

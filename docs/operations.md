@@ -82,16 +82,26 @@ $ go install github.com/jdpanderson/cheesecloth/cmd/cheesecloth@latest
 
 ## Packages
 
-The repository carries packaging for two distributions. Both install the
-binary, the systemd unit and `/etc/cheesecloth/config.yaml` as a configuration
-file, and leave the service disabled: initialise or enrol the node once by
-hand, edit the configuration, then `systemctl enable --now cheesecloth`.
+Each GitHub release carries, next to the plain binaries, a `.deb` for amd64
+and arm64 and an Arch Linux package for x86_64. Install them with `dpkg -i` or
+`pacman -U`. Both install the binary, the systemd unit and
+`/etc/cheesecloth/config.yaml` as a configuration file, and leave the service
+disabled: initialise or enrol the node once by hand, edit the configuration,
+then `systemctl enable --now cheesecloth`.
 
-- Ubuntu 26.04: `debian/`. Build with `dpkg-buildpackage -us -uc -b` from a
-  checkout; see `debian/README.source`. The binary is installed as
-  `/usr/sbin/cheesecloth`.
+The `.deb` is built on Debian trixie with a current Go toolchain. The binary
+is static, so the same package installs on Debian trixie and on Ubuntu 26.04.
+The binary is installed as `/usr/sbin/cheesecloth`.
+
+To build the packages yourself:
+
+- Debian and Ubuntu: `debian/`. Run `dpkg-buildpackage -us -uc -b` from a
+  checkout; see `debian/README.source`. Cross builds with `-a<arch>` work and
+  skip the tests.
 - Arch Linux: `arch/PKGBUILD` builds the `cheesecloth-git` package from the
-  repository with `makepkg`. The binary is installed as `/usr/bin/cheesecloth`.
+  repository with `makepkg`. `arch/release/PKGBUILD` is the versioned package
+  CI builds from an archive of the tagged checkout. The binary is installed as
+  `/usr/bin/cheesecloth`.
 
 ## Security considerations
 
