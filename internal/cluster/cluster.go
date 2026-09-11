@@ -11,6 +11,7 @@ import (
 	"net/netip"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -45,6 +46,7 @@ type Cluster struct {
 	id        *trust.Identity
 	set       *trust.Set
 	overlay   netip.Prefix
+	port      int // the gossip port, which every node is assumed to listen on
 	tokens    *enrol.TokenStore
 	queue     *memberlist.TransmitLimitedQueue
 	enrolSrv  *enrol.Server
@@ -92,6 +94,7 @@ func New(cfg Config) (*Cluster, error) {
 		id:        id,
 		set:       set,
 		overlay:   cfg.OverlayNet,
+		port:      cfg.BindPort,
 		tokens:    enrol.NewTokenStore(nil),
 		events:    make(chan memberlist.NodeEvent, 16),
 		changed:   make(chan struct{}, 1),
@@ -126,6 +129,7 @@ func New(cfg Config) (*Cluster, error) {
 	mlConfig.Transport = transport
 	mlConfig.AdvertiseAddr = cfg.AdvertiseAddr.String()
 	mlConfig.AdvertisePort = cfg.BindPort
+	mlConfig.BindPort = cfg.BindPort // the transport binds; memberlist assumes this port for a peer that advertised none
 	mlConfig.UDPBufferSize = maxDatagram
 	mlConfig.Delegate = c
 	mlConfig.Conflict = c
@@ -280,7 +284,8 @@ func (c *Cluster) forwardEvents() {
 }
 
 // Join contacts addrs to join the cluster; given none, it tries the peers
-// remembered from the last run. It fails if there were addresses to try and
+// remembered from the last run. An address without a port is assumed to
+// listen on the cluster port. It fails if there were addresses to try and
 // none could be joined. No addresses and no remembered peers is a cluster of
 // one, which is not an error.
 func (c *Cluster) Join(addrs []string) error {
@@ -291,10 +296,22 @@ func (c *Cluster) Join(addrs []string) error {
 		}
 		c.stateMu.Unlock()
 	}
-	if _, err := c.ml.Load().Join(addrs); err != nil {
+	if _, err := c.ml.Load().Join(withPort(addrs, c.port)); err != nil {
 		return fmt.Errorf("joining cluster: %w", err)
 	}
 	return nil
+}
+
+// withPort is addrs with port added to every host or IP address that has none.
+func withPort(addrs []string, port int) []string {
+	out := make([]string, len(addrs))
+	for i, a := range addrs {
+		if _, _, err := net.SplitHostPort(a); err != nil {
+			a = net.JoinHostPort(strings.Trim(a, "[]"), strconv.Itoa(port))
+		}
+		out[i] = a
+	}
+	return out
 }
 
 // Leave saves the current state, leaves the cluster and stops Members. Safe to call more than once.

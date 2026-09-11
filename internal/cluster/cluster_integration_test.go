@@ -89,6 +89,37 @@ func enrolCluster(t *testing.T, dir string, member *Cluster, name string, opts .
 	return c
 }
 
+// Peers are remembered by address alone; a restarted node rejoins them on the
+// cluster port, which is the one it was started with, not memberlist's default.
+func Test_Cluster_Join_rememberedPeers(t *testing.T) {
+	dir := useTempStatePaths(t)
+	a := rootCluster(t, dir, "a")
+	defer a.Leave()
+	chA := a.Members()
+
+	// b shares a's port on another loopback address, as real nodes share the cluster port
+	other := netip.MustParseAddr("127.0.0.2")
+	samePort := func(cfg *Config) { cfg.BindAddr, cfg.AdvertiseAddr, cfg.BindPort = other, other, a.port }
+	b := enrolCluster(t, dir, a, "b", samePort)
+	waitMembers(t, b.Members(), 1) // a is now remembered
+	waitMembers(t, chA, 1)
+	b.Leave()
+	waitMembers(t, chA, 0)
+
+	// b restarts from its state: no addresses given, only the remembered a
+	boot, err := Load(dir, "b", false)
+	require.NoError(t, err)
+	require.Len(t, boot.Peers, 1)
+	cfg := Config{StateDir: dir, StateName: "b", OverlayNet: testOverlay, LocalNode: testNodeFor(t, "b", boot), Boot: boot}
+	samePort(&cfg)
+	b, err = New(cfg)
+	require.NoError(t, err)
+	defer b.Leave()
+	drain(b.Members())
+	require.NoError(t, b.Join(nil))
+	assert.Equal(t, "b", waitMembers(t, chA, 1)[0].Name)
+}
+
 func waitMembers(t *testing.T, ch <-chan []overlay.Node, want int) []overlay.Node {
 	t.Helper()
 	deadline := time.After(30 * time.Second)
