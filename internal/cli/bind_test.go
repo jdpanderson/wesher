@@ -71,13 +71,39 @@ func Test_AgentCmd_advertiseAddr(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, cmd.BindAddr, got, "a specific bind address is advertised as is")
 
-	cmd.BindAddr = netip.IPv4Unspecified()
-	if _, ok := pickAdvertiseAddr(cmd.BindAddr, upInterfaceAddrs(cmd.Interface)); !ok {
-		_, err = cmd.advertiseAddr()
-		assert.ErrorContains(t, err, "no IPv4 address found")
-		t.Skip("host has no non-loopback IPv4 address; wildcard resolution not testable here")
+	var skipped string
+	orig := interfaceAddrs
+	interfaceAddrs = func(skip string) []net.Addr {
+		skipped = skip
+		return testAddrs(t, "fe80::1/64", "10.1.2.3/24", "fd00::7/64")
 	}
+	t.Cleanup(func() { interfaceAddrs = orig })
+
+	cmd.Interface = "wg7"
+	cmd.BindAddr = netip.IPv4Unspecified()
 	got, err = cmd.advertiseAddr()
 	require.NoError(t, err)
-	assert.True(t, got.Is4() && !got.IsUnspecified() && !got.IsLoopback(), "got %s", got)
+	assert.Equal(t, "10.1.2.3", got.String())
+	assert.Equal(t, "wg7", skipped, "the overlay interface's own addresses are left out")
+
+	cmd.BindAddr = netip.IPv6Unspecified()
+	got, err = cmd.advertiseAddr()
+	require.NoError(t, err)
+	assert.Equal(t, "fd00::7", got.String())
+
+	interfaceAddrs = func(string) []net.Addr { return testAddrs(t, "fe80::1/64") }
+	_, err = cmd.advertiseAddr()
+	assert.ErrorContains(t, err, "no IPv6 address found")
+	cmd.BindAddr = netip.IPv4Unspecified()
+	_, err = cmd.advertiseAddr()
+	assert.ErrorContains(t, err, "no IPv4 address found")
+}
+
+func Test_upInterfaceAddrs(t *testing.T) {
+	// only loopback is certain to exist; it is excluded, so the result may be empty but must not include it
+	for _, a := range upInterfaceAddrs("") {
+		ip, ok := a.(*net.IPNet)
+		require.True(t, ok)
+		assert.False(t, ip.IP.IsLoopback(), "%s", a)
+	}
 }
