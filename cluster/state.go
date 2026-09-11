@@ -90,7 +90,7 @@ func LocalIdentity(clusterName string) (trust.PublicKey, bool) {
 
 // Bootstrap is the persisted knowledge a node starts from. Load fills it; the
 // agent then either makes the node a root, enrols it, or finds it already
-// enrolled, and hands it to New.
+// enrolled, and hands it to New, which keeps it up to date and saves it.
 type Bootstrap struct {
 	Identity *trust.Identity
 	Root     trust.PublicKey // zero until enrolled or initialised
@@ -131,6 +131,16 @@ func Load(name string, init bool) (*Bootstrap, error) {
 
 // Enrolled reports whether the node already belongs to a cluster.
 func (b *Bootstrap) Enrolled() bool { return b.enrolled }
+
+// save persists the bootstrap as the state for name.
+func (b *Bootstrap) save(name string) error {
+	st := &state{Seed: b.Identity.Seed(), Records: b.Records, Nodes: b.Peers}
+	if b.enrolled {
+		root := b.Root
+		st.Root = &root
+	}
+	return st.save(name)
+}
 
 // Host is the overlay slot this node's admission assigns it.
 func (b *Bootstrap) Host() (uint64, error) {

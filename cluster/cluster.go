@@ -22,7 +22,7 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
-// Config is what New needs; the agent assembles it from a Bootstrap.
+// Config is what New needs.
 type Config struct {
 	Name          string       // state name; the wireguard interface in practice
 	BindAddr      netip.Addr   // may be a wildcard
@@ -30,10 +30,7 @@ type Config struct {
 	BindPort      int          // gossip and enrolment, UDP (QUIC)
 	OverlayNet    netip.Prefix // overlay addresses are admission slots inside it
 	LocalNode     *common.Node
-	Identity      *trust.Identity
-	Root          trust.PublicKey
-	Records       trust.Records
-	Peers         []common.Node // last known peers, contacted again on start
+	Boot          *Bootstrap // identity, trust and last known peers; owned by the cluster from here on
 }
 
 // Cluster represents a running cluster configuration
@@ -47,8 +44,8 @@ type Cluster struct {
 	tokens    *enroll.TokenStore
 	queue     *memberlist.TransmitLimitedQueue
 	enrolSrv  *enroll.Server
-	state     *state
-	stateMu   sync.Mutex // guards state and its saving
+	boot      *Bootstrap
+	stateMu   sync.Mutex // guards boot and its saving
 	events    chan memberlist.NodeEvent
 	changed   chan struct{}  // one-slot signal that the member list changed
 	done      chan struct{}  // closed by Leave
@@ -62,40 +59,38 @@ var newMemberlistConfig = memberlist.DefaultWANConfig
 // New creates a Cluster for an enrolled node and starts gossiping and accepting
 // enrolments; it is ready to be joined.
 func New(cfg Config) (*Cluster, error) {
-	if cfg.Identity == nil || cfg.LocalNode == nil {
-		return nil, fmt.Errorf("cluster: identity and local node are required")
+	if cfg.Boot == nil || cfg.Boot.Identity == nil || cfg.LocalNode == nil {
+		return nil, fmt.Errorf("cluster: bootstrap and local node are required")
 	}
-	set := trust.NewSet(cfg.Root)
-	set.Merge(cfg.Records)
-	if !set.Valid(cfg.Identity.Public()) {
-		return nil, fmt.Errorf("this node (%s) is not a member of the cluster rooted at %s", cfg.Identity.Public().Short(), cfg.Root.Short())
+	id := cfg.Boot.Identity
+	set := trust.NewSet(cfg.Boot.Root)
+	set.Merge(cfg.Boot.Records)
+	if !set.Valid(id.Public()) {
+		return nil, fmt.Errorf("this node (%s) is not a member of the cluster rooted at %s", id.Public().Short(), cfg.Boot.Root.Short())
 	}
 
-	if want, err := assignedAddr(set, cfg.OverlayNet, cfg.Identity.Public()); err != nil {
+	if want, err := assignedAddr(set, cfg.OverlayNet, id.Public()); err != nil {
 		return nil, err
 	} else if want != cfg.LocalNode.OverlayAddr {
 		return nil, fmt.Errorf("local overlay address %s is not the assigned %s", cfg.LocalNode.OverlayAddr, want)
 	}
 
 	// bind our ephemeral wireguard key, overlay address and routes to our identity
-	cfg.LocalNode.Identity = cfg.Identity.Public()
-	cfg.LocalNode.Signature = cfg.Identity.Sign(trust.MetaDigest(cfg.LocalNode.Name, cfg.LocalNode.OverlayAddr, cfg.LocalNode.PubKey, cfg.LocalNode.AllowedIPs))
+	cfg.LocalNode.Identity = id.Public()
+	cfg.LocalNode.Signature = id.Sign(trust.MetaDigest(cfg.LocalNode.Name, cfg.LocalNode.OverlayAddr, cfg.LocalNode.PubKey, cfg.LocalNode.AllowedIPs))
 
 	c := &Cluster{
 		name:    cfg.Name,
 		local:   cfg.LocalNode,
-		id:      cfg.Identity,
+		id:      id,
 		set:     set,
 		overlay: cfg.OverlayNet,
 		tokens:  enroll.NewTokenStore(),
 		events:  make(chan memberlist.NodeEvent, 16),
 		changed: make(chan struct{}, 1),
 		done:    make(chan struct{}),
-		state:   &state{Seed: cfg.Identity.Seed(), Nodes: cfg.Peers},
+		boot:    cfg.Boot,
 	}
-	root := cfg.Root
-	c.state.Root = &root
-	c.state.Records = set.Records()
 	c.queue = &memberlist.TransmitLimitedQueue{RetransmitMult: 3, NumNodes: func() int {
 		if ml := c.ml.Load(); ml != nil {
 			return ml.NumMembers()
@@ -104,7 +99,7 @@ func New(cfg Config) (*Cluster, error) {
 	}}
 
 	logger := slog.NewLogLogger(slog.Default().Handler(), slog.LevelDebug)
-	transport, err := newQUICTransport(cfg.BindAddr, cfg.BindPort, cfg.Identity, set)
+	transport, err := newQUICTransport(cfg.BindAddr, cfg.BindPort, id, set)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +126,7 @@ func New(cfg Config) (*Cluster, error) {
 
 	// enrolment shares the gossip listener under its own ALPN
 	c.enrolSrv = &enroll.Server{
-		Identity: cfg.Identity, Tokens: c.tokens, Root: cfg.Root, Admit: c.admit,
+		Identity: id, Tokens: c.tokens, Root: cfg.Boot.Root, Admit: c.admit,
 		GossipAddr: net.JoinHostPort(cfg.AdvertiseAddr.String(), strconv.Itoa(cfg.BindPort)),
 	}
 	c.routines.Add(2)
@@ -188,11 +183,11 @@ func (c *Cluster) admit(joiner trust.PublicKey, dh trust.DHKey, name string) (tr
 	return a, c.set.Records(), nil
 }
 
-// saveState persists the state, logging rather than failing on error: the
+// saveState persists the bootstrap, logging rather than failing on error: the
 // state only speeds up the next start. Callers hold stateMu.
 func (c *Cluster) saveState() {
-	c.state.Records = c.set.Records()
-	if err := c.state.save(c.name); err != nil {
+	c.boot.Records = c.set.Records()
+	if err := c.boot.save(c.name); err != nil {
 		slog.Warn("could not save cluster state", "path", statePath(c.name), "err", err)
 	}
 }
@@ -276,7 +271,7 @@ func (c *Cluster) forwardEvents() {
 func (c *Cluster) Join(addrs []string) error {
 	if len(addrs) == 0 {
 		c.stateMu.Lock()
-		for _, n := range c.state.Nodes {
+		for _, n := range c.boot.Peers {
 			addrs = append(addrs, n.Addr.String())
 		}
 		c.stateMu.Unlock()
@@ -347,7 +342,7 @@ func (c *Cluster) Members() <-chan []common.Node {
 				nodes = append(nodes, node)
 			}
 			c.stateMu.Lock()
-			c.state.Nodes = nodes
+			c.boot.Peers = nodes
 			c.saveState()
 			c.stateMu.Unlock()
 			select {

@@ -136,8 +136,7 @@ func (a *AgentCmd) Run() error {
 
 	cluster, err := cluster.New(cluster.Config{
 		Name: a.Interface, BindAddr: a.BindAddr, AdvertiseAddr: advertise, BindPort: a.ClusterPort,
-		OverlayNet: a.OverlayNet, LocalNode: localNode, Identity: boot.Identity, Root: boot.Root, Records: boot.Records,
-		Peers: boot.Peers,
+		OverlayNet: a.OverlayNet, LocalNode: localNode, Boot: boot,
 	})
 	if err != nil {
 		return fmt.Errorf("creating cluster: %w", err)

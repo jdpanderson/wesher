@@ -49,7 +49,7 @@ func rootCluster(t *testing.T, name, bindAddr string, gossipPort int) *Cluster {
 	bind := netip.MustParseAddr(bindAddr)
 	c, err := New(Config{
 		Name: name, BindAddr: bind, AdvertiseAddr: bind, BindPort: gossipPort, OverlayNet: testOverlay,
-		LocalNode: testNodeFor(t, name, b), Identity: b.Identity, Root: b.Root, Records: b.Records,
+		LocalNode: testNodeFor(t, name, b), Boot: b,
 	})
 	require.NoError(t, err)
 	return c
@@ -70,7 +70,7 @@ func enrolCluster(t *testing.T, member *Cluster, memberBind string, memberPort i
 	bind := netip.MustParseAddr(bindAddr)
 	c, err := New(Config{
 		Name: name, BindAddr: bind, AdvertiseAddr: bind, BindPort: gossipPort, OverlayNet: testOverlay,
-		LocalNode: testNodeFor(t, name, b), Identity: b.Identity, Root: b.Root, Records: b.Records,
+		LocalNode: testNodeFor(t, name, b), Boot: b,
 	})
 	require.NoError(t, err)
 	require.NoError(t, c.Join([]string{w.GossipAddr}))
@@ -207,7 +207,7 @@ func Test_New_badBindAddr(t *testing.T) {
 	b.InitRoot("a", nil)
 	bad := netip.MustParseAddr("192.0.2.1") // TEST-NET, not a local address
 	_, err = New(Config{Name: "a", BindAddr: bad, AdvertiseAddr: bad, BindPort: 0, OverlayNet: testOverlay,
-		LocalNode: testNodeFor(t, "a", b), Identity: b.Identity, Root: b.Root, Records: b.Records})
+		LocalNode: testNodeFor(t, "a", b), Boot: b})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "gossip transport")
 }
@@ -216,9 +216,11 @@ func Test_New_notAMember(t *testing.T) {
 	useTempStatePaths(t)
 	b, err := Load("a", true)
 	require.NoError(t, err)
-	other := testIdentity(t)
-	_, err = New(Config{Name: "a", OverlayNet: testOverlay, LocalNode: &common.Node{Name: "a"}, Identity: b.Identity, Root: other.Public()})
+	b.Root = testIdentity(t).Public() // pinned to a root that never admitted us
+	_, err = New(Config{Name: "a", OverlayNet: testOverlay, LocalNode: &common.Node{Name: "a"}, Boot: b})
 	assert.ErrorContains(t, err, "not a member")
+	_, err = New(Config{Name: "a", LocalNode: &common.Node{Name: "a"}})
+	assert.ErrorContains(t, err, "bootstrap and local node are required")
 }
 
 func Test_Cluster_Leave_closesMembers(t *testing.T) {
