@@ -69,25 +69,28 @@ func (a *AgentCmd) loop(ctx context.Context, nodec <-chan []overlay.Node, cl clu
 // apply pushes one membership snapshot, already verified by the cluster, to
 // wireguard and /etc/hosts and returns the number of peers installed. A
 // network advertised by more than one node goes to the first by name, so
-// every snapshot resolves the same way.
+// every snapshot resolves the same way. The nodes' route slices are shared
+// with the cluster, which persists them, so they are filtered into new
+// slices rather than in place.
 func (a *AgentCmd) apply(nodes []overlay.Node, wgstate wgController, hosts hostsWriter) int {
 	hostEntries := make(map[string][]string, len(nodes))
 	routedBy := map[netip.Prefix]string{}
 	slices.SortFunc(nodes, func(x, y overlay.Node) int { return strings.Compare(x.Name, y.Name) })
 	for i := range nodes {
 		node := &nodes[i]
-		node.AllowedIPs = slices.DeleteFunc(node.AllowedIPs, func(p netip.Prefix) bool {
-			if p.Overlaps(a.OverlayNet) {
+		var routes []netip.Prefix
+		for _, p := range node.AllowedIPs {
+			switch by, taken := routedBy[p]; {
+			case p.Overlaps(a.OverlayNet):
 				slog.Warn("ignoring advertised network inside the overlay net", "name", node.Name, "net", p)
-				return true
-			}
-			if by, taken := routedBy[p]; taken {
+			case taken:
 				slog.Warn("network advertised by two nodes, keeping the first", "net", p, "kept", by, "ignored", node.Name)
-				return true
+			default:
+				routedBy[p] = node.Name
+				routes = append(routes, p)
 			}
-			routedBy[p] = node.Name
-			return false
-		})
+		}
+		node.AllowedIPs = routes
 		slog.Info("cluster member", "addr", node.Addr, "overlay", node.OverlayAddr, "pubkey", node.PubKey, "routes", node.AllowedIPs)
 		hostEntries[node.OverlayAddr.String()] = []string{node.Name}
 	}

@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/netip"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -110,6 +111,19 @@ func Test_AgentCmd_apply_allowedIPs(t *testing.T) {
 	assert.Equal(t, []netip.Prefix{netip.MustParsePrefix("192.168.7.0/24")}, wg.ups[0][0].AllowedIPs)
 	assert.Equal(t, "z", wg.ups[0][1].Name)
 	assert.Equal(t, []netip.Prefix{netip.MustParsePrefix("172.16.0.0/12")}, wg.ups[0][1].AllowedIPs)
+}
+
+// The snapshot's route slices belong to the cluster, which persists them;
+// filtering must not touch their backing arrays.
+func Test_AgentCmd_apply_leavesInputRoutesAlone(t *testing.T) {
+	a := &AgentCmd{OverlayNet: testOverlay, NoEtcHosts: true}
+	z := verifiedNode(t, "z", "192.0.2.1", "10.0.0.1", "10.9.0.0/16", "192.168.7.0/24", "172.16.0.0/12")
+	shared := z.AllowedIPs
+	before := slices.Clone(shared)
+
+	a.apply([]overlay.Node{z}, &fakeWG{}, &fakeHosts{})
+
+	assert.Equal(t, before, shared, "the caller's slice is unchanged")
 }
 
 func Test_AgentCmd_loop_notifiesSystemd(t *testing.T) {
