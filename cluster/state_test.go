@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/jdpanderson/cheesecloth/overlay"
 	"github.com/jdpanderson/cheesecloth/trust"
@@ -39,7 +40,7 @@ func Test_state_save_load(t *testing.T) {
 	s := &state{
 		Seed:    id.Seed(),
 		Root:    &root,
-		Records: trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(id, "root", unixTime(nil))}},
+		Records: trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(id, "root", time.Now())}},
 		Nodes:   []overlay.Node{{Name: "node", Addr: net.ParseIP("10.0.0.2")}},
 	}
 	require.NoError(t, s.save("test"))
@@ -107,7 +108,7 @@ func Test_Bootstrap_initAndEnrol(t *testing.T) {
 	useTempStatePaths(t)
 	b, err := Load("test", true)
 	require.NoError(t, err)
-	b.InitRoot("root", nil)
+	b.InitRoot("root")
 	assert.True(t, b.Enrolled())
 	assert.Equal(t, b.Identity.Public(), b.Root)
 	require.Len(t, b.Records.Admissions, 1)
@@ -118,8 +119,8 @@ func Test_Bootstrap_initAndEnrol(t *testing.T) {
 	other := testIdentity(t)
 	j, err := Load("joiner", true)
 	require.NoError(t, err)
-	adm := trust.Admit(other, j.Identity.Public(), j.Identity.DHPublic(), "joiner", 7, unixTime(nil))
-	j.Enrol(other.Public(), trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(other, "o", unixTime(nil)), adm}})
+	adm := trust.Admit(other, j.Identity.Public(), j.Identity.DHPublic(), "joiner", 7, time.Now())
+	j.Enrol(other.Public(), trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(other, "o", time.Now()), adm}})
 	assert.True(t, j.Enrolled())
 	assert.Equal(t, other.Public(), j.Root)
 	host, err := j.Host()
@@ -175,7 +176,7 @@ func Test_state_save_atomic(t *testing.T) {
 	dir := useTempStatePaths(t)
 	id := testIdentity(t)
 	root := id.Public()
-	st := &state{Seed: id.Seed(), Root: &root, Records: trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(id, "root", unixTime(nil))}}}
+	st := &state{Seed: id.Seed(), Root: &root, Records: trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(id, "root", time.Now())}}}
 	require.NoError(t, st.save("a"))
 
 	done := make(chan struct{})

@@ -45,7 +45,7 @@ func rootCluster(t *testing.T, name, bindAddr string, gossipPort int) *Cluster {
 	t.Helper()
 	b, err := Load(name, true)
 	require.NoError(t, err)
-	b.InitRoot(name, nil)
+	b.InitRoot(name)
 	bind := netip.MustParseAddr(bindAddr)
 	c, err := New(Config{
 		StateName: name, BindAddr: bind, AdvertiseAddr: bind, BindPort: gossipPort, OverlayNet: testOverlay,
@@ -205,7 +205,7 @@ func Test_New_badBindAddr(t *testing.T) {
 	useTempStatePaths(t)
 	b, err := Load("a", true)
 	require.NoError(t, err)
-	b.InitRoot("a", nil)
+	b.InitRoot("a")
 	bad := netip.MustParseAddr("192.0.2.1") // TEST-NET, not a local address
 	_, err = New(Config{StateName: "a", BindAddr: bad, AdvertiseAddr: bad, BindPort: 0, OverlayNet: testOverlay,
 		LocalNode: testNodeFor(t, "a", b), Boot: b})

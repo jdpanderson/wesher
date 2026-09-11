@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/jdpanderson/cheesecloth/overlay"
 	"github.com/jdpanderson/cheesecloth/trust"
@@ -180,9 +181,9 @@ func (b *Bootstrap) Host() (uint64, error) {
 }
 
 // InitRoot makes this node the root of a new cluster.
-func (b *Bootstrap) InitRoot(nodeName string, now func() int64) {
+func (b *Bootstrap) InitRoot(nodeName string) {
 	b.Root = b.Identity.Public()
-	adm := trust.SelfAdmit(b.Identity, nodeName, unixTime(now))
+	adm := trust.SelfAdmit(b.Identity, nodeName, time.Now())
 	b.Records = trust.Records{Admissions: []trust.Admission{adm}}
 	b.Peers = nil
 	b.enrolled = true

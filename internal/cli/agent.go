@@ -96,7 +96,7 @@ func (a *AgentCmd) Run() error {
 			slog.Info("already a member of a cluster; ignoring --join-key")
 		}
 	case a.Init:
-		boot.InitRoot(hostname, nil)
+		boot.InitRoot(hostname)
 		slog.Info("initialised a new cluster", "root", boot.Root.Short())
 	case a.JoinKey != "":
 		w, memberID, enrolErr := a.enrol(ctx, boot.Identity, hostname)
