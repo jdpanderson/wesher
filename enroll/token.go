@@ -6,9 +6,10 @@ package enroll
 import (
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
+	"encoding/base32"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -28,12 +29,17 @@ func idOf(key []byte) tokenID {
 	return id
 }
 
-// EncodeToken is the printable form of a token.
-func EncodeToken(key []byte) string { return base64.RawURLEncoding.EncodeToString(key) }
+// tokenEncoding is lowercase base32 without padding: letters and digits only,
+// so a token never starts with "-" and cannot be mistaken for a flag when
+// pasted after --join-key, and a double-click selects the whole of it.
+var tokenEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
 
-// DecodeToken parses the printable form.
+// EncodeToken is the printable form of a token.
+func EncodeToken(key []byte) string { return strings.ToLower(tokenEncoding.EncodeToString(key)) }
+
+// DecodeToken parses the printable form; case does not matter.
 func DecodeToken(s string) ([]byte, error) {
-	key, err := base64.RawURLEncoding.DecodeString(s)
+	key, err := tokenEncoding.DecodeString(strings.ToUpper(strings.TrimSpace(s)))
 	if err != nil {
 		return nil, fmt.Errorf("join key: %w", err)
 	}

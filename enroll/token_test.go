@@ -1,6 +1,7 @@
 package enroll
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -17,12 +18,27 @@ func Test_token_codec(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, key, got)
 
-	_, err = DecodeToken("not base64!")
+	_, err = DecodeToken("not a token!")
 	assert.ErrorContains(t, err, "join key")
+	upper, err := DecodeToken(strings.ToUpper(EncodeToken(key)))
+	require.NoError(t, err)
+	assert.Equal(t, key, upper, "case and surrounding whitespace do not matter")
+	_, err = DecodeToken(" " + EncodeToken(key) + "\n")
+	require.NoError(t, err)
 	_, err = DecodeToken(EncodeToken(key[:5]))
 	assert.ErrorContains(t, err, "want 32 bytes")
 
 	assert.NotEqual(t, idOf(key), idOf(append([]byte{1}, key[1:]...)), "the public id depends on the whole key")
+}
+
+// A token is pasted after --join-key on a command line, so it must never look like a flag.
+func Test_token_isPlainWord(t *testing.T) {
+	s := NewTokenStore()
+	for i := 0; i < 200; i++ {
+		tok, err := s.Mint(time.Minute, 1)
+		require.NoError(t, err)
+		assert.Regexp(t, `^[a-z2-7]{52}$`, tok)
+	}
 }
 
 func Test_TokenStore_expiry(t *testing.T) {
