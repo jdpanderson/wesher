@@ -9,7 +9,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"errors"
 	"fmt"
 )
 
@@ -122,7 +121,8 @@ func (i *Identity) Sign(msg []byte) []byte { return ed25519.Sign(i.sign, msg) }
 func (i *Identity) Signer() ed25519.PrivateKey { return i.sign }
 
 // SharedSecret is the raw X25519 shared secret with peer. Callers must run it
-// through a KDF before use.
+// through a KDF before use. crypto/ecdh rejects low-order peer keys, whose
+// shared secret would be all zero.
 func (i *Identity) SharedSecret(peer DHKey) ([]byte, error) {
 	pub, err := ecdh.X25519().NewPublicKey(peer[:])
 	if err != nil {
@@ -132,18 +132,7 @@ func (i *Identity) SharedSecret(peer DHKey) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("x25519: %w", err)
 	}
-	if allZero(ss) {
-		return nil, errors.New("x25519: low-order peer key")
-	}
 	return ss, nil
-}
-
-func allZero(b []byte) bool {
-	var acc byte
-	for _, x := range b {
-		acc |= x
-	}
-	return acc == 0
 }
 
 // Verify checks an Ed25519 signature by identity over msg.

@@ -23,14 +23,12 @@ func Test_Identity_Signer(t *testing.T) {
 func Test_Identity_SharedSecret_badPeer(t *testing.T) {
 	id := newID(t)
 	_, err := id.SharedSecret(DHKey{}) // the all-zero point is low order
-	assert.Error(t, err)
+	assert.ErrorContains(t, err, "low order")
 
 	other := newID(t)
 	ss, err := id.SharedSecret(other.DHPublic())
 	require.NoError(t, err)
-	assert.False(t, allZero(ss))
-	assert.True(t, allZero(nil))
-	assert.True(t, allZero([]byte{0, 0}))
+	assert.NotEqual(t, make([]byte, 32), ss)
 }
 
 func Test_DHKey_text(t *testing.T) {
