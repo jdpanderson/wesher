@@ -123,8 +123,6 @@ func New(cfg Config) (*Cluster, error) {
 	mlConfig.Name = cfg.LocalNode.Name
 	mlConfig.Logger = logger
 	mlConfig.Transport = transport
-	mlConfig.BindAddr = cfg.BindAddr.String()
-	mlConfig.BindPort = cfg.BindPort
 	mlConfig.AdvertiseAddr = cfg.AdvertiseAddr.String()
 	mlConfig.AdvertisePort = cfg.BindPort
 	mlConfig.UDPBufferSize = maxDatagram
