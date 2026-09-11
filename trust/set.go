@@ -1,10 +1,12 @@
 package trust
 
 import (
+	"bytes"
 	"errors"
 	"iter"
 	"math"
-	"sort"
+	"slices"
+	"strings"
 	"sync"
 )
 
@@ -99,8 +101,8 @@ func (s *Set) Records() Records {
 	for _, r := range s.revocations {
 		rs.Revocations = append(rs.Revocations, r)
 	}
-	sort.Slice(rs.Admissions, func(i, j int) bool { return rs.Admissions[i].Identity.String() < rs.Admissions[j].Identity.String() })
-	sort.Slice(rs.Revocations, func(i, j int) bool { return rs.Revocations[i].Identity.String() < rs.Revocations[j].Identity.String() })
+	slices.SortFunc(rs.Admissions, func(a, b Admission) int { return bytes.Compare(a.Identity[:], b.Identity[:]) })
+	slices.SortFunc(rs.Revocations, func(a, b Revocation) int { return bytes.Compare(a.Identity[:], b.Identity[:]) })
 	return rs
 }
 
@@ -242,6 +244,6 @@ func (s *Set) Members() []Admission {
 	for a := range s.validAdmissions() {
 		out = append(out, a)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	slices.SortFunc(out, func(a, b Admission) int { return strings.Compare(a.Name, b.Name) })
 	return out
 }

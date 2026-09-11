@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -55,10 +55,8 @@ func renderStatus(w io.Writer, r *wg.Report, local trust.PublicKey, names map[st
 		return nil
 	}
 
-	peers := append([]wg.PeerReport(nil), r.Peers...)
-	sort.Slice(peers, func(i, j int) bool {
-		return peerName(peers[i], names) < peerName(peers[j], names)
-	})
+	peers := slices.Clone(r.Peers)
+	slices.SortFunc(peers, func(a, b wg.PeerReport) int { return strings.Compare(peerName(a, names), peerName(b, names)) })
 
 	// tabwriter reports write errors from Flush, so the per-row results are dropped.
 	tw := tabwriter.NewWriter(w, 0, 8, 2, ' ', 0)
