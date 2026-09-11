@@ -2,6 +2,7 @@ package control
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -72,6 +73,16 @@ func Test_Listen_replacesStaleSocket(t *testing.T) {
 	defer second.Close()
 	_, err = Call(path, Request{Op: "invite", TTL: "1m", Uses: 1})
 	assert.NoError(t, err)
+}
+
+func Test_Listen_refusesToReplaceAFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "notes.txt")
+	require.NoError(t, os.WriteFile(path, []byte("keep me"), 0o600))
+	_, err := Listen(path, &fakeHandler{})
+	assert.ErrorContains(t, err, "not a socket")
+	content, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "keep me", string(content))
 }
 
 func Test_DefaultSocket(t *testing.T) {

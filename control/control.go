@@ -49,7 +49,11 @@ func Listen(path string, h Handler) (*Server, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("creating control socket directory: %w", err)
 	}
-	_ = os.Remove(path) // a stale socket from an unclean exit
+	// a stale socket from an unclean exit is replaced; anything else at the path is not ours to remove
+	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSocket == 0 {
+		return nil, fmt.Errorf("control socket path %s exists and is not a socket", path)
+	}
+	_ = os.Remove(path)
 	ln, err := net.Listen("unix", path)
 	if err != nil {
 		return nil, fmt.Errorf("listening on control socket %s: %w", path, err)
