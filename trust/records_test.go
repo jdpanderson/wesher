@@ -7,10 +7,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_Admission_VerifySignature(t *testing.T) {
+func Test_Admission_Validate(t *testing.T) {
 	root, a := newID(t), newID(t)
 	adm := Admit(root, a.Public(), a.DHPublic(), "a", 2, t0)
-	require.NoError(t, adm.VerifySignature())
+	require.NoError(t, adm.Validate())
 
 	for name, mutate := range map[string]func(*Admission){
 		"name":      func(x *Admission) { x.Name = "b" },
@@ -24,24 +24,24 @@ func Test_Admission_VerifySignature(t *testing.T) {
 		x := adm
 		x.Signature = append([]byte(nil), adm.Signature...)
 		mutate(&x)
-		assert.Error(t, x.VerifySignature(), name)
+		assert.Error(t, x.Validate(), name)
 	}
 	x := adm
 	x.Name = ""
-	assert.ErrorContains(t, x.VerifySignature(), "without a name")
+	assert.ErrorContains(t, x.Validate(), "without a name")
 	x = adm
 	x.Host = 0
-	assert.ErrorContains(t, x.VerifySignature(), "without an overlay slot")
+	assert.ErrorContains(t, x.Validate(), "without an overlay slot")
 }
 
-func Test_Revocation_VerifySignature(t *testing.T) {
+func Test_Revocation_Validate(t *testing.T) {
 	root, a := newID(t), newID(t)
 	rev := Revoke(root, a.Public(), t0)
-	require.NoError(t, rev.VerifySignature())
+	require.NoError(t, rev.Validate())
 	x := rev
 	x.IssuedAt++
-	assert.ErrorContains(t, x.VerifySignature(), "signature")
+	assert.ErrorContains(t, x.Validate(), "signature")
 	x = rev
 	x.Revoker = a.Public()
-	assert.Error(t, x.VerifySignature())
+	assert.Error(t, x.Validate())
 }

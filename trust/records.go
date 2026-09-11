@@ -71,8 +71,8 @@ func Revoke(revoker *Identity, identity PublicKey, now time.Time) Revocation {
 	return r
 }
 
-// VerifySignature checks that the admitter signed the record.
-func (a *Admission) VerifySignature() error {
+// Validate checks the record's fields and that the admitter signed it.
+func (a *Admission) Validate() error {
 	if a.Name == "" {
 		return errors.New("admission without a name")
 	}
@@ -85,8 +85,8 @@ func (a *Admission) VerifySignature() error {
 	return nil
 }
 
-// VerifySignature checks that the revoker signed the record.
-func (r *Revocation) VerifySignature() error {
+// Validate checks that the revoker signed the record.
+func (r *Revocation) Validate() error {
 	if !Verify(r.Revoker, r.signedBytes(), r.Signature) {
 		return errors.New("revocation signature does not verify")
 	}

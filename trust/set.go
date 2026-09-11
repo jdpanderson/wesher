@@ -41,7 +41,7 @@ var ErrUntrustedRoot = errors.New("self-signed admission is not the pinned root"
 // AddAdmission stores a signature-valid record. It reports whether the set
 // changed; a record for an identity already present is kept only if newer.
 func (s *Set) AddAdmission(a Admission) (bool, error) {
-	if err := a.VerifySignature(); err != nil {
+	if err := a.Validate(); err != nil {
 		return false, err
 	}
 	if a.Admitter == a.Identity && a.Identity != s.root {
@@ -58,7 +58,7 @@ func (s *Set) AddAdmission(a Admission) (bool, error) {
 
 // AddRevocation stores a signature-valid revocation; the root cannot be revoked.
 func (s *Set) AddRevocation(r Revocation) (bool, error) {
-	if err := r.VerifySignature(); err != nil {
+	if err := r.Validate(); err != nil {
 		return false, err
 	}
 	if r.Identity == s.root {
