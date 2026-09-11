@@ -17,8 +17,11 @@ type StatusCmd struct {
 	JSON      bool   `help:"print the report as JSON"`
 }
 
+// wgStatus reports on the wireguard interface; tests substitute it.
+var wgStatus = wg.Status
+
 func (c *StatusCmd) Run() error {
-	report, err := wg.Status(c.Interface)
+	report, err := wgStatus(c.Interface)
 	if err != nil {
 		return err
 	}
