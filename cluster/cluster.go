@@ -269,10 +269,7 @@ func (c *Cluster) forwardEvents() {
 		case memberlist.NodeLeave:
 			slog.Info("node left", "name", event.Node.Name, "addr", event.Node.Addr)
 		}
-		select {
-		case c.changed <- struct{}{}:
-		default: // a signal is already pending
-		}
+		c.signalChanged()
 	}
 }
 
@@ -485,7 +482,7 @@ func (c *Cluster) NotifyConflict(existing, other *memberlist.Node) {
 	slog.Error("node name conflict detected", "name", other.Name, "addr", other.Addr)
 }
 
-// signalChanged wakes the Members loop: a record change may admit or revoke a peer.
+// signalChanged wakes the Members loop; a signal already pending is enough.
 func (c *Cluster) signalChanged() {
 	select {
 	case c.changed <- struct{}{}:
