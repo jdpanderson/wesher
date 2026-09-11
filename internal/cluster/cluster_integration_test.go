@@ -9,7 +9,6 @@ import (
 
 	"github.com/hashicorp/memberlist"
 	"github.com/jdpanderson/cheesecloth/internal/overlay"
-	"github.com/jdpanderson/cheesecloth/internal/trust"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -126,7 +125,7 @@ func Test_Cluster_enrolJoinLeave(t *testing.T) {
 	assert.Equal(t, "b", members[0].Name)
 	assert.Equal(t, "10.0.0.2", members[0].OverlayAddr.String())
 	assert.Equal(t, testKey, members[0].PubKey)
-	assert.Equal(t, b.Identity(), trust.PublicKey(members[0].Identity))
+	assert.Equal(t, b.Identity(), members[0].Identity)
 	assert.True(t, a.Trust().Valid(b.Identity()))
 	assert.True(t, b.Trust().Valid(a.Identity()))
 

@@ -41,10 +41,7 @@ func Test_assignedAddr_and_verifyMeta(t *testing.T) {
 		n.PubKey = testKey
 		n.Identity = id.Public()
 		n.Signature = id.Sign(trust.MetaDigest(n.Name, n.OverlayAddr, n.PubKey, nil))
-		var encErr error
-		n.Meta, encErr = n.EncodeMeta(512)
-		require.NoError(t, encErr)
-		return &overlay.Node{Name: n.Name, Meta: n.Meta}
+		return n
 	}
 	id, err := verifyMeta(set, testOverlay, meta(a, "a", "10.0.0.2"))
 	require.NoError(t, err)
@@ -55,15 +52,18 @@ func Test_assignedAddr_and_verifyMeta(t *testing.T) {
 	assert.ErrorContains(t, err, "collides")
 
 	bad := meta(a, "a", "10.0.0.2")
-	var n overlay.Node
-	n.OverlayAddr = netip.MustParseAddr("10.0.0.2")
-	n.PubKey = "not a wireguard key"
-	n.Identity = a.Public()
-	n.Signature = a.Sign(trust.MetaDigest("a", n.OverlayAddr, n.PubKey, nil))
-	bad.Meta, err = n.EncodeMeta(512)
-	require.NoError(t, err)
+	bad.PubKey = "not a wireguard key"
+	bad.Signature = a.Sign(trust.MetaDigest("a", bad.OverlayAddr, bad.PubKey, nil))
 	_, err = verifyMeta(set, testOverlay, bad)
 	assert.ErrorContains(t, err, "wireguard key")
+
+	// what memberlist carries is the encoded form, and it round-trips
+	encoded, err := meta(a, "a", "10.0.0.2").Encode(512)
+	require.NoError(t, err)
+	decoded, err := overlay.DecodeMeta(encoded)
+	require.NoError(t, err)
+	_, err = verifyMeta(set, testOverlay, &overlay.Node{Name: "a", Meta: decoded})
+	require.NoError(t, err)
 }
 
 // testKey is a syntactically valid wireguard public key.

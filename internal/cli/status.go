@@ -30,7 +30,7 @@ func (c *StatusCmd) Run() error {
 	}
 	names := make(map[string]peerInfo) // wireguard public key -> node
 	for _, n := range cluster.KnownNodes(cluster.DefaultDir, c.Interface) {
-		id := trust.PublicKey(n.Identity)
+		id := n.Identity
 		names[n.PubKey] = peerInfo{Name: n.Name, Identity: &id, Overlay: n.OverlayAddr}
 	}
 	local, _ := cluster.LocalIdentity(cluster.DefaultDir, c.Interface)

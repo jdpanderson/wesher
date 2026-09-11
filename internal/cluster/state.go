@@ -77,23 +77,15 @@ func loadState(statePath string) (*state, error) {
 	return s, nil
 }
 
-// KnownNodes returns the peers persisted under dir for name with their
-// metadata decoded; nodes whose metadata does not decode are skipped, and an
-// unusable state file yields none.
+// KnownNodes returns the peers persisted under dir for name; an unusable
+// state file yields none.
 func KnownNodes(dir, name string) []overlay.Node {
 	st, err := loadState(statePath(dir, name))
 	if err != nil {
 		slog.Warn("could not load cluster state", "err", err)
 		return nil
 	}
-	out := make([]overlay.Node, 0, len(st.Peers))
-	for _, n := range st.Peers {
-		if err := n.DecodeMeta(); err != nil {
-			continue
-		}
-		out = append(out, n)
-	}
-	return out
+	return st.Peers
 }
 
 // LocalIdentity returns the identity persisted under dir for name, if any.

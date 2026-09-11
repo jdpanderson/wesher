@@ -230,14 +230,11 @@ func assignedAddr(set *trust.Set, prefix netip.Prefix, id trust.PublicKey) (neti
 	return addr, nil
 }
 
-// verifyMeta decodes a node's metadata and checks that a valid member signed
-// it, that it claims the overlay address its admission assigns, and that its
-// wireguard key parses. A node that passes can be installed as a peer as is.
+// verifyMeta checks a node's metadata: a valid member signed it, it claims the
+// overlay address that member's admission assigns, and its wireguard key
+// parses. A node that passes can be installed as a peer as is.
 func verifyMeta(set *trust.Set, prefix netip.Prefix, n *overlay.Node) (trust.PublicKey, error) {
-	if err := n.DecodeMeta(); err != nil {
-		return trust.PublicKey{}, err
-	}
-	id := trust.PublicKey(n.Identity)
+	id := n.Identity
 	want, err := assignedAddr(set, prefix, id)
 	if err != nil {
 		return id, err
@@ -346,8 +343,13 @@ func (c *Cluster) Members() <-chan []overlay.Node {
 				if n.Name == c.local.Name {
 					continue
 				}
+				meta, err := overlay.DecodeMeta(n.Meta)
+				if err != nil {
+					slog.Warn("ignoring node with undecodable metadata", "name", n.Name, "addr", n.Addr, "err", err)
+					continue
+				}
 				addr, _ := netip.AddrFromSlice(n.Addr)
-				node := overlay.Node{Name: n.Name, Addr: addr.Unmap(), Meta: n.Meta}
+				node := overlay.Node{Name: n.Name, Addr: addr.Unmap(), Meta: meta}
 				if _, err := verifyMeta(c.set, c.overlay, &node); err != nil {
 					slog.Warn("ignoring node with unverified metadata", "name", n.Name, "addr", n.Addr, "err", err)
 					continue
@@ -409,7 +411,7 @@ func (c *Cluster) broadcast(m recordMsg) {
 
 // NodeMeta implements memberlist.Delegate: our signed metadata.
 func (c *Cluster) NodeMeta(limit int) []byte {
-	encoded, err := c.local.EncodeMeta(limit)
+	encoded, err := c.local.Encode(limit)
 	if err != nil {
 		slog.Error("failed to encode local node", "err", err)
 		return nil

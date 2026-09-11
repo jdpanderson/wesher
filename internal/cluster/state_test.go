@@ -129,16 +129,14 @@ func Test_KnownNodes(t *testing.T) {
 	good := overlay.Node{Name: "good", Addr: netip.MustParseAddr("192.0.2.1")}
 	good.OverlayAddr = netip.MustParseAddr("10.0.0.1")
 	good.PubKey = "pk"
-	meta, err := good.EncodeMeta(512)
-	require.NoError(t, err)
-	good.Meta = meta
-	bad := overlay.Node{Name: "bad", Addr: netip.MustParseAddr("192.0.2.2"), Meta: []byte("garbage")}
-	require.NoError(t, (&state{Peers: []overlay.Node{good, bad}}).save(statePath(dir, "test")))
+	require.NoError(t, (&state{Peers: []overlay.Node{good}}).save(statePath(dir, "test")))
 
 	got := KnownNodes(dir, "test")
 	require.Len(t, got, 1)
-	assert.Equal(t, "good", got[0].Name)
-	assert.Equal(t, "10.0.0.1", got[0].OverlayAddr.String())
+	assert.Equal(t, good, got[0], "persisted with its metadata")
+
+	require.NoError(t, os.WriteFile(statePath(dir, "broken"), []byte("{"), 0o600))
+	assert.Empty(t, KnownNodes(dir, "broken"), "an unusable state file yields no peers")
 }
 
 func Test_LocalIdentity(t *testing.T) {

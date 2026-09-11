@@ -5,56 +5,50 @@ import (
 	"net/netip"
 	"testing"
 
+	"github.com/jdpanderson/cheesecloth/internal/trust"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func Test_Node_Encode_Decode(t *testing.T) {
+func Test_Meta_Encode_Decode(t *testing.T) {
 	pubKey := "abcdefghijklmnopkqstuvwxyzABCDEF"
-	ipv4 := netip.MustParseAddr("10.0.0.1")
-	ipv6 := netip.MustParseAddr("2001:db8::1")
-
-	for _, ip := range []netip.Addr{ipv4, ipv6} {
-		node := Node{
+	for _, ip := range []netip.Addr{netip.MustParseAddr("10.0.0.1"), netip.MustParseAddr("2001:db8::1")} {
+		m := Meta{
 			OverlayAddr: ip,
 			PubKey:      pubKey,
 			AllowedIPs:  []netip.Prefix{netip.MustParsePrefix("192.168.7.0/24"), netip.MustParsePrefix("2001:db8:1::/48")},
-			Identity:    [32]byte{1, 2, 3, 31: 32},
+			Identity:    trust.PublicKey{1, 2, 3, 31: 32},
 			Signature:   []byte("sig"),
 		}
-		encoded, err := node.EncodeMeta(1024)
+		encoded, err := m.Encode(1024)
 		require.NoError(t, err)
-		decoded := Node{Meta: encoded}
-		require.NoError(t, decoded.DecodeMeta())
-
-		node.Meta = encoded
-		assert.Equal(t, node, decoded)
+		decoded, err := DecodeMeta(encoded)
+		require.NoError(t, err)
+		assert.Equal(t, m, decoded)
 	}
 }
 
-// Only name, address and the encoded metadata are persisted; the decoded
-// fields are derived from Meta on load.
+// A node is persisted with its metadata decoded, as one flat object.
 func Test_Node_JSON(t *testing.T) {
-	node := Node{Name: "n", Addr: netip.MustParseAddr("192.0.2.1"), Meta: []byte("m"), OverlayAddr: netip.MustParseAddr("10.0.0.1"), PubKey: "k", Identity: [32]byte{1}}
+	node := Node{Name: "n", Addr: netip.MustParseAddr("192.0.2.1"), Meta: Meta{OverlayAddr: netip.MustParseAddr("10.0.0.1"), PubKey: "k", Identity: trust.PublicKey{1}}}
 	b, err := json.Marshal(node)
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"Name":"n","Addr":"192.0.2.1","Meta":"bQ=="}`, string(b))
+	assert.JSONEq(t, `{"Name":"n","Addr":"192.0.2.1","overlay":"10.0.0.1","wg":"k","id":"`+trust.PublicKey{1}.String()+`","sig":null}`, string(b))
+	var back Node
+	require.NoError(t, json.Unmarshal(b, &back))
+	assert.Equal(t, node, back)
 }
 
-func Test_Node_EncodeMeta_limit(t *testing.T) {
-	node := Node{
-		OverlayAddr: netip.MustParseAddr("10.0.0.1"),
-		PubKey:      "abcdefghijklmnopkqstuvwxyzABCDEF",
-	}
-	_, err := node.EncodeMeta(1)
+func Test_Meta_Encode_limit(t *testing.T) {
+	m := Meta{OverlayAddr: netip.MustParseAddr("10.0.0.1"), PubKey: "abcdefghijklmnopkqstuvwxyzABCDEF"}
+	_, err := m.Encode(1)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "could not fit node metadata")
 }
 
-func Test_Node_DecodeMeta_garbage(t *testing.T) {
+func Test_DecodeMeta_garbage(t *testing.T) {
 	for _, meta := range [][]byte{nil, {}, []byte("not json"), []byte(`{"id":"YWJj"}`)} {
-		n := Node{Meta: meta}
-		err := n.DecodeMeta()
+		_, err := DecodeMeta(meta)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "decoding node meta")
 	}
