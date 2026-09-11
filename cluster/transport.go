@@ -350,7 +350,7 @@ func (t *quicTransport) serveEnrol(conn *quic.Conn, peer trust.PublicKey) {
 		_ = conn.CloseWithError(1, "no enrolment stream")
 		return
 	}
-	t.enrol(&enrolStream{streamConn: streamConn{Stream: s, local: conn.LocalAddr(), remote: conn.RemoteAddr(), peer: peer}, conn: conn})
+	t.enrol(&enrolStream{streamConn: streamConn{Stream: s, local: conn.LocalAddr(), remote: conn.RemoteAddr(), peer: peer}, conn: conn, wg: &t.wg})
 }
 
 // forget drops conn from the table if it is still the one recorded for addr.
@@ -581,14 +581,19 @@ func (s *streamConn) Close() error {
 type enrolStream struct {
 	streamConn
 	conn *quic.Conn
+	wg   *sync.WaitGroup // the transport's; Shutdown waits for the deferred close
 }
 
 // Close finishes the stream and then the connection, once the joiner has
 // closed its side or a timeout passes: closing at once could discard the
-// welcome before the joiner has read it.
+// welcome before the joiner has read it. Close is called from the enrolment
+// handler, which serveEnrol runs inside the wait group, so the count is
+// still positive when the deferred close joins it.
 func (s *enrolStream) Close() error {
 	err := s.streamConn.Close()
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
 		select {
 		case <-s.conn.Context().Done():
 		case <-time.After(enrolCloseGrace):
