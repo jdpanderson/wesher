@@ -133,9 +133,7 @@ func New(cfg Config) (*Cluster, error) {
 	c.routines.Add(1)
 	go c.forwardEvents()
 
-	c.stateMu.Lock()
-	c.saveState()
-	c.stateMu.Unlock()
+	c.persist()
 	return c, nil
 }
 
@@ -157,9 +155,7 @@ func (c *Cluster) Revoke(id trust.PublicKey) error {
 		return err
 	}
 	c.broadcast(recordMsg{Revocation: &rev})
-	c.stateMu.Lock()
-	c.saveState()
-	c.stateMu.Unlock()
+	c.persist()
 	c.signalChanged() // the revoked node drops out of Members at once
 	return nil
 }
@@ -191,6 +187,13 @@ func (c *Cluster) admit(joiner trust.PublicKey, dh trust.DHKey, name string) (tr
 	c.broadcast(recordMsg{Admission: &a})
 	c.saveState()
 	return a, c.set.Records(), nil
+}
+
+// persist saves the bootstrap under stateMu.
+func (c *Cluster) persist() {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	c.saveState()
 }
 
 // saveState persists the bootstrap, logging rather than failing on error: the
@@ -294,9 +297,7 @@ func (c *Cluster) Join(addrs []string) error {
 // Leave saves the current state, leaves the cluster and stops Members. Safe to call more than once.
 func (c *Cluster) Leave() {
 	c.leaveOnce.Do(func() {
-		c.stateMu.Lock()
-		c.saveState()
-		c.stateMu.Unlock()
+		c.persist()
 		ml := c.ml.Load()
 		if err := ml.Leave(10 * time.Second); err != nil {
 			slog.Warn("could not announce leave to the cluster", "err", err)
@@ -446,9 +447,7 @@ func (c *Cluster) NotifyMsg(b []byte) {
 	}
 	if changed {
 		c.broadcast(m)
-		c.stateMu.Lock()
-		c.saveState()
-		c.stateMu.Unlock()
+		c.persist()
 		c.signalChanged()
 	}
 }
@@ -476,9 +475,7 @@ func (c *Cluster) MergeRemoteState(buf []byte, join bool) {
 	}
 	if n := c.set.Merge(rs); n > 0 {
 		slog.Debug("merged membership records", "new", n)
-		c.stateMu.Lock()
-		c.saveState()
-		c.stateMu.Unlock()
+		c.persist()
 		c.signalChanged()
 	}
 }
