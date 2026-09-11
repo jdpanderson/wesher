@@ -43,7 +43,7 @@ func enterTestNetns(t *testing.T) {
 // testConfig uses a non-default MTU so the test proves it is applied.
 func testConfig() Config {
 	return Config{
-		Interface: "wgtest0", Port: 51820, OverlayNet: netip.MustParsePrefix(testPrefix), Name: "test",
+		Interface: "wgtest0", Port: 51820, OverlayNet: netip.MustParsePrefix(testPrefix),
 		OverlayAddr: netip.MustParseAddr("10.99.0.100"), MTU: 1400, PersistentKeepalive: 25 * time.Second,
 	}
 }
@@ -60,17 +60,15 @@ func testPeer(t *testing.T, name, addr, overlay string) common.Node {
 
 func Test_New(t *testing.T) {
 	enterTestNetns(t)
-	s, node, err := New(testConfig())
+	s, err := New(testConfig())
 	require.NoError(t, err)
-	assert.Equal(t, s.PrivKey.PublicKey(), s.PubKey)
-	assert.Equal(t, s.OverlayAddr, node.OverlayAddr)
-	assert.Equal(t, s.PubKey.String(), node.PubKey)
+	assert.Equal(t, s.privKey.PublicKey(), s.PubKey)
 	assert.True(t, netip.MustParsePrefix(testPrefix).Contains(s.OverlayAddr))
 }
 
 func Test_State_SetUpInterface_and_Down(t *testing.T) {
 	enterTestNetns(t)
-	s, _, err := New(testConfig())
+	s, err := New(testConfig())
 	require.NoError(t, err)
 
 	p1 := testPeer(t, "p1", "192.0.2.1", "10.99.0.1")
@@ -133,7 +131,7 @@ func Test_State_SetUpInterface_and_Down(t *testing.T) {
 
 func Test_State_SetUpInterface_badPeerKey(t *testing.T) {
 	enterTestNetns(t)
-	s, _, err := New(testConfig())
+	s, err := New(testConfig())
 	require.NoError(t, err)
 	defer func() { _ = s.DownInterface() }()
 

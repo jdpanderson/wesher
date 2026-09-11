@@ -41,7 +41,6 @@ type Config struct {
 	Port        int          // wireguard listen port, also used as the peers' port
 	OverlayNet  netip.Prefix // network the overlay addresses are picked from
 	OverlayAddr netip.Addr   // this node's address inside OverlayNet
-	Name        string       // local node name
 	MTU         int          // interface MTU
 	// PersistentKeepalive, when non-zero, makes every peer send keepalives at this
 	// interval so NAT mappings stay open.
@@ -56,48 +55,39 @@ type State struct {
 	client      wgClient
 	nl          netlinker
 	overlayNet  netip.Prefix
+	privKey     wgtypes.Key
 	OverlayAddr netip.Addr
 	Port        int
-	PrivKey     wgtypes.Key
-	PubKey      wgtypes.Key
+	PubKey      wgtypes.Key // fresh on every start; gossiped to peers
 }
 
-// New creates a new Cheesecloth Wireguard state.
-// The Wireguard keys are generated for every new interface.
-// The interface must later be setup using SetUpInterface.
-func New(cfg Config) (*State, *common.Node, error) {
+// New creates a new Cheesecloth Wireguard state with a fresh key pair.
+// The interface must later be set up using SetUpInterface.
+func New(cfg Config) (*State, error) {
 	client, err := wgctrl.New()
 	if err != nil {
-		return nil, nil, fmt.Errorf("instantiating wireguard client: %w", err)
+		return nil, fmt.Errorf("instantiating wireguard client: %w", err)
 	}
 	return newState(cfg, client, &netlink.Handle{})
 }
 
-func newState(cfg Config, client wgClient, nl netlinker) (*State, *common.Node, error) {
+func newState(cfg Config, client wgClient, nl netlinker) (*State, error) {
 	privKey, err := wgtypes.GeneratePrivateKey()
 	if err != nil {
-		return nil, nil, fmt.Errorf("generating private key: %w", err)
+		return nil, fmt.Errorf("generating private key: %w", err)
 	}
-	pubKey := privKey.PublicKey()
-
-	state := State{
+	return &State{
 		iface:       cfg.Interface,
 		mtu:         cfg.MTU,
 		keepalive:   cfg.PersistentKeepalive,
 		client:      client,
 		nl:          nl,
 		overlayNet:  cfg.OverlayNet,
+		privKey:     privKey,
 		OverlayAddr: cfg.OverlayAddr,
 		Port:        cfg.Port,
-		PrivKey:     privKey,
-		PubKey:      pubKey,
-	}
-
-	node := &common.Node{Name: cfg.Name}
-	node.OverlayAddr = state.OverlayAddr
-	node.PubKey = state.PubKey.String()
-
-	return &state, node, nil
+		PubKey:      privKey.PublicKey(),
+	}, nil
 }
 
 // DownInterface deletes the associated network interface; a missing interface is not an error.
@@ -124,7 +114,7 @@ func (s *State) SetUpInterface(nodes []common.Node) error {
 		return fmt.Errorf("converting received node information to wireguard format: %w", err)
 	}
 	if err = s.client.ConfigureDevice(s.iface, wgtypes.Config{
-		PrivateKey:   &s.PrivKey,
+		PrivateKey:   &s.privKey,
 		ListenPort:   &s.Port,
 		ReplacePeers: true,
 		Peers:        peerCfgs,

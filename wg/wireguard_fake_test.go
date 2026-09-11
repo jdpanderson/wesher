@@ -111,7 +111,7 @@ func (f *fakeWG) ConfigureDevice(_ string, cfg wgtypes.Config) error {
 
 func newFakeState(t *testing.T, nl *fakeNL, wgc *fakeWG) *State {
 	t.Helper()
-	s, _, err := newState(testConfig(), wgc, nl)
+	s, err := newState(testConfig(), wgc, nl)
 	require.NoError(t, err)
 	return s
 }

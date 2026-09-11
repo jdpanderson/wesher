@@ -119,12 +119,11 @@ func (a *AgentCmd) Run() error {
 		return fmt.Errorf("this node's overlay slot %d does not fit in %s; is --overlay-net the same on every node?", host, a.OverlayNet)
 	}
 	slog.Debug("assigned overlay address", "addr", overlayAddr, "slot", host)
-	wgstate, localNode, err := wg.New(wg.Config{
+	wgstate, err := wg.New(wg.Config{
 		Interface:   a.Interface,
 		Port:        a.WireguardPort,
 		OverlayNet:  a.OverlayNet,
 		OverlayAddr: overlayAddr,
-		Name:        hostname,
 		MTU:         a.MTU,
 
 		PersistentKeepalive: a.PersistentKeepalive,
@@ -132,6 +131,10 @@ func (a *AgentCmd) Run() error {
 	if err != nil {
 		return fmt.Errorf("instantiating wireguard controller: %w", err)
 	}
+	// what peers learn about us: name, overlay address, wireguard key, routes
+	localNode := &common.Node{Name: hostname}
+	localNode.OverlayAddr = wgstate.OverlayAddr
+	localNode.PubKey = wgstate.PubKey.String()
 	localNode.AllowedIPs = a.AllowedIPs
 
 	cluster, err := cluster.New(cluster.Config{
