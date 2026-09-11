@@ -2,18 +2,19 @@
 
 # cheesecloth
 
-cheesecloth is an easy mesh network for tinkerers. Point it at a handful of machines, anywhere you like, and it knits
-them into one private network over [WireGuard](https://www.wireguard.com/): every node talks to every other node
-directly and encrypted, each gets a stable address and a hostname, and the whole thing survives reboots without you
-touching it. There is no controller to run and no shared secret to guard. Adding a machine is one invitation; removing
-one is one command.
+cheesecloth builds a private mesh network between a small number of machines using
+[WireGuard](https://www.wireguard.com/). It is meant for people who run a few servers or home machines and want them
+to reach each other securely without much setup. Every node connects directly to every other node over an encrypted
+tunnel. Each node gets a fixed private address and a hostname entry. Nodes find each other again after a restart
+without any intervention. There is no central server and no shared password. A new machine is added with an
+invitation token and removed with a single command.
 
 ## Quickstart
 
-You need the WireGuard kernel module on every node (bundled with Linux 5.6 and later) and two UDP ports open between
-them: 51820 for WireGuard and 7946 for cheesecloth itself.
+Every node needs the WireGuard kernel module, which is included in Linux 5.6 and later. Two UDP ports must be open
+between the nodes: 51820 for WireGuard and 7946 for cheesecloth.
 
-1. Get the binary, on every node:
+1. Download the binary on every node:
 
    ```
    $ wget -O cheesecloth https://github.com/jdpanderson/cheesecloth/releases/latest/download/cheesecloth-$(go env GOARCH)
@@ -26,7 +27,7 @@ them: 51820 for WireGuard and 7946 for cheesecloth itself.
    # ./cheesecloth --init
    ```
 
-3. Still there, invite the next node:
+3. On the same node, create an invitation for the next node:
 
    ```
    # ./cheesecloth invite
@@ -35,41 +36,46 @@ them: 51820 for WireGuard and 7946 for cheesecloth itself.
      cheesecloth --join <this host> --join-key 7xk3...
    ```
 
-4. On the new node, do as it says:
+4. On the new node, run the command from the invitation:
 
    ```
    # ./cheesecloth --join first.example.net --join-key 7xk3...
    ```
 
-That is the mesh. Repeat steps 3 and 4 from any member for each further node. Afterwards nodes restart with a bare
-`cheesecloth`, `cheesecloth status` shows the peers, and `cheesecloth revoke NAME` removes one. For running it as a
-service and everything else, see [operations](docs/operations.md).
+The two nodes are now connected. Repeat steps 3 and 4 for each additional node; the invitation can be created on
+any node that is already a member. After the first start, a node is restarted with `cheesecloth` and no arguments.
+`cheesecloth status` lists the peers. `cheesecloth revoke NAME` removes a node. Running cheesecloth as a system
+service is described in [operations](docs/operations.md).
 
 ## How it works
 
-Each node has a persistent identity, an Ed25519 key it generates on first start. Membership is a set of signed
-admission records rooted at the node that ran `--init`: to admit a node, an existing member signs a record for it, and
-every node can check the chain of signatures back to the root. There is no cluster key to leak; a stolen node yields
-one identity, which any member can revoke.
+Each node has a permanent identity, which is an Ed25519 key pair generated on its first start. Membership is a list
+of signed admission records. The node that ran `--init` is the root and signs its own record. To admit a new node, an
+existing member signs a record for it. Any node can verify a record by following the signatures back to the root.
+There is no cluster-wide key. If a node is compromised, the attacker obtains that node's identity only, and any member
+can revoke it.
 
-Admission happens over an invitation. `cheesecloth invite` mints a random token that lives only in that member's
-memory until it is used or expires. Joiner and member prove to each other that they know it, the member signs the
-admission, and both forget the token. The admission also assigns the joiner the lowest free address in the overlay
-network, so addresses are dense, stable and agreed on by every node.
+New nodes are admitted with an invitation. `cheesecloth invite` creates a random token that is kept in memory on the
+inviting node until it is used or expires. The new node and the inviting node each prove to the other that they know
+the token. The inviting node then signs the admission record and both nodes discard the token. The admission record
+also assigns the new node the lowest unused address in the overlay network, so every node computes the same address
+for every member and the address does not change across restarts.
 
-Nodes then gossip over QUIC on one UDP port, using [memberlist](https://github.com/hashicorp/memberlist) for
-membership and failure detection. Every connection is a TLS 1.3 session authenticated by the identity certificates on
-both ends, accepted only for valid members. Over it each node announces its ephemeral WireGuard key, its overlay address
-and any networks it routes, signed by its identity. Peers verify the announcement against the records and configure
-kernel WireGuard accordingly: peer keys, endpoints, allowed IPs, routes and `/etc/hosts` entries follow the membership
-automatically.
+Nodes communicate over QUIC on a single UDP port and use [memberlist](https://github.com/hashicorp/memberlist) to
+track membership and detect failed nodes. Each connection is a TLS 1.3 session in which both sides present a
+certificate for their identity, and a connection is accepted only if the peer is a current member. Over these
+connections each node announces its WireGuard public key, which is regenerated on every start, its overlay address,
+and any networks it routes. The announcement is signed with the node's identity. Peers check it against the admission
+records and then configure the WireGuard interface: peer keys, endpoints, allowed IPs, routes and `/etc/hosts`
+entries are updated whenever the membership changes.
 
 ## Further reading
 
-- [Configuration](docs/configuration.md): every option, the config file, IPv6, routing networks through a node, and
-  running several clusters on one host.
-- [Operations](docs/operations.md): permissions, systemd, status, recovery, building from source, security
-  considerations and known limitations.
-- [Membership design](docs/membership.md): identities, records, the enrolment exchange and the transport, in detail.
-- [wesher](https://github.com/costela/wesher): the project cheesecloth was forked from. It keeps wesher's shape, a
-  gossiped WireGuard mesh, but shares no protocol, state or key model with it.
+- [Configuration](docs/configuration.md): all options, the configuration file, IPv6, routing networks through a
+  node, and running several clusters on one host.
+- [Operations](docs/operations.md): permissions, systemd, the status command, recovery, building from source,
+  security considerations and known limitations.
+- [Membership design](docs/membership.md): a full description of identities, admission records, the enrolment
+  exchange and the transport.
+- [wesher](https://github.com/costela/wesher): the project cheesecloth was forked from. cheesecloth follows the same
+  approach of a WireGuard mesh configured by gossip, but its protocol, state and key model are all different.
