@@ -1,6 +1,8 @@
 package cluster
 
 import (
+	"encoding/json"
+	"fmt"
 	"net"
 	"net/netip"
 	"os"
@@ -140,4 +142,37 @@ func Test_Bootstrap_Host_withoutAdmission(t *testing.T) {
 	require.NoError(t, err)
 	_, err = b.Host()
 	assert.ErrorContains(t, err, "no admission record")
+}
+
+// A reader must never see a half-written state file.
+func Test_state_save_atomic(t *testing.T) {
+	dir := useTempStatePaths(t)
+	id := testIdentity(t)
+	root := id.Public()
+	st := &state{Seed: id.Seed(), Root: &root, Records: trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(id, "root", unixTime(nil))}}}
+	require.NoError(t, st.save("a"))
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 200; i++ {
+			st.Nodes = append(st.Nodes, overlay.Node{Name: fmt.Sprintf("n%d", i), Addr: net.ParseIP("10.0.0.2")})
+			require.NoError(t, st.save("a"))
+		}
+	}()
+	for {
+		select {
+		case <-done:
+			entries, err := os.ReadDir(dir)
+			require.NoError(t, err)
+			assert.Len(t, entries, 1, "no temp files left behind")
+			return
+		default:
+			content, err := os.ReadFile(statePath("a"))
+			require.NoError(t, err)
+			var got state
+			require.NoError(t, json.Unmarshal(content, &got), "torn read")
+			assert.Equal(t, id.Seed(), got.Seed)
+		}
+	}
 }

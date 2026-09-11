@@ -27,6 +27,9 @@ func statePath(clusterName string) string {
 	return fmt.Sprintf(statePathTemplate, clusterName)
 }
 
+// save writes the state atomically: a reader (the status command, or a
+// restart after a crash mid-write) sees the old file or the new one, never a
+// truncated one.
 func (s *state) save(clusterName string) error {
 	statePath := statePath(clusterName)
 	if err := os.MkdirAll(filepath.Dir(statePath), 0700); err != nil {
@@ -38,7 +41,23 @@ func (s *state) save(clusterName string) error {
 		return err
 	}
 
-	return os.WriteFile(statePath, stateOut, 0600)
+	tmp, err := os.CreateTemp(filepath.Dir(statePath), filepath.Base(statePath)+".*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }() // gone already once renamed
+	if _, err = tmp.Write(stateOut); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err = tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err = tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), statePath) // CreateTemp made it 0600
 }
 
 // loadState reads the persisted state for clusterName; missing or unreadable
