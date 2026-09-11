@@ -40,8 +40,11 @@ const (
 	// close after the exchange before closing on it (see enrolStream.Close).
 	enrolStreamTime = 10 * time.Second
 	enrolCloseGrace = 10 * time.Second
-	idleTimeout     = time.Minute
-	keepAlive       = 15 * time.Second
+	// keepAlive stays under the 30-second UDP conntrack timeout some routers
+	// use, so a node behind such a NAT keeps its mapping; idleTimeout is long
+	// enough that a few lost keep-alives do not cost a connection.
+	idleTimeout = 2 * time.Minute
+	keepAlive   = 25 * time.Second
 	// maxDatagram bounds memberlist's packets: QUIC guarantees room for at
 	// least ~1200 bytes of datagram payload on any path.
 	maxDatagram = 1100
