@@ -41,9 +41,9 @@ func Test_handle_badProof(t *testing.T) {
 	// prove with the wrong key: knowing the id is not knowing the token
 	ss, err := joiner.SharedSecret(c.DH)
 	require.NoError(t, err)
-	k := deriveKeys(ss, append([]byte{0}, key[1:]...), nJ, c.Nonce)
+	k := deriveKey(ss, append([]byte{0}, key[1:]...), nJ, c.Nonce)
 	tr := transcript(joiner.Public(), joiner.DHPublic(), c.Identity, c.DH, nJ, c.Nonce, "j")
-	require.NoError(t, writeFrame(conn, proof{MAC: mac(k.mac, labelJoiner, tr)}))
+	require.NoError(t, writeFrame(conn, proof{MAC: mac(k, labelJoiner, tr)}))
 	var sealed []byte
 	assert.Error(t, readFrame(conn, &sealed), "no welcome")
 	assert.Equal(t, 1, srv.Tokens.Pending(), "a failed proof does not spend the token")

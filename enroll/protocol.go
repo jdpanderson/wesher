@@ -60,19 +60,15 @@ type Welcome struct {
 	GossipAddr string          `json:"gossipAddr"` // member's ip:port for memberlist
 }
 
-// keys derived for one exchange.
-type keys struct {
-	mac []byte
-}
-
-// deriveKeys mixes the DH secret and the token so that neither alone suffices.
-func deriveKeys(ss, token, nJ, nM []byte) keys {
+// deriveKey derives the exchange's MAC key, mixing the DH secret and the token
+// so that neither alone suffices.
+func deriveKey(ss, token, nJ, nM []byte) []byte {
 	salt := append(append([]byte(nil), nJ...), nM...)
-	km, err := hkdf.Key(sha256.New, append(append([]byte(nil), ss...), token...), salt, kdfInfo, 32)
+	k, err := hkdf.Key(sha256.New, append(append([]byte(nil), ss...), token...), salt, kdfInfo, 32)
 	if err != nil {
 		panic("hkdf: " + err.Error()) // only for absurd output lengths
 	}
-	return keys{mac: km}
+	return k
 }
 
 // transcript binds both identities, both DH keys, both nonces and the name.

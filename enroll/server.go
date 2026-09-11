@@ -77,10 +77,10 @@ func (s *Server) handle(conn Conn) error {
 	if err != nil {
 		return err
 	}
-	k := deriveKeys(ss, key, h.Nonce, nM)
+	k := deriveKey(ss, key, h.Nonce, nM)
 	tr := transcript(h.Identity, h.DH, s.Identity.Public(), s.Identity.DHPublic(), h.Nonce, nM, h.Name)
 	if err = writeFrame(conn, challenge{
-		Identity: s.Identity.Public(), DH: s.Identity.DHPublic(), Nonce: nM, MAC: mac(k.mac, labelMember, tr),
+		Identity: s.Identity.Public(), DH: s.Identity.DHPublic(), Nonce: nM, MAC: mac(k, labelMember, tr),
 	}); err != nil {
 		return err
 	}
@@ -89,7 +89,7 @@ func (s *Server) handle(conn Conn) error {
 	if err = readFrame(conn, &p); err != nil {
 		return err
 	}
-	if !hmac.Equal(p.MAC, mac(k.mac, labelJoiner, tr)) {
+	if !hmac.Equal(p.MAC, mac(k, labelJoiner, tr)) {
 		return errors.New("joiner could not prove knowledge of the token")
 	}
 	if !s.Tokens.consume(id) {
@@ -138,12 +138,12 @@ func Join(conn Conn, token string, id *trust.Identity, name string) (*Welcome, t
 	if err != nil {
 		return nil, trust.PublicKey{}, err
 	}
-	k := deriveKeys(ss, key, nJ, c.Nonce)
+	k := deriveKey(ss, key, nJ, c.Nonce)
 	tr := transcript(id.Public(), id.DHPublic(), c.Identity, c.DH, nJ, c.Nonce, name)
-	if !hmac.Equal(c.MAC, mac(k.mac, labelMember, tr)) {
+	if !hmac.Equal(c.MAC, mac(k, labelMember, tr)) {
 		return nil, trust.PublicKey{}, errors.New("member could not prove knowledge of the join key")
 	}
-	if err = writeFrame(conn, proof{MAC: mac(k.mac, labelJoiner, tr)}); err != nil {
+	if err = writeFrame(conn, proof{MAC: mac(k, labelJoiner, tr)}); err != nil {
 		return nil, trust.PublicKey{}, err
 	}
 

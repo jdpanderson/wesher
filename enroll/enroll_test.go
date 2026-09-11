@@ -192,8 +192,8 @@ func Test_transcriptAndKeys(t *testing.T) {
 	assert.NotEqual(t, mac([]byte("k"), labelMember, t1), mac([]byte("k"), labelJoiner, t1), "direction labels differ")
 
 	ss, _ := a.SharedSecret(b.DHPublic())
-	k1 := deriveKeys(ss, []byte("token"), nJ, nM)
-	k2 := deriveKeys(ss, []byte("other"), nJ, nM)
-	assert.NotEqual(t, k1.mac, k2.mac, "the token is mixed into the keys")
-	assert.Len(t, k1.mac, 32)
+	k1 := deriveKey(ss, []byte("token"), nJ, nM)
+	k2 := deriveKey(ss, []byte("other"), nJ, nM)
+	assert.NotEqual(t, k1, k2, "the token is mixed into the keys")
+	assert.Len(t, k1, 32)
 }
