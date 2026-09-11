@@ -389,10 +389,10 @@ func (c *Cluster) broadcast(m recordMsg) {
 	if err != nil {
 		return
 	}
-	name := "adm:"
+	var name string
 	switch {
 	case m.Admission != nil:
-		name += m.Admission.Identity.String()
+		name = "adm:" + m.Admission.Identity.String()
 	case m.Revocation != nil:
 		name = "rev:" + m.Revocation.Identity.String()
 	}
