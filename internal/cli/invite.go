@@ -16,7 +16,7 @@ type InviteCmd struct {
 }
 
 func (c *InviteCmd) Run() error {
-	resp, err := control.Call(c.socket(), control.Request{Op: "invite", TTL: c.TTL.String(), Uses: c.Uses})
+	resp, err := control.Call(c.socket(), control.Request{Op: control.OpInvite, TTL: c.TTL.String(), Uses: c.Uses})
 	if err != nil {
 		return err
 	}

@@ -14,7 +14,7 @@ type RevokeCmd struct {
 }
 
 func (c *RevokeCmd) Run() error {
-	resp, err := control.Call(c.socket(), control.Request{Op: "revoke", Target: c.Target})
+	resp, err := control.Call(c.socket(), control.Request{Op: control.OpRevoke, Target: c.Target})
 	if err != nil {
 		return err
 	}

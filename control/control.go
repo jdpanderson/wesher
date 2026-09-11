@@ -15,9 +15,15 @@ import (
 // DefaultSocket is where the agent for iface listens.
 func DefaultSocket(iface string) string { return filepath.Join("/run/cheesecloth", iface+".sock") }
 
+// Operations a Request may ask for.
+const (
+	OpInvite = "invite"
+	OpRevoke = "revoke"
+)
+
 // Request is an operator command.
 type Request struct {
-	Op     string `json:"op"`               // "invite" or "revoke"
+	Op     string `json:"op"`               // OpInvite or OpRevoke
 	TTL    string `json:"ttl,omitempty"`    // invite: token lifetime, a Go duration
 	Uses   int    `json:"uses,omitempty"`   // invite: how many nodes may enrol with it
 	Target string `json:"target,omitempty"` // revoke: node name or identity
@@ -94,7 +100,7 @@ func (s *Server) serve() {
 
 func (s *Server) handle(req Request) Response {
 	switch req.Op {
-	case "invite":
+	case OpInvite:
 		ttl, err := time.ParseDuration(req.TTL)
 		if err != nil {
 			return Response{Error: "invalid ttl: " + err.Error()}
@@ -104,7 +110,7 @@ func (s *Server) handle(req Request) Response {
 			return Response{Error: err.Error()}
 		}
 		return Response{Token: token}
-	case "revoke":
+	case OpRevoke:
 		id, err := s.handler.Revoke(req.Target)
 		if err != nil {
 			return Response{Error: err.Error()}
