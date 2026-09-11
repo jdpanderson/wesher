@@ -1,8 +1,6 @@
 #!/usr/bin/make -f
-# Builds with the Go toolchain on PATH. Debian's own golang-go may be older
-# than the module requires; a toolchain from go.dev works with
-# `dpkg-buildpackage -d`. Modules are downloaded during the build unless a
-# vendor/ directory is present.
+# Targets Ubuntu 26.04, whose golang-go is 1.26. Modules are downloaded during
+# the build unless a vendor/ directory is present.
 
 export CGO_ENABLED = 0
 export GOCACHE = $(CURDIR)/debian/.gocache
