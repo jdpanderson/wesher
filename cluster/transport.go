@@ -34,9 +34,14 @@ const (
 	alpnGossip    = "cheesecloth-gossip/1"
 	alpnEnrol     = "cheesecloth-enrol/1"
 	identityLen   = 32
-	handshakeTime = 10 * time.Second
-	idleTimeout   = time.Minute
-	keepAlive     = 15 * time.Second
+	handshakeTime = 10 * time.Second // QUIC handshake, and the whole of an outbound dial
+	// enrolStreamTime is how long an enrolment connection may sit without
+	// opening its stream; enrolCloseGrace how long to wait for the joiner to
+	// close after the exchange before closing on it (see enrolStream.Close).
+	enrolStreamTime = 10 * time.Second
+	enrolCloseGrace = 10 * time.Second
+	idleTimeout     = time.Minute
+	keepAlive       = 15 * time.Second
 	// maxDatagram bounds memberlist's packets: QUIC guarantees room for at
 	// least ~1200 bytes of datagram payload on any path.
 	maxDatagram = 1100
@@ -326,7 +331,7 @@ func (t *quicTransport) adopt(conn *quic.Conn, accepted bool) *quic.Conn {
 func (t *quicTransport) serveEnrol(conn *quic.Conn, peer trust.PublicKey) {
 	defer t.wg.Done()
 	defer func() { <-t.enrolSem }()
-	ctx, cancel := context.WithTimeout(context.Background(), handshakeTime)
+	ctx, cancel := context.WithTimeout(context.Background(), enrolStreamTime)
 	defer cancel()
 	s, err := conn.AcceptStream(ctx)
 	if err != nil {
@@ -546,7 +551,7 @@ func (s *enrolStream) Close() error {
 	go func() {
 		select {
 		case <-s.conn.Context().Done():
-		case <-time.After(handshakeTime):
+		case <-time.After(enrolCloseGrace):
 		}
 		_ = s.conn.CloseWithError(0, "done")
 	}()
