@@ -285,6 +285,10 @@ before starting; none are committed yet.
       an intermediary cannot pass the MAC check with its own identity and
       cannot compute one without the token. Removing it shrinks the identity,
       the admission record and the exchange messages. Breaking for state files.
+- [x] README stripped to pitch, quickstart, how it works and links; the
+      option table, IPv6, routing, multiple clusters moved to
+      `docs/configuration.md`, permissions/systemd/status/security/limitations
+      to `docs/operations.md` (2026-09-11).
 - [x] systemd `sd_notify` readiness and a `Type=notify` unit file. 2026-09-09:
       `internal/sdnotify` (stdlib only) sends READY after the first snapshot
       is applied, STATUS with the peer count on every change and STOPPING on

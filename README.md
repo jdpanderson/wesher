@@ -2,268 +2,74 @@
 
 # cheesecloth
 
-`cheesecloth` creates and manages an encrypted mesh overlay network across a group of nodes, using [wireguard](https://www.wireguard.com/).
-
-Its main use-case is adding low-maintenance security to public-cloud networks or connecting different cloud providers.
-
-cheesecloth began as a fork of [costela/wesher](https://github.com/costela/wesher) and keeps its overall shape, but
-shares no wire protocol, state or key model with it: membership is decided by per-node identities and invitation
-tokens rather than a shared cluster key.
-
-**Note**: mesh membership is decided by signed admission records and invitation tokens rather than a shared key; see
-[security considerations](#security-considerations) below for what a compromised node can and cannot do.
+cheesecloth is an easy mesh network for tinkerers. Point it at a handful of machines, anywhere you like, and it knits
+them into one private network over [WireGuard](https://www.wireguard.com/): every node talks to every other node
+directly and encrypted, each gets a stable address and a hostname, and the whole thing survives reboots without you
+touching it. There is no controller to run and no shared secret to guard. Adding a machine is one invitation; removing
+one is one command.
 
 ## Quickstart
 
-0. Before starting:
-   1. make sure the [wireguard](https://www.wireguard.com/) kernel module is available on all nodes. It is bundled with linux newer than 5.6 and can otherwise be installed following the instructions [here](https://www.wireguard.com/install/).
+You need the WireGuard kernel module on every node (bundled with Linux 5.6 and later) and two UDP ports open between
+them: 51820 for WireGuard and 7946 for cheesecloth itself.
 
-   2. The following ports must be accessible between all nodes (see [configuration options](#configuration-options) to change these):
-      - 51820 UDP (wireguard)
-      - 7946 UDP (cluster gossip and enrolment of new nodes, over QUIC)
-
-1. Download the latest release for your architecture:
+1. Get the binary, on every node:
 
    ```
    $ wget -O cheesecloth https://github.com/jdpanderson/cheesecloth/releases/latest/download/cheesecloth-$(go env GOARCH)
    $ chmod a+x cheesecloth
    ```
 
-2. On the first node, start a new cluster:
+2. On the first node, start a cluster:
+
    ```
    # ./cheesecloth --init
    ```
 
-   This starts the daemon in the foreground. The node generates its identity and becomes the cluster's root.
+3. Still there, invite the next node:
 
-3. Still on that node (or any node already in the cluster), mint an invitation for the node you want to add:
    ```
-   # cheesecloth invite
+   # ./cheesecloth invite
    7xk3...
    valid for 10m0s, 1 use(s). On the new node:
      cheesecloth --join <this host> --join-key 7xk3...
    ```
 
-   The token lives only in the inviting node's memory until it is used or expires. `--uses N` lets one token enrol
-   several nodes, for example when a group of machines boots together.
+4. On the new node, do as it says:
 
-4. On the new node:
    ```
-   # cheesecloth --join x.x.x.x --join-key 7xk3...
+   # ./cheesecloth --join first.example.net --join-key 7xk3...
    ```
 
-   Where `x.x.x.x` is the hostname or IP of the node that minted the token. The two nodes prove to each other that
-   they know the token, the new node is admitted, and the token is discarded on both sides. From then on the node
-   restarts with plain `cheesecloth`; its identity and the membership records are kept in `/var/lib/cheesecloth/`.
+That is the mesh. Repeat steps 3 and 4 from any member for each further node. Afterwards nodes restart with a bare
+`cheesecloth`, `cheesecloth status` shows the peers, and `cheesecloth revoke NAME` removes one. For running it as a
+service and everything else, see [operations](docs/operations.md).
 
-   To remove a node again, on any member: `cheesecloth revoke NAME`.
+## How it works
 
-### Permissions 
+Each node has a persistent identity, an Ed25519 key it generates on first start. Membership is a set of signed
+admission records rooted at the node that ran `--init`: to admit a node, an existing member signs a record for it, and
+every node can check the chain of signatures back to the root. There is no cluster key to leak; a stolen node yields
+one identity, which any member can revoke.
 
-Note that `wireguard` - and therefore `cheesecloth` - need root access to work properly.
+Admission happens over an invitation. `cheesecloth invite` mints a random token that lives only in that member's
+memory until it is used or expires. Joiner and member prove to each other that they know it, the member signs the
+admission, and both forget the token. The admission also assigns the joiner the lowest free address in the overlay
+network, so addresses are dense, stable and agreed on by every node.
 
-It is also possible to give the `cheesecloth` binary enough capabilities to manage the `wireguard` interface via:
-```
-# setcap cap_net_admin=eip cheesecloth
-```
-This will enable running as an unprivileged user, but some functionality (like automatic adding peer entries to
-`/etc/hosts`; see [configuration options](#configuration-options) below) will not work.
+Nodes then gossip over QUIC on one UDP port, using [memberlist](https://github.com/hashicorp/memberlist) for
+membership and failure detection. Every connection is a TLS 1.3 session authenticated by the identity certificates on
+both ends, accepted only for valid members. Over it each node announces its ephemeral WireGuard key, its overlay address
+and any networks it routes, signed by its identity. Peers verify the announcement against the records and configure
+kernel WireGuard accordingly: peer keys, endpoints, allowed IPs, routes and `/etc/hosts` entries follow the membership
+automatically.
 
-### (optional) systemd integration
+## Further reading
 
-A minimal `systemd` unit file is provided under the `dist` folder and can be copied to `/etc/systemd/system`:
-```
-# wget -O /etc/systemd/system/cheesecloth.service https://raw.githubusercontent.com/jdpanderson/cheesecloth/main/dist/cheesecloth.service
-# systemctl daemon-reload
-# systemctl enable cheesecloth
-```
-The provided unit file assumes `cheesecloth` is installed to `/usr/local/sbin`. It is a `Type=notify` service:
-`cheesecloth` tells systemd it is ready once it has joined the cluster and configured the interface, so a unit with
-`After=cheesecloth.service` and `Requires=cheesecloth.service` starts with the overlay in place. `systemctl status`
-shows the current peer count.
-
-Put the node's settings in `/etc/cheesecloth/config.yaml` (see [configuration options](#configuration-options) below).
-The join key never goes in the file: enrol the node once by hand, or from a provisioning step, with
-`cheesecloth --join-key TOKEN` (the `join` hosts can come from the file), then let the unit start it on every boot.
-
-## Checking on a node
-
-`cheesecloth status` shows the wireguard interface and its peers, with the last handshake age and traffic counters, naming
-peers from the persisted cluster state. Add `--json` for machine-readable output and `--interface` if not using the
-default. It needs the same privileges as the agent.
-
-```
-# cheesecloth status
-interface: wgoverlay
-address:   10.171.249.28/32
-port:      51820
-pubkey:    41p91phfnFloks55MFP1iZfRQ11VdEpTAufFwv8j810=
-peers:     2
-
-NAME   OVERLAY         ENDPOINT         HANDSHAKE  RX       TX
-test2  10.171.252.205  10.89.0.3:51820  12s ago    1.5 KiB  3.0 KiB
-test3  10.171.251.146  10.89.0.4:51820  never      0 B      0 B
-```
-
-`cheesecloth invite` and `cheesecloth revoke NAME` manage membership through the running agent (see [Quickstart](#quickstart)).
-
-## Installing from source
-
-```
-$ git clone https://github.com/jdpanderson/cheesecloth.git
-$ cd cheesecloth
-$ make
-```
-This builds a bit-by-bit identical binary to the released ones, assuming the same go version is used to build its respective git tag.
-
-Alternatively, without a checkout (`--version` will then report `dev` rather than a tag):
-```
-$ go install github.com/jdpanderson/cheesecloth/cmd/cheesecloth@latest
-```
-
-## Features
-
-The `cheesecloth` tool builds a cluster and manages the configuration of wireguard on each node to create peer-to-peer
-connections between all nodes, thus forming a full mesh VPN.
-This approach may not scale for hundreds of nodes (benchmarks accepted 😉), but is sufficiently performant to join
-several nodes across multiple cloud providers, or simply to secure inter-node comunication in a single public-cloud.
-
-### Automatic key management
-
-Each node has a persisted identity, created on its first start. The wireguard private key is created fresh on every
-start and its public key is gossiped across the cluster, signed by the node's identity.
-
-Cluster communication runs over QUIC, authenticated per pair of nodes by certificates of their identities; there is
-no shared cluster key. New nodes are admitted with a short-lived invitation token minted on an existing member (see
-[Quickstart](#quickstart)).
-
-### Automatic IP address management
-
-The overlay IP address of each node is allocated out of a private network (`10.0.0.0/8` by default; MUST be different
-from the underlying network used for cluster communication). The node that ran `--init` takes the first address; each
-node enrolled afterwards is assigned the lowest free address by the member that admitted it, and that assignment is part
-of its signed admission record. Addresses are therefore stable across restarts, packed from the bottom of the network,
-and agreed on by every member; a node claiming an address other than its assigned one is ignored.
-
-The overlay network must be the same on every node. Changing `--overlay-net` everywhere moves the whole mesh, as each
-node keeps its position in the network.
-
-**Note**: the node's hostname is also used by the underlying cluster management (using [memberlist](https://github.com/hashicorp/memberlist))
-to identify nodes and must therefore be unique in the cluster.
-
-### Routing networks through a node
-
-A node can advertise networks behind it with `--allowed-ips` (for example a LAN, or a cloud VPC's private range).
-Every peer adds them to that node's wireguard allowed IPs and routes them over the overlay interface, so hosts on those
-networks are reachable from the whole mesh through the advertising node. The advertising node must have IP forwarding
-enabled (`sysctl net.ipv4.ip_forward=1` or the IPv6 equivalent) and the hosts behind it need a way back, typically a
-route for the overlay network via that node or masquerading on it.
-
-Advertised networks are signed with the rest of the node's metadata. They must not overlap the overlay network, and a
-network advertised by two nodes is routed via the first by name; both cases are logged and otherwise ignored. Routes
-on the overlay interface are managed by `cheesecloth`: anything added by hand is removed on the next membership change.
-
-### Automatic /etc/hosts management
-
-To ease intra-node communication, `cheesecloth` also adds entries to `/etc/hosts` for each peer in the mesh. This enables using the nodes' hostnames to ensure communication over the secured overlay network (assuming `files` is the first entry for `hosts` in `/etc/nsswitch.conf`).
-
-See [configuration](#configuration-options) below for how to disable this behavior.
-
-### Seamless restarts
-
-If a node in the cluster is restarted, it re-joins the last-known nodes using its persisted identity.
-This means a restart requires no manual intervention, even if every node restarts at once.
-
-## Configuration options
-
-Options come from command-line flags or from a YAML configuration file, `/etc/cheesecloth/config.yaml` by default or
-the file named by `--config`. Config keys are the flag names without the leading dashes, e.g. `bind-addr: "::"`.
-A flag given on the command line overrides the file. Unknown keys in the file are an error, as are `join-key` and
-`init`, which are one-time actions and stay on the command line. Environment variables are not read.
-An annotated example lives in [`dist/config.yaml`](dist/config.yaml).
-
-| Option | Config key | Description | Default |
-|---|---|---|---|
-| `--join HOST[:PORT],...` | `join` | comma separated list of hostnames or IP addresses of existing cluster members, with the cluster port unless given; if not provided, will attempt resuming any known state or otherwise wait for further members |  |
-| `--join-key TOKEN` | command line only | invitation token from `cheesecloth invite` on a member; needed only the first time this node joins, ignored afterwards |  |
-| `--init` | command line only | start a new cluster with this node as its root; any known state from previous runs will be forgotten | `false` |
-| `--control-socket PATH` | `control-socket` | unix socket used by `cheesecloth invite` and `cheesecloth revoke` | `/run/cheesecloth/<interface>.sock` |
-| `--bind-addr ADDR` | `bind-addr` | address to bind for cluster membership; `0.0.0.0` or `::` binds every interface of that family and advertises one of its addresses (public preferred). The family decides whether the cluster runs over IPv4 or IPv6, see [IPv4 and IPv6](#ipv4-and-ipv6) | `0.0.0.0` |
-| `--cluster-port PORT` | `cluster-port` | UDP port used for membership gossip and enrolment (QUIC); must be the same across cluster | `7946` |
-| `--wireguard-port PORT` | `wireguard-port` | port used for wireguard traffic (UDP); must be the same across cluster | `51820` |
-| `--overlay-net ADDR/MASK` | `overlay-net` | the network in which to allocate addresses for the overlay mesh network (CIDR format); must be the same across cluster | `10.0.0.0/8` |
-| `--allowed-ips NET/MASK,...` | `allowed-ips` | extra networks reachable through this node, see [Routing networks through a node](#routing-networks-through-a-node); must not overlap `--overlay-net` |  |
-| `--interface DEV` | `interface` | name of the wireguard interface to create and manage | `wgoverlay` |
-| `--mtu MTU` | `mtu` | MTU of the wireguard interface | `1420` |
-| `--persistent-keepalive DURATION` | `persistent-keepalive` | interval at which peers send keepalives, to keep NAT mappings open (e.g. `25s`); `0` disables | `0` |
-| `--no-etc-hosts` | `no-etc-hosts` | whether to skip writing hosts entries for each node in mesh | `false` |
-| `--log-level LEVEL` | `log-level` | set the verbosity (one of debug/info/warn/error) | `warn` |
-| `--config PATH` | command line only | configuration file to read | `/etc/cheesecloth/config.yaml` |
-
-## IPv4 and IPv6
-
-Any address option accepts either family. Two independent choices are made per cluster:
-
-- **Underlay** (cluster gossip and wireguard endpoints): the family of `--bind-addr` decides. `0.0.0.0` (the default)
-  or a specific IPv4 address makes an IPv4 cluster; `::` or a specific IPv6 address makes an IPv6 cluster. Every node
-  of a cluster must use the same family, since an IPv4-only node cannot reach an IPv6-only one. Dual-stack hosts can
-  join either kind of cluster.
-- **Overlay** (the mesh addresses): the family of `--overlay-net`, independent of the underlay. An IPv6 overlay such
-  as `fd00:10::/64` over an IPv4 underlay works, and so does the reverse.
-
-With a wildcard bind address, cheesecloth advertises one of the host's addresses of that family to the cluster, preferring
-a public one, then any global unicast address (RFC 1918 and unique local addresses included). Link-local addresses and
-addresses on the cheesecloth interface itself are never chosen. Set a specific `--bind-addr` to control it.
-
-## Running multiple clusters
-
-To make a node be a member of multiple clusters, simply start multiple cheesecloth instances.  
-Each instance **must** have different values for the following settings:
-- `--interface`
-- either `--cluster-port` or `--bind-addr`
-- `--wireguard-port`
-
-The following settings are not required to be unique, but recommended:
-- `--overlay-net` (so a host in both clusters does not see the same addresses twice)
-
-## Security considerations
-
-There is no cluster-wide secret. Each node has a persisted identity (an Ed25519 key), and membership is a set of
-signed admission records rooted at the node that ran `--init`. A new node is admitted when it and an existing member
-prove to each other that they know an invitation token; the token exists only during that exchange. Cluster gossip runs
-over QUIC, inside a TLS 1.3 session per pair of nodes authenticated by their identity keys (self-signed certificates,
-no CA), and a node installs a peer's wireguard key only if the peer's identity is a valid member and signed its metadata. The design is described in
-[`docs/membership.md`](docs/membership.md).
-
-Compromise of a node yields that node's identity, which any member can revoke with `cheesecloth revoke`. Until revoked, an
-attacker holding it can:
-- access services exposed on the overlay network
-- impersonate that node and disrupt traffic to and from it
-- attract traffic for any network outside the overlay by advertising it with `--allowed-ips`, since every member
-  trusts every other member's advertisements
-It cannot decrypt traffic between other nodes, and it cannot admit new nodes without also minting a token on a member.
-
-Node metadata received over the cluster is validated before use: peers whose metadata is not signed by a valid member,
-whose overlay address falls outside `--overlay-net` or whose wireguard key does not parse are logged and ignored.
-
-## Current known limitations
-
-### Overlay IP collisions
-
-Two nodes can be assigned the same overlay address only if two different members admit new nodes at the same moment,
-before either admission has reached the other. The signed records still decide: the earlier admission keeps the
-address and every node ignores the later one, logging the collision. The losing node keeps running without peers until
-it is enrolled again: stop it, delete `/var/lib/cheesecloth/<interface>.json`, and start it with a fresh invitation.
-
-### Split-brain
-
-Once a cluster is joined, there is currently no way to distinguish a failed node from an intentionally removed one.
-This is partially by design: growing and shrinking your cluster dynamically (e.g. via autoscaling) should be as easy
-as possible.
-
-However, this does mean longer connection loss between any two parts of the cluster (e.g. across a WAN link between
-different cloud providers) can lead to a split-brain scenario where each side thinks the other side is simply "gone".
-
-There is currently no clean solution for this problem, but one could work around it by designating edge nodes which
-periodically restart `cheesecloth` with the `--join` option pointing to the other side.
-Static seed nodes that are re-joined periodically are a candidate for future work.
+- [Configuration](docs/configuration.md): every option, the config file, IPv6, routing networks through a node, and
+  running several clusters on one host.
+- [Operations](docs/operations.md): permissions, systemd, status, recovery, building from source, security
+  considerations and known limitations.
+- [Membership design](docs/membership.md): identities, records, the enrolment exchange and the transport, in detail.
+- [wesher](https://github.com/costela/wesher): the project cheesecloth was forked from. It keeps wesher's shape, a
+  gossiped WireGuard mesh, but shares no protocol, state or key model with it.
