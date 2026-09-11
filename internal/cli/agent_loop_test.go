@@ -48,7 +48,7 @@ func verifiedNode(t *testing.T, name, addr, overlayAddr string, routes ...string
 	t.Helper()
 	key, err := wgtypes.GeneratePrivateKey()
 	require.NoError(t, err)
-	n := overlay.Node{Name: name, Addr: net.ParseIP(addr)}
+	n := overlay.Node{Name: name, Addr: netip.MustParseAddr(addr)}
 	n.OverlayAddr = netip.MustParseAddr(overlayAddr)
 	n.PubKey = key.PublicKey().String()
 	for _, r := range routes {

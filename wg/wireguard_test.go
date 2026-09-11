@@ -1,7 +1,6 @@
 package wg
 
 import (
-	"net"
 	"net/netip"
 	"testing"
 	"time"
@@ -24,10 +23,10 @@ func Test_State_nodesToPeerConfigs(t *testing.T) {
 	key1 := wgtypes.Key{1}.String()
 	key2 := wgtypes.Key{2}.String()
 
-	n1 := overlay.Node{Name: "n1", Addr: net.ParseIP("192.0.2.1")}
+	n1 := overlay.Node{Name: "n1", Addr: netip.MustParseAddr("192.0.2.1")}
 	n1.OverlayAddr = netip.MustParseAddr("10.0.0.1")
 	n1.PubKey = key1
-	n2 := overlay.Node{Name: "n2", Addr: net.ParseIP("2001:db8::2")}
+	n2 := overlay.Node{Name: "n2", Addr: netip.MustParseAddr("2001:db8::2")}
 	n2.OverlayAddr = netip.MustParseAddr("fd00::2")
 	n2.PubKey = key2
 
@@ -48,7 +47,7 @@ func Test_State_nodesToPeerConfigs(t *testing.T) {
 }
 
 func Test_State_nodesToPeerConfigs_keepalive(t *testing.T) {
-	n := overlay.Node{Name: "n", Addr: net.ParseIP("192.0.2.1")}
+	n := overlay.Node{Name: "n", Addr: netip.MustParseAddr("192.0.2.1")}
 	n.OverlayAddr = netip.MustParseAddr("10.0.0.1")
 	n.PubKey = wgtypes.Key{1}.String()
 
@@ -60,7 +59,7 @@ func Test_State_nodesToPeerConfigs_keepalive(t *testing.T) {
 }
 
 func Test_State_nodesToPeerConfigs_badKey(t *testing.T) {
-	n := overlay.Node{Name: "n", Addr: net.ParseIP("192.0.2.1")}
+	n := overlay.Node{Name: "n", Addr: netip.MustParseAddr("192.0.2.1")}
 	n.OverlayAddr = netip.MustParseAddr("10.0.0.1")
 	n.PubKey = "not a key"
 

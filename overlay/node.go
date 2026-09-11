@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/netip"
 )
 
@@ -17,7 +16,7 @@ import (
 // stays free of crypto dependencies.
 type Node struct {
 	Name string
-	Addr net.IP
+	Addr netip.Addr // where memberlist reaches the node
 	Meta []byte
 
 	OverlayAddr netip.Addr     `json:"-"`

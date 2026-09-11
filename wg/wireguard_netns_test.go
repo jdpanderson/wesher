@@ -52,7 +52,7 @@ func testPeer(t *testing.T, name, addr, overlayAddr string) overlay.Node {
 	t.Helper()
 	key, err := wgtypes.GeneratePrivateKey()
 	require.NoError(t, err)
-	n := overlay.Node{Name: name, Addr: net.ParseIP(addr)}
+	n := overlay.Node{Name: name, Addr: netip.MustParseAddr(addr)}
 	n.OverlayAddr = netip.MustParseAddr(overlayAddr)
 	n.PubKey = key.PublicKey().String()
 	return n

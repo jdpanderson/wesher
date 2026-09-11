@@ -229,11 +229,8 @@ func (s *State) nodesToPeerConfigs(nodes []overlay.Node) ([]wgtypes.PeerConfig, 
 			PublicKey:                   pubKey,
 			ReplaceAllowedIPs:           true,
 			PersistentKeepaliveInterval: keepalive,
-			Endpoint: &net.UDPAddr{
-				IP:   node.Addr,
-				Port: s.Port,
-			},
-			AllowedIPs: allowed,
+			Endpoint:                    net.UDPAddrFromAddrPort(netip.AddrPortFrom(node.Addr, uint16(s.Port))),
+			AllowedIPs:                  allowed,
 		}
 	}
 	return peerCfgs, nil

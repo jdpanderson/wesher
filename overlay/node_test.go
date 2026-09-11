@@ -2,7 +2,6 @@ package overlay
 
 import (
 	"encoding/json"
-	"net"
 	"net/netip"
 	"testing"
 
@@ -36,7 +35,7 @@ func Test_Node_Encode_Decode(t *testing.T) {
 // Only name, address and the encoded metadata are persisted; the decoded
 // fields are derived from Meta on load.
 func Test_Node_JSON(t *testing.T) {
-	node := Node{Name: "n", Addr: net.ParseIP("192.0.2.1"), Meta: []byte("m"), OverlayAddr: netip.MustParseAddr("10.0.0.1"), PubKey: "k", Identity: [32]byte{1}}
+	node := Node{Name: "n", Addr: netip.MustParseAddr("192.0.2.1"), Meta: []byte("m"), OverlayAddr: netip.MustParseAddr("10.0.0.1"), PubKey: "k", Identity: [32]byte{1}}
 	b, err := json.Marshal(node)
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"Name":"n","Addr":"192.0.2.1","Meta":"bQ=="}`, string(b))

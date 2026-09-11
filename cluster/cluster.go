@@ -339,7 +339,8 @@ func (c *Cluster) Members() <-chan []overlay.Node {
 				if n.Name == c.local.Name {
 					continue
 				}
-				node := overlay.Node{Name: n.Name, Addr: n.Addr, Meta: n.Meta}
+				addr, _ := netip.AddrFromSlice(n.Addr)
+				node := overlay.Node{Name: n.Name, Addr: addr.Unmap(), Meta: n.Meta}
 				if _, err := verifyMeta(c.set, c.overlay, &node); err != nil {
 					slog.Warn("ignoring node with unverified metadata", "name", n.Name, "addr", n.Addr, "err", err)
 					continue

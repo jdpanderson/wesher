@@ -3,7 +3,6 @@ package cluster
 import (
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -41,7 +40,7 @@ func Test_state_save_load(t *testing.T) {
 		Seed:    id.Seed(),
 		Root:    &root,
 		Records: trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(id, "root", time.Now())}},
-		Nodes:   []overlay.Node{{Name: "node", Addr: net.ParseIP("10.0.0.2")}},
+		Nodes:   []overlay.Node{{Name: "node", Addr: netip.MustParseAddr("10.0.0.2")}},
 	}
 	require.NoError(t, s.save("test"))
 	got, err := loadState("test")
@@ -132,13 +131,13 @@ func Test_KnownNodes(t *testing.T) {
 	useTempStatePaths(t)
 	assert.Empty(t, KnownNodes("test"))
 
-	good := overlay.Node{Name: "good", Addr: net.ParseIP("192.0.2.1")}
+	good := overlay.Node{Name: "good", Addr: netip.MustParseAddr("192.0.2.1")}
 	good.OverlayAddr = netip.MustParseAddr("10.0.0.1")
 	good.PubKey = "pk"
 	meta, err := good.EncodeMeta(512)
 	require.NoError(t, err)
 	good.Meta = meta
-	bad := overlay.Node{Name: "bad", Addr: net.ParseIP("192.0.2.2"), Meta: []byte("garbage")}
+	bad := overlay.Node{Name: "bad", Addr: netip.MustParseAddr("192.0.2.2"), Meta: []byte("garbage")}
 	require.NoError(t, (&state{Nodes: []overlay.Node{good, bad}}).save("test"))
 
 	got := KnownNodes("test")
@@ -183,7 +182,7 @@ func Test_state_save_atomic(t *testing.T) {
 	go func() {
 		defer close(done)
 		for i := 0; i < 200; i++ {
-			st.Nodes = append(st.Nodes, overlay.Node{Name: fmt.Sprintf("n%d", i), Addr: net.ParseIP("10.0.0.2")})
+			st.Nodes = append(st.Nodes, overlay.Node{Name: fmt.Sprintf("n%d", i), Addr: netip.MustParseAddr("10.0.0.2")})
 			require.NoError(t, st.save("a"))
 		}
 	}()
