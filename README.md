@@ -9,10 +9,9 @@ tunnel. Each node gets a fixed private address and a hostname entry. Nodes find 
 without any intervention. There is no central server and no shared password. A new machine is added with an
 invitation token and removed with a single command.
 
-Someone watching the network will see that you run cheesecloth and which machines are talking to each other. The
-public addresses, the ports, the timing of packets and the protocol names in the connection setup are all visible.
-Everything else is encrypted: node names, identities, keys, the invitation exchange, and all traffic between the
-nodes.
+Someone observing can see that you run cheesecloth and which nodes are talking to each other. The public addresses,
+the ports, the timing of packets and the protocol names in the connection setup are all visible. Everything else is
+encrypted: node names, identities, keys, the invitation exchange, and all traffic between the nodes.
 
 ## Quickstart
 
