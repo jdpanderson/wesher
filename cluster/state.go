@@ -60,30 +60,35 @@ func (s *state) save(clusterName string) error {
 	return os.Rename(tmp.Name(), statePath) // CreateTemp made it 0600
 }
 
-// loadState reads the persisted state for clusterName; missing or unreadable
-// state yields an empty state.
-func loadState(clusterName string) *state {
+// loadState reads the persisted state for clusterName. A missing file is an
+// empty state; a file that cannot be read or decoded is an error, so that a
+// damaged state is never mistaken for a node that has not started before.
+func loadState(clusterName string) (*state, error) {
 	statePath := statePath(clusterName)
 	content, err := os.ReadFile(statePath)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			slog.Warn("could not open state", "path", statePath, "err", err)
-		}
-		return &state{}
+	if os.IsNotExist(err) {
+		return &state{}, nil
 	}
-
+	if err != nil {
+		return nil, fmt.Errorf("reading state %s: %w", statePath, err)
+	}
 	s := &state{}
 	if err := json.Unmarshal(content, s); err != nil {
-		slog.Warn("could not decode state", "path", statePath, "err", err)
-		return &state{}
+		return nil, fmt.Errorf("decoding state %s: %w", statePath, err)
 	}
-	return s
+	return s, nil
 }
 
 // KnownNodes returns the peers persisted for clusterName with their metadata
-// decoded; nodes whose metadata does not decode are skipped.
+// decoded; nodes whose metadata does not decode are skipped, and an unusable
+// state file yields none.
 func KnownNodes(clusterName string) []overlay.Node {
-	nodes := loadState(clusterName).Nodes
+	st, err := loadState(clusterName)
+	if err != nil {
+		slog.Warn("could not load cluster state", "err", err)
+		return nil
+	}
+	nodes := st.Nodes
 	out := make([]overlay.Node, 0, len(nodes))
 	for _, n := range nodes {
 		if err := n.DecodeMeta(); err != nil {
@@ -96,8 +101,8 @@ func KnownNodes(clusterName string) []overlay.Node {
 
 // LocalIdentity returns the identity persisted for clusterName, if any.
 func LocalIdentity(clusterName string) (trust.PublicKey, bool) {
-	st := loadState(clusterName)
-	if len(st.Seed) == 0 {
+	st, err := loadState(clusterName)
+	if err != nil || len(st.Seed) == 0 {
 		return trust.PublicKey{}, false
 	}
 	id, err := trust.IdentityFromSeed(st.Seed)
@@ -123,7 +128,10 @@ type Bootstrap struct {
 func Load(name string, init bool) (*Bootstrap, error) {
 	st := &state{}
 	if !init {
-		st = loadState(name)
+		var err error
+		if st, err = loadState(name); err != nil {
+			return nil, err
+		}
 	}
 	if len(st.Seed) == 0 {
 		id, err := trust.NewIdentity()

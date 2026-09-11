@@ -43,7 +43,9 @@ func Test_state_save_load(t *testing.T) {
 		Nodes:   []overlay.Node{{Name: "node", Addr: net.ParseIP("10.0.0.2")}},
 	}
 	require.NoError(t, s.save("test"))
-	assert.Equal(t, s, loadState("test"))
+	got, err := loadState("test")
+	require.NoError(t, err)
+	assert.Equal(t, s, got)
 }
 
 func Test_state_save_unwritableDir(t *testing.T) {
@@ -56,9 +58,33 @@ func Test_state_save_unwritableDir(t *testing.T) {
 
 func Test_loadState_missingOrBroken(t *testing.T) {
 	dir := useTempStatePaths(t)
-	assert.Equal(t, &state{}, loadState("test"))
+	got, err := loadState("test")
+	require.NoError(t, err)
+	assert.Equal(t, &state{}, got, "no file is a fresh start")
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.json"), []byte("{not json"), 0o600))
-	assert.Equal(t, &state{}, loadState("test"), "malformed state must yield an empty state")
+	_, err = loadState("test")
+	assert.ErrorContains(t, err, "decoding state")
+}
+
+// A damaged state file must not be replaced by a new identity: that would
+// silently drop the node out of its cluster.
+func Test_Load_refusesBrokenState(t *testing.T) {
+	dir := useTempStatePaths(t)
+	path := filepath.Join(dir, "test.json")
+	require.NoError(t, os.WriteFile(path, []byte("{not json"), 0o600))
+	_, err := Load("test", false)
+	require.Error(t, err)
+	content, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "{not json", string(content), "the file is left for the operator")
+
+	assert.Empty(t, KnownNodes("test"))
+	_, ok := LocalIdentity("test")
+	assert.False(t, ok)
+
+	b, err := Load("test", true)
+	require.NoError(t, err, "--init is the explicit way to start over")
+	assert.False(t, b.Enrolled())
 }
 
 func Test_Load_createsAndKeepsIdentity(t *testing.T) {

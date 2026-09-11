@@ -131,7 +131,8 @@ func Test_Cluster_enrolJoinLeave(t *testing.T) {
 
 	// both persisted enough to restart unattended
 	for _, name := range []string{"a", "b"} {
-		st := loadState(name)
+		st, err := loadState(name)
+		require.NoError(t, err, name)
 		require.NotNil(t, st.Root, name)
 		assert.Equal(t, a.Identity(), *st.Root, name)
 		assert.Len(t, st.Records.Admissions, 2, name)
