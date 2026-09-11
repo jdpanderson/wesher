@@ -8,21 +8,27 @@ import (
 	"net/netip"
 )
 
-// nodeMeta holds metadata sent over the cluster. AllowedIPs are extra
-// networks reachable through the node. Identity is the node's membership
-// identity and Signature binds Name, OverlayAddr, PubKey and AllowedIPs to it
-// (see trust.MetaDigest); both are raw bytes so this package stays free of
-// crypto dependencies.
-type nodeMeta struct {
-	OverlayAddr netip.Addr
-	PubKey      string
-	AllowedIPs  []netip.Prefix
-	Identity    [32]byte
-	Signature   []byte
+// Node is a member as memberlist sees it, plus the metadata it gossips.
+// Meta is the encoded form, which is what is persisted; EncodeMeta produces it
+// from the remaining fields and DecodeMeta fills them from it. AllowedIPs are
+// extra networks reachable through the node. Identity is the node's
+// membership identity and Signature binds Name, OverlayAddr, PubKey and
+// AllowedIPs to it (see trust.MetaDigest); both are raw bytes so this package
+// stays free of crypto dependencies.
+type Node struct {
+	Name string
+	Addr net.IP
+	Meta []byte
+
+	OverlayAddr netip.Addr     `json:"-"`
+	PubKey      string         `json:"-"`
+	AllowedIPs  []netip.Prefix `json:"-"`
+	Identity    [32]byte       `json:"-"`
+	Signature   []byte         `json:"-"`
 }
 
-// metaJSON is the wire form of nodeMeta: JSON like the rest of the protocol,
-// with the identity as base64 rather than an array of numbers.
+// metaJSON is the wire form of the metadata: JSON like the rest of the
+// protocol, with the identity as base64 rather than an array of numbers.
 type metaJSON struct {
 	OverlayAddr netip.Addr     `json:"overlay"`
 	PubKey      string         `json:"wg"`
@@ -31,18 +37,9 @@ type metaJSON struct {
 	Signature   []byte         `json:"sig"`
 }
 
-// Node holds the memberlist node structure
-type Node struct {
-	Name string
-	Addr net.IP
-	Meta []byte
-	nodeMeta
-}
-
 // EncodeMeta encodes the node metadata to bytes, failing if they exceed limit.
 func (n *Node) EncodeMeta(limit int) ([]byte, error) {
-	m := n.nodeMeta
-	b, err := json.Marshal(metaJSON{OverlayAddr: m.OverlayAddr, PubKey: m.PubKey, AllowedIPs: m.AllowedIPs, Identity: m.Identity[:], Signature: m.Signature})
+	b, err := json.Marshal(metaJSON{OverlayAddr: n.OverlayAddr, PubKey: n.PubKey, AllowedIPs: n.AllowedIPs, Identity: n.Identity[:], Signature: n.Signature})
 	if err != nil {
 		return nil, fmt.Errorf("encoding node meta: %w", err)
 	}
@@ -61,7 +58,7 @@ func (n *Node) DecodeMeta() error {
 	if len(m.Identity) != len(n.Identity) {
 		return errors.New("decoding node meta: identity is not 32 bytes")
 	}
-	n.nodeMeta = nodeMeta{OverlayAddr: m.OverlayAddr, PubKey: m.PubKey, AllowedIPs: m.AllowedIPs, Signature: m.Signature}
+	n.OverlayAddr, n.PubKey, n.AllowedIPs, n.Signature = m.OverlayAddr, m.PubKey, m.AllowedIPs, m.Signature
 	copy(n.Identity[:], m.Identity)
 	return nil
 }

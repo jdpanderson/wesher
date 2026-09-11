@@ -132,10 +132,7 @@ func (a *AgentCmd) Run() error {
 		return fmt.Errorf("instantiating wireguard controller: %w", err)
 	}
 	// what peers learn about us: name, overlay address, wireguard key, routes
-	localNode := &overlay.Node{Name: hostname}
-	localNode.OverlayAddr = wgstate.OverlayAddr
-	localNode.PubKey = wgstate.PubKey.String()
-	localNode.AllowedIPs = a.AllowedIPs
+	localNode := &overlay.Node{Name: hostname, OverlayAddr: overlayAddr, PubKey: wgstate.PubKey.String(), AllowedIPs: a.AllowedIPs}
 
 	cluster, err := cluster.New(cluster.Config{
 		StateName: a.Interface, BindAddr: a.BindAddr, AdvertiseAddr: advertise, BindPort: a.ClusterPort,

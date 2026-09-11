@@ -1,8 +1,9 @@
 package overlay
 
 import (
+	"encoding/json"
+	"net"
 	"net/netip"
-	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -16,31 +17,36 @@ func Test_Node_Encode_Decode(t *testing.T) {
 
 	for _, ip := range []netip.Addr{ipv4, ipv6} {
 		node := Node{
-			nodeMeta: nodeMeta{
-				OverlayAddr: ip,
-				PubKey:      pubKey,
-				AllowedIPs:  []netip.Prefix{netip.MustParsePrefix("192.168.7.0/24"), netip.MustParsePrefix("2001:db8:1::/48")},
-				Identity:    [32]byte{1, 2, 3, 31: 32},
-				Signature:   []byte("sig"),
-			},
+			OverlayAddr: ip,
+			PubKey:      pubKey,
+			AllowedIPs:  []netip.Prefix{netip.MustParsePrefix("192.168.7.0/24"), netip.MustParsePrefix("2001:db8:1::/48")},
+			Identity:    [32]byte{1, 2, 3, 31: 32},
+			Signature:   []byte("sig"),
 		}
-		encoded, _ := node.EncodeMeta(1024)
-		new := Node{Meta: encoded}
-
-		err := new.DecodeMeta()
+		encoded, err := node.EncodeMeta(1024)
 		require.NoError(t, err)
+		decoded := Node{Meta: encoded}
+		require.NoError(t, decoded.DecodeMeta())
 
-		if !reflect.DeepEqual(node.nodeMeta, new.nodeMeta) {
-			t.Errorf("node encoding then decoding mismatch: %s / %s", node.nodeMeta, new.nodeMeta)
-		}
+		node.Meta = encoded
+		assert.Equal(t, node, decoded)
 	}
 }
 
+// Only name, address and the encoded metadata are persisted; the decoded
+// fields are derived from Meta on load.
+func Test_Node_JSON(t *testing.T) {
+	node := Node{Name: "n", Addr: net.ParseIP("192.0.2.1"), Meta: []byte("m"), OverlayAddr: netip.MustParseAddr("10.0.0.1"), PubKey: "k", Identity: [32]byte{1}}
+	b, err := json.Marshal(node)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"Name":"n","Addr":"192.0.2.1","Meta":"bQ=="}`, string(b))
+}
+
 func Test_Node_EncodeMeta_limit(t *testing.T) {
-	node := Node{nodeMeta: nodeMeta{
+	node := Node{
 		OverlayAddr: netip.MustParseAddr("10.0.0.1"),
 		PubKey:      "abcdefghijklmnopkqstuvwxyzABCDEF",
-	}}
+	}
 	_, err := node.EncodeMeta(1)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "could not fit node metadata")
