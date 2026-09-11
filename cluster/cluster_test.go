@@ -114,3 +114,23 @@ func Test_recordBroadcast(t *testing.T) {
 	assert.False(t, b.Invalidates(recordBroadcast{name: "adm:x"}), "the queue de-duplicates by name; records never invalidate each other")
 	b.Finished()
 }
+
+func Test_Cluster_admit_refusesTakenName(t *testing.T) {
+	useTempStatePaths(t)
+	a := rootCluster(t, "a", "127.0.0.1", freePort(t))
+	defer a.Leave()
+
+	j := testIdentity(t)
+	_, _, err := a.admit(j.Public(), j.DHPublic(), "a")
+	assert.ErrorContains(t, err, `named "a" already exists`)
+	adm, _, err := a.admit(j.Public(), j.DHPublic(), "j")
+	require.NoError(t, err)
+	assert.Equal(t, uint64(2), adm.Host)
+	// the same identity may enrol again under its name
+	again, _, err := a.admit(j.Public(), j.DHPublic(), "j")
+	require.NoError(t, err)
+	assert.Equal(t, uint64(2), again.Host, "its slot is reused")
+	k := testIdentity(t)
+	_, _, err = a.admit(k.Public(), k.DHPublic(), "j")
+	assert.ErrorContains(t, err, "already exists")
+}

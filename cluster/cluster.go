@@ -166,13 +166,23 @@ func (c *Cluster) Revoke(id trust.PublicKey) error {
 
 // admit is called by the enrolment server once a joiner has proven the token:
 // it gives the joiner the lowest free overlay slot and signs its admission.
-// Serialised under stateMu so two joiners cannot be handed the same slot.
+// Names identify nodes everywhere else, so one already held by another member
+// is refused. Serialised under stateMu so two joiners cannot be handed the
+// same slot.
 func (c *Cluster) admit(joiner trust.PublicKey, dh trust.DHKey, name string) (trust.Admission, trust.Records, error) {
 	c.stateMu.Lock()
 	defer c.stateMu.Unlock()
-	host, err := c.set.FreeHost(common.MaxHost(c.overlay))
-	if err != nil {
-		return trust.Admission{}, trust.Records{}, fmt.Errorf("%w in %s", err, c.overlay)
+	if c.set.NameTaken(name, joiner) {
+		return trust.Admission{}, trust.Records{}, fmt.Errorf("a member named %q already exists", name)
+	}
+	var host uint64
+	if cur, ok := c.set.Lookup(joiner); ok && c.set.Valid(joiner) {
+		host = cur.Host // an identity enrolling again keeps its address
+	} else {
+		var err error
+		if host, err = c.set.FreeHost(common.MaxHost(c.overlay)); err != nil {
+			return trust.Admission{}, trust.Records{}, fmt.Errorf("%w in %s", err, c.overlay)
+		}
 	}
 	a := trust.Admit(c.id, joiner, dh, name, host, time.Now())
 	if _, err := c.set.AddAdmission(a); err != nil {

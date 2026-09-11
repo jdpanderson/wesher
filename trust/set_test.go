@@ -70,3 +70,15 @@ func Test_Set_ByName_and_Members(t *testing.T) {
 	}
 	assert.Equal(t, []string{"a", "a", "b", "root"}, names, "sorted by name; the root's own record is not special")
 }
+
+func Test_Set_NameTaken(t *testing.T) {
+	root, a, b, stranger, set := cluster(t)
+	assert.True(t, set.NameTaken("a", PublicKey{}))
+	assert.False(t, set.NameTaken("a", a.Public()), "a node may keep its own name")
+	assert.False(t, set.NameTaken("nobody", PublicKey{}))
+	assert.True(t, set.NameTaken("root", stranger.Public()))
+
+	_, err := set.AddRevocation(Revoke(root, b.Public(), t0.Add(time.Hour)))
+	require.NoError(t, err)
+	assert.False(t, set.NameTaken("b", PublicKey{}), "a revoked member's name is free")
+}

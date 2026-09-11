@@ -209,6 +209,18 @@ func (s *Set) HostConflict(id PublicKey) (Admission, bool) {
 	return Admission{}, false
 }
 
+// NameTaken reports whether a valid member other than except has the name.
+func (s *Set) NameTaken(name string, except PublicKey) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for id, a := range s.admissions {
+		if a.Name == name && id != except && s.valid(id, map[PublicKey]bool{}) {
+			return true
+		}
+	}
+	return false
+}
+
 // Members lists the valid members' admissions, sorted by name.
 func (s *Set) Members() []Admission {
 	s.mu.RLock()
