@@ -73,14 +73,22 @@ type quicTransport struct {
 	life     sync.RWMutex // held for writing while Shutdown closes the QUIC transport
 
 	mu      sync.Mutex
-	conns   map[string]peerConn // by the peer's gossip address
-	dialing map[string]bool
+	conns   map[string]peerConn  // by the peer's gossip address
+	dialing map[string]*dialCall // dials in flight, one per address
 }
 
 // peerConn is a live connection and the identity that dialled it.
 type peerConn struct {
 	conn   *quic.Conn
 	client trust.PublicKey
+}
+
+// dialCall is a dial in flight; later callers for the same address wait for it
+// rather than opening a second connection of their own.
+type dialCall struct {
+	done chan struct{}
+	conn *quic.Conn
+	err  error
 }
 
 var _ memberlist.NodeAwareTransport = (*quicTransport)(nil)
@@ -152,7 +160,7 @@ func newQUICTransport(bind netip.Addr, port int, id *trust.Identity, set *trust.
 		enrolSem: make(chan struct{}, maxEnrolments),
 		done:     make(chan struct{}),
 		conns:    map[string]peerConn{},
-		dialing:  map[string]bool{},
+		dialing:  map[string]*dialCall{},
 	}
 	t.ln, err = t.qt.Listen(t.server, t.qconf)
 	if err != nil {
@@ -353,10 +361,44 @@ func (t *quicTransport) forget(addr string, conn *quic.Conn) {
 	t.mu.Unlock()
 }
 
+// lookup returns the live connection to addr, if any.
 func (t *quicTransport) lookup(addr string) *quic.Conn {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.conns[addr].conn
+	if c := t.conns[addr].conn; c != nil && c.Context().Err() == nil {
+		return c
+	}
+	return nil
+}
+
+// connect returns the connection to addr, dialling if there is none. Dials
+// to one address are serialised: with at most one of our own connections to a
+// peer in flight, the tie-break in adopt cannot see two of them and both
+// sides settle on the same connection.
+func (t *quicTransport) connect(ctx context.Context, addr string) (*quic.Conn, error) {
+	if c := t.lookup(addr); c != nil {
+		return c, nil
+	}
+	t.mu.Lock()
+	if call, ok := t.dialing[addr]; ok {
+		t.mu.Unlock()
+		select {
+		case <-call.done:
+			return call.conn, call.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	call := &dialCall{done: make(chan struct{})}
+	t.dialing[addr] = call
+	t.mu.Unlock()
+
+	call.conn, call.err = t.dial(ctx, addr)
+	t.mu.Lock()
+	delete(t.dialing, addr)
+	t.mu.Unlock()
+	close(call.done)
+	return call.conn, call.err
 }
 
 // dial connects to a peer's gossip address and adopts the connection.
@@ -382,23 +424,17 @@ func (t *quicTransport) dial(ctx context.Context, addr string) (*quic.Conn, erro
 // dialAsync starts a connection attempt to addr unless one is under way.
 func (t *quicTransport) dialAsync(addr string) {
 	t.mu.Lock()
-	if t.dialing[addr] {
-		t.mu.Unlock()
+	_, busy := t.dialing[addr]
+	t.mu.Unlock()
+	if busy {
 		return
 	}
-	t.dialing[addr] = true
-	t.mu.Unlock()
 	t.wg.Add(1)
 	go func() {
 		defer t.wg.Done()
-		defer func() {
-			t.mu.Lock()
-			delete(t.dialing, addr)
-			t.mu.Unlock()
-		}()
 		ctx, cancel := context.WithTimeout(context.Background(), handshakeTime)
 		defer cancel()
-		if _, err := t.dial(ctx, addr); err != nil {
+		if _, err := t.connect(ctx, addr); err != nil {
 			slog.Debug("could not connect for gossip", "addr", addr, "err", err)
 		}
 	}()
@@ -483,7 +519,7 @@ func (t *quicTransport) DialAddressTimeout(a memberlist.Address, timeout time.Du
 		}
 		t.forget(a.Addr, conn)
 	}
-	conn, err := t.dial(ctx, a.Addr)
+	conn, err := t.connect(ctx, a.Addr)
 	if err != nil {
 		return nil, err
 	}
