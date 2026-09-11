@@ -1,4 +1,4 @@
-package enroll
+package enrol
 
 import (
 	"net"
@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Failure paths of the exchange; the successful and token-related paths are in enroll_test.go.
+// Failure paths of the exchange; the successful and token-related paths are in enrol_test.go.
 
 func Test_handle_malformedHello(t *testing.T) {
 	srv, _ := member(t)

@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/memberlist"
-	"github.com/jdpanderson/cheesecloth/enroll"
+	"github.com/jdpanderson/cheesecloth/enrol"
 	"github.com/jdpanderson/cheesecloth/overlay"
 	"github.com/jdpanderson/cheesecloth/trust"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
@@ -41,9 +41,9 @@ type Cluster struct {
 	id        *trust.Identity
 	set       *trust.Set
 	overlay   netip.Prefix
-	tokens    *enroll.TokenStore
+	tokens    *enrol.TokenStore
 	queue     *memberlist.TransmitLimitedQueue
-	enrolSrv  *enroll.Server
+	enrolSrv  *enrol.Server
 	boot      *Bootstrap
 	stateMu   sync.Mutex // guards boot and its saving
 	events    chan memberlist.NodeEvent
@@ -86,7 +86,7 @@ func New(cfg Config) (*Cluster, error) {
 		id:      id,
 		set:     set,
 		overlay: cfg.OverlayNet,
-		tokens:  enroll.NewTokenStore(),
+		tokens:  enrol.NewTokenStore(),
 		events:  make(chan memberlist.NodeEvent, 16),
 		changed: make(chan struct{}, 1),
 		done:    make(chan struct{}),
@@ -100,7 +100,7 @@ func New(cfg Config) (*Cluster, error) {
 	}}
 
 	// enrolment shares the gossip listener under its own ALPN
-	c.enrolSrv = &enroll.Server{
+	c.enrolSrv = &enrol.Server{
 		Identity: id, Tokens: c.tokens, Root: cfg.Boot.Root, Admit: c.admit,
 		GossipAddr: net.JoinHostPort(cfg.AdvertiseAddr.String(), strconv.Itoa(cfg.BindPort)),
 	}

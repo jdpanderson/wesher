@@ -16,7 +16,7 @@ import (
 	"github.com/cenkalti/backoff/v6"
 	"github.com/jdpanderson/cheesecloth/cluster"
 	"github.com/jdpanderson/cheesecloth/control"
-	"github.com/jdpanderson/cheesecloth/enroll"
+	"github.com/jdpanderson/cheesecloth/enrol"
 	"github.com/jdpanderson/cheesecloth/etchosts"
 	"github.com/jdpanderson/cheesecloth/overlay"
 	"github.com/jdpanderson/cheesecloth/trust"
@@ -186,7 +186,7 @@ func (a *AgentCmd) bootstrap(ctx context.Context, boot *cluster.Bootstrap, hostn
 }
 
 // enrol tries each --join member in turn with the join key.
-func (a *AgentCmd) enrol(ctx context.Context, id *trust.Identity, name string) (*enroll.Welcome, error) {
+func (a *AgentCmd) enrol(ctx context.Context, id *trust.Identity, name string) (*enrol.Welcome, error) {
 	var lastErr error
 	for _, addr := range a.enrolAddrs() {
 		w, err := cluster.Enrol(ctx, addr, a.JoinKey, id, name)

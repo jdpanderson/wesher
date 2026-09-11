@@ -1,7 +1,7 @@
-// Package enroll implements node enrolment: a member mints a short-lived token,
+// Package enrol implements node enrolment: a member mints a short-lived token,
 // the joiner proves knowledge of it in a mutual exchange bound to both
 // identities, and receives the membership records. See docs/membership.md.
-package enroll
+package enrol
 
 import (
 	"crypto/rand"

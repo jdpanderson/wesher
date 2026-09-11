@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jdpanderson/cheesecloth/enroll"
+	"github.com/jdpanderson/cheesecloth/enrol"
 	"github.com/jdpanderson/cheesecloth/trust"
 	"github.com/quic-go/quic-go"
 	"github.com/stretchr/testify/assert"
@@ -273,7 +273,7 @@ func Test_quicTransport_enrolmentCap(t *testing.T) {
 	set.Merge(trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(rootID, "a", time.Now())}})
 	started := make(chan net.Conn, maxEnrolments+2)
 	release := make(chan struct{})
-	tr, err := newQUICTransport(netip.MustParseAddr("127.0.0.1"), 0, rootID, set, func(c enroll.Conn) {
+	tr, err := newQUICTransport(netip.MustParseAddr("127.0.0.1"), 0, rootID, set, func(c enrol.Conn) {
 		started <- c
 		<-release
 		_ = c.Close()

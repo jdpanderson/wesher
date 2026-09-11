@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/memberlist"
-	"github.com/jdpanderson/cheesecloth/enroll"
+	"github.com/jdpanderson/cheesecloth/enrol"
 	"github.com/jdpanderson/cheesecloth/trust"
 	"github.com/quic-go/quic-go"
 )
@@ -65,8 +65,8 @@ type quicTransport struct {
 	qconf    *quic.Config
 	packets  chan *memberlist.Packet
 	streams  chan net.Conn
-	enrol    func(enroll.Conn) // runs one enrolment on a stream; nil refuses enrolment
-	enrolSem chan struct{}     // one slot per enrolment in flight
+	enrol    func(enrol.Conn) // runs one enrolment on a stream; nil refuses enrolment
+	enrolSem chan struct{}    // one slot per enrolment in flight
 	done     chan struct{}
 	wg       sync.WaitGroup
 	once     sync.Once
@@ -94,8 +94,8 @@ type dialCall struct {
 var _ memberlist.NodeAwareTransport = (*quicTransport)(nil)
 
 // newQUICTransport binds bind:port for QUIC and starts accepting member
-// connections; enrolment streams go to enrol.
-func newQUICTransport(bind netip.Addr, port int, id *trust.Identity, set *trust.Set, enrol func(enroll.Conn)) (*quicTransport, error) {
+// connections; enrolment streams go to handler.
+func newQUICTransport(bind netip.Addr, port int, id *trust.Identity, set *trust.Set, handler func(enrol.Conn)) (*quicTransport, error) {
 	cert, err := identityCertificate(id)
 	if err != nil {
 		return nil, err
@@ -156,7 +156,7 @@ func newQUICTransport(bind netip.Addr, port int, id *trust.Identity, set *trust.
 		},
 		packets:  make(chan *memberlist.Packet),
 		streams:  make(chan net.Conn),
-		enrol:    enrol,
+		enrol:    handler,
 		enrolSem: make(chan struct{}, maxEnrolments),
 		done:     make(chan struct{}),
 		conns:    map[string]peerConn{},
@@ -600,7 +600,7 @@ func newStreamConn(conn *quic.Conn, s *quic.Stream, peer trust.PublicKey) *strea
 func (s *streamConn) LocalAddr() net.Addr  { return s.local }
 func (s *streamConn) RemoteAddr() net.Addr { return s.remote }
 
-// PeerIdentity makes a streamConn an enroll.Conn.
+// PeerIdentity makes a streamConn an enrol.Conn.
 func (s *streamConn) PeerIdentity() trust.PublicKey { return s.peer }
 
 // Close ends both directions: the send side cleanly, the receive side by
