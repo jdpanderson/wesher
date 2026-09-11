@@ -244,12 +244,10 @@ func (t *quicTransport) accept() {
 	}
 }
 
-// adopt starts serving a connection: its datagrams become packets and its
-// streams are handed to memberlist. It returns the connection to use for the
-// peer, which is an existing one when both sides dialled each other at once:
-// the connection dialled by the smaller identity wins, so both sides keep the
-// same one and close the other. An enrolment connection instead yields one
-// stream for the enrolment handler and returns nil.
+// adopt takes in a connection: an enrolment connection goes to the enrolment
+// handler and yields nil; a gossip connection is registered for its peer and
+// served, and the connection to use for that peer is returned, which is an
+// existing one when both sides dialled each other at once (see register).
 func (t *quicTransport) adopt(conn *quic.Conn, accepted bool) *quic.Conn {
 	peer, err := connIdentity(conn)
 	if err != nil {
@@ -257,44 +255,78 @@ func (t *quicTransport) adopt(conn *quic.Conn, accepted bool) *quic.Conn {
 		return nil
 	}
 	if conn.ConnectionState().TLS.NegotiatedProtocol == alpnEnrol {
-		if t.enrol == nil {
-			_ = conn.CloseWithError(1, "enrolment not offered")
-			return nil
-		}
-		select {
-		case t.enrolSem <- struct{}{}:
-		default:
-			slog.Warn("too many enrolments in flight, refusing one", "from", conn.RemoteAddr())
-			_ = conn.CloseWithError(1, "busy")
-			return nil
-		}
-		t.wg.Add(1)
-		go t.serveEnrol(conn, peer)
+		t.adoptEnrol(conn, peer)
 		return nil
 	}
-	me := t.id.Public()
-	client := me
+	client := t.id.Public()
 	if accepted {
 		client = peer
 	}
-	preferred := me
-	if peer.String() < me.String() {
-		preferred = peer
+	kept := t.register(conn, peer, client)
+	if kept != conn {
+		return kept
 	}
+	t.serve(conn, peer)
+	return conn
+}
+
+// adoptEnrol hands an enrolment connection to the handler if a slot is free.
+func (t *quicTransport) adoptEnrol(conn *quic.Conn, peer trust.PublicKey) {
+	if t.enrol == nil {
+		_ = conn.CloseWithError(1, "enrolment not offered")
+		return
+	}
+	select {
+	case t.enrolSem <- struct{}{}:
+	default:
+		slog.Warn("too many enrolments in flight, refusing one", "from", conn.RemoteAddr())
+		_ = conn.CloseWithError(1, "busy")
+		return
+	}
+	t.wg.Add(1)
+	go t.serveEnrol(conn, peer)
+}
+
+// register records conn, dialled by client, as the connection to its peer and
+// returns the connection to use for that peer. When both sides dialled each
+// other at once the connection dialled by the smaller identity wins, so both
+// sides keep the same one and close the other.
+func (t *quicTransport) register(conn *quic.Conn, peer, client trust.PublicKey) *quic.Conn {
 	addr := conn.RemoteAddr().String()
 	t.mu.Lock()
+	defer t.mu.Unlock()
 	if cur, ok := t.conns[addr]; ok && cur.conn.Context().Err() == nil {
-		if cur.client == preferred && client != preferred {
-			t.mu.Unlock()
+		if !keepNew(cur.client, client, preferredDialer(t.id.Public(), peer)) {
 			_ = conn.CloseWithError(0, "duplicate connection")
 			return cur.conn
 		}
 		_ = cur.conn.CloseWithError(0, "superseded")
 	}
 	t.conns[addr] = peerConn{conn: conn, client: client}
-	t.mu.Unlock()
-	slog.Debug("gossip connection", "peer", peer.Short(), "addr", addr, "accepted", accepted)
+	slog.Debug("gossip connection", "peer", peer.Short(), "addr", addr, "dialled by", client.Short())
+	return conn
+}
 
+// preferredDialer is the side whose connection both keep when a and b dial
+// each other at once: the smaller identity, so both sides pick the same one.
+func preferredDialer(a, b trust.PublicKey) trust.PublicKey {
+	if b.String() < a.String() {
+		return b
+	}
+	return a
+}
+
+// keepNew decides between a live connection dialled by cur and a new one
+// dialled by client: the new one is turned away only when the current one was
+// dialled by the preferred side and it was not.
+func keepNew(cur, client, preferred trust.PublicKey) bool {
+	return cur != preferred || client == preferred
+}
+
+// serve pumps a gossip connection: its datagrams become packets and its
+// streams are handed to memberlist, for as long as the peer stays a member.
+func (t *quicTransport) serve(conn *quic.Conn, peer trust.PublicKey) {
+	addr := conn.RemoteAddr().String()
 	t.wg.Add(2)
 	go func() {
 		defer t.wg.Done()
@@ -334,7 +366,6 @@ func (t *quicTransport) adopt(conn *quic.Conn, accepted bool) *quic.Conn {
 			}
 		}
 	}()
-	return conn
 }
 
 // serveEnrol runs the enrolment handler on the first stream of an enrolment

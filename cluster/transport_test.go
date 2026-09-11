@@ -259,6 +259,21 @@ func Test_quicTransport_oneConnectionPerPair(t *testing.T) {
 	expectPacket(t, a, "pong")
 }
 
+// Both sides must settle on the same connection whatever order the dials land in.
+func Test_keepNew(t *testing.T) {
+	a, b := testIdentity(t).Public(), testIdentity(t).Public()
+	if b.String() < a.String() {
+		a, b = b, a
+	}
+	assert.Equal(t, a, preferredDialer(a, b))
+	assert.Equal(t, a, preferredDialer(b, a), "the same on both sides")
+
+	assert.False(t, keepNew(a, b, a), "the preferred side's connection is not replaced by the other's")
+	assert.True(t, keepNew(b, a, a), "the preferred side's connection replaces the other's")
+	assert.True(t, keepNew(a, a, a), "a reconnect from the same side replaces the old connection")
+	assert.True(t, keepNew(b, b, a))
+}
+
 func Test_quicTransport_enrolmentCap(t *testing.T) {
 	rootID := testIdentity(t)
 	set := trust.NewSet(rootID.Public())
