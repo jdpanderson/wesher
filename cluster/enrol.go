@@ -44,7 +44,7 @@ func Enrol(ctx context.Context, addr, token string, id *trust.Identity, name str
 	if err != nil {
 		return nil, trust.PublicKey{}, err
 	}
-	stream := &streamConn{Stream: s, local: conn.LocalAddr(), remote: conn.RemoteAddr(), peer: peerOf(conn)}
+	stream := newStreamConn(conn, s, peerOf(conn))
 	defer func() { _ = stream.Close() }()
 	return enroll.Join(stream, token, id, name)
 }

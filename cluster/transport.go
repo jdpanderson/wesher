@@ -327,7 +327,7 @@ func (t *quicTransport) adopt(conn *quic.Conn, accepted bool) *quic.Conn {
 				return
 			}
 			select {
-			case t.streams <- &streamConn{Stream: s, local: conn.LocalAddr(), remote: conn.RemoteAddr(), peer: peer}:
+			case t.streams <- newStreamConn(conn, s, peer):
 			case <-t.done:
 				_ = conn.CloseWithError(0, "shutdown")
 				return
@@ -349,7 +349,7 @@ func (t *quicTransport) serveEnrol(conn *quic.Conn, peer trust.PublicKey) {
 		_ = conn.CloseWithError(1, "no enrolment stream")
 		return
 	}
-	t.enrol(&enrolStream{streamConn: streamConn{Stream: s, local: conn.LocalAddr(), remote: conn.RemoteAddr(), peer: peer}, conn: conn, wg: &t.wg})
+	t.enrol(&enrolStream{streamConn: *newStreamConn(conn, s, peer), conn: conn, wg: &t.wg})
 }
 
 // forget drops conn from the table if it is still the one recorded for addr.
@@ -513,7 +513,7 @@ func (t *quicTransport) DialAddressTimeout(a memberlist.Address, timeout time.Du
 	conn := t.lookup(a.Addr)
 	if conn != nil {
 		if s, err := conn.OpenStreamSync(ctx); err == nil {
-			return &streamConn{Stream: s, local: conn.LocalAddr(), remote: conn.RemoteAddr(), peer: peerOf(conn)}, nil
+			return newStreamConn(conn, s, peerOf(conn)), nil
 		}
 		t.forget(a.Addr, conn)
 	}
@@ -525,7 +525,7 @@ func (t *quicTransport) DialAddressTimeout(a memberlist.Address, timeout time.Du
 	if err != nil {
 		return nil, fmt.Errorf("gossip to %s: %w", a.Addr, err)
 	}
-	return &streamConn{Stream: s, local: conn.LocalAddr(), remote: conn.RemoteAddr(), peer: peerOf(conn)}, nil
+	return newStreamConn(conn, s, peerOf(conn)), nil
 }
 
 // peerOf is the identity behind an established connection; zero if unknown.
@@ -559,6 +559,11 @@ type streamConn struct {
 	*quic.Stream
 	local, remote net.Addr
 	peer          trust.PublicKey
+}
+
+// newStreamConn wraps stream s of conn, whose peer is the given identity.
+func newStreamConn(conn *quic.Conn, s *quic.Stream, peer trust.PublicKey) *streamConn {
+	return &streamConn{Stream: s, local: conn.LocalAddr(), remote: conn.RemoteAddr(), peer: peer}
 }
 
 func (s *streamConn) LocalAddr() net.Addr  { return s.local }
