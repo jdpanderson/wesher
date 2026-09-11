@@ -26,6 +26,17 @@ func joinTCP(t *testing.T, addr, token string, id *trust.Identity, name string) 
 	return Join(conn, token, id, name)
 }
 
+// serve feeds every connection ln accepts to srv, the way the transport does.
+func serve(ln net.Listener, srv *Server) {
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		go srv.Handle(conn)
+	}
+}
+
 // member starts an enrolment server for a one-node cluster rooted at its identity.
 func member(t *testing.T) (*Server, *trust.Set, string) {
 	t.Helper()
@@ -45,7 +56,7 @@ func member(t *testing.T) (*Server, *trust.Set, string) {
 	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	go srv.Serve(ln)
+	go serve(ln, srv)
 	t.Cleanup(func() { _ = ln.Close() })
 	return srv, set, ln.Addr().String()
 }
@@ -132,7 +143,7 @@ func Test_Join_memberMustProveToken(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer func() { _ = ln.Close() }()
-	go impostor.Serve(ln)
+	go serve(ln, impostor)
 
 	_, _, err = joinTCP(t, ln.Addr().String(), real, newID(t), "victim")
 	require.Error(t, err)
@@ -151,7 +162,7 @@ func Test_Join_welcomeMustBeConsistent(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer func() { _ = ln.Close() }()
-	go srv.Serve(ln)
+	go serve(ln, srv)
 	token, err := srv.Tokens.Mint(time.Minute, 1)
 	require.NoError(t, err)
 

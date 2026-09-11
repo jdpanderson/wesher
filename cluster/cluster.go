@@ -98,8 +98,13 @@ func New(cfg Config) (*Cluster, error) {
 		return 1
 	}}
 
+	// enrolment shares the gossip listener under its own ALPN
+	c.enrolSrv = &enroll.Server{
+		Identity: id, Tokens: c.tokens, Root: cfg.Boot.Root, Admit: c.admit,
+		GossipAddr: net.JoinHostPort(cfg.AdvertiseAddr.String(), strconv.Itoa(cfg.BindPort)),
+	}
 	logger := slog.NewLogLogger(slog.Default().Handler(), slog.LevelDebug)
-	transport, err := newQUICTransport(cfg.BindAddr, cfg.BindPort, id, set)
+	transport, err := newQUICTransport(cfg.BindAddr, cfg.BindPort, id, set, c.enrolSrv.Handle)
 	if err != nil {
 		return nil, err
 	}
@@ -124,14 +129,8 @@ func New(cfg Config) (*Cluster, error) {
 	}
 	c.ml.Store(ml)
 
-	// enrolment shares the gossip listener under its own ALPN
-	c.enrolSrv = &enroll.Server{
-		Identity: id, Tokens: c.tokens, Root: cfg.Boot.Root, Admit: c.admit,
-		GossipAddr: net.JoinHostPort(cfg.AdvertiseAddr.String(), strconv.Itoa(cfg.BindPort)),
-	}
-	c.routines.Add(2)
+	c.routines.Add(1)
 	go c.forwardEvents()
-	go func() { defer c.routines.Done(); c.enrolSrv.Serve(transport.enrolListener()) }()
 
 	c.stateMu.Lock()
 	c.saveState()

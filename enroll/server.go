@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"net"
-	"sync"
 
 	"github.com/jdpanderson/cheesecloth/trust"
 )
@@ -20,8 +19,6 @@ type Server struct {
 	Admit func(joiner trust.PublicKey, dh trust.DHKey, name string) (trust.Admission, trust.Records, error)
 	// GossipAddr is this node's memberlist ip:port, handed to the joiner.
 	GossipAddr string
-
-	wg sync.WaitGroup
 }
 
 // Authenticated is a connection whose peer identity the transport has verified
@@ -39,22 +36,11 @@ func bound(conn net.Conn, claimed trust.PublicKey) error {
 	return nil
 }
 
-// Serve accepts enrolment connections until ln is closed.
-func (s *Server) Serve(ln net.Listener) {
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			s.wg.Wait()
-			return
-		}
-		s.wg.Add(1)
-		go func() {
-			defer s.wg.Done()
-			defer func() { _ = conn.Close() }()
-			if err := s.handle(conn); err != nil && !errors.Is(err, errSilent) {
-				slog.Warn("enrolment failed", "from", conn.RemoteAddr(), "err", err)
-			}
-		}()
+// Handle runs the member's side of one enrolment on conn and closes it.
+func (s *Server) Handle(conn net.Conn) {
+	defer func() { _ = conn.Close() }()
+	if err := s.handle(conn); err != nil && !errors.Is(err, errSilent) {
+		slog.Warn("enrolment failed", "from", conn.RemoteAddr(), "err", err)
 	}
 }
 

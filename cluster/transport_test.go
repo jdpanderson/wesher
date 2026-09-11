@@ -21,7 +21,7 @@ type testNode struct {
 
 func newTestNode(t *testing.T, id *trust.Identity, set *trust.Set) *testNode {
 	t.Helper()
-	tr, err := newQUICTransport(netip.MustParseAddr("127.0.0.1"), 0, id, set)
+	tr, err := newQUICTransport(netip.MustParseAddr("127.0.0.1"), 0, id, set, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = tr.Shutdown() })
 	return &testNode{id: id, tr: tr, addr: tr.udp.LocalAddr().String()}
@@ -147,7 +147,7 @@ func Test_quicTransport_advertiseAddr(t *testing.T) {
 	_, _, err = a.tr.FinalAdvertiseAddr("nonsense", 0)
 	assert.Error(t, err)
 
-	wild, err := newQUICTransport(netip.IPv4Unspecified(), 0, a.id, a.tr.set)
+	wild, err := newQUICTransport(netip.IPv4Unspecified(), 0, a.id, a.tr.set, nil)
 	require.NoError(t, err)
 	defer func() { _ = wild.Shutdown() }()
 	_, _, err = wild.FinalAdvertiseAddr("", 0)

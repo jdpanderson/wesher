@@ -53,7 +53,7 @@ type quicTransport struct {
 	qconf   *quic.Config
 	packets chan *memberlist.Packet
 	streams chan net.Conn
-	enrol   chan net.Conn
+	enrol   func(net.Conn) // runs one enrolment on a stream; nil refuses enrolment
 	done    chan struct{}
 	wg      sync.WaitGroup
 	once    sync.Once
@@ -67,8 +67,9 @@ type quicTransport struct {
 
 var _ memberlist.NodeAwareTransport = (*quicTransport)(nil)
 
-// newQUICTransport binds bind:port for QUIC and starts accepting member connections.
-func newQUICTransport(bind netip.Addr, port int, id *trust.Identity, set *trust.Set) (*quicTransport, error) {
+// newQUICTransport binds bind:port for QUIC and starts accepting member
+// connections; enrolment streams go to enrol.
+func newQUICTransport(bind netip.Addr, port int, id *trust.Identity, set *trust.Set, enrol func(net.Conn)) (*quicTransport, error) {
 	cert, err := identityCertificate(id)
 	if err != nil {
 		return nil, err
@@ -129,7 +130,7 @@ func newQUICTransport(bind netip.Addr, port int, id *trust.Identity, set *trust.
 		},
 		packets: make(chan *memberlist.Packet),
 		streams: make(chan net.Conn),
-		enrol:   make(chan net.Conn),
+		enrol:   enrol,
 		done:    make(chan struct{}),
 		conns:   map[string]*quic.Conn{},
 		dialing: map[string]bool{},
@@ -227,6 +228,10 @@ func (t *quicTransport) adopt(conn *quic.Conn) {
 		return
 	}
 	if conn.ConnectionState().TLS.NegotiatedProtocol == alpnEnrol {
+		if t.enrol == nil {
+			_ = conn.CloseWithError(1, "enrolment not offered")
+			return
+		}
 		t.wg.Add(1)
 		go t.serveEnrol(conn, peer)
 		return
@@ -278,8 +283,8 @@ func (t *quicTransport) adopt(conn *quic.Conn) {
 	}()
 }
 
-// serveEnrol hands the first stream of an enrolment connection to the
-// enrolment server; closing that stream closes the connection.
+// serveEnrol runs the enrolment handler on the first stream of an enrolment
+// connection; closing that stream closes the connection.
 func (t *quicTransport) serveEnrol(conn *quic.Conn, peer trust.PublicKey) {
 	defer t.wg.Done()
 	ctx, cancel := context.WithTimeout(context.Background(), handshakeTime)
@@ -289,29 +294,8 @@ func (t *quicTransport) serveEnrol(conn *quic.Conn, peer trust.PublicKey) {
 		_ = conn.CloseWithError(1, "no enrolment stream")
 		return
 	}
-	select {
-	case t.enrol <- &enrolStream{streamConn: streamConn{Stream: s, local: conn.LocalAddr(), remote: conn.RemoteAddr(), peer: peer}, conn: conn}:
-	case <-t.done:
-		_ = conn.CloseWithError(0, "shutdown")
-	}
+	t.enrol(&enrolStream{streamConn: streamConn{Stream: s, local: conn.LocalAddr(), remote: conn.RemoteAddr(), peer: peer}, conn: conn})
 }
-
-// enrolListener presents enrolment streams as a net.Listener for enroll.Server.
-func (t *quicTransport) enrolListener() net.Listener { return enrolListener{t} }
-
-type enrolListener struct{ t *quicTransport }
-
-func (l enrolListener) Accept() (net.Conn, error) {
-	select {
-	case c := <-l.t.enrol:
-		return c, nil
-	case <-l.t.done:
-		return nil, net.ErrClosed
-	}
-}
-
-func (l enrolListener) Close() error   { return nil } // closes with the transport
-func (l enrolListener) Addr() net.Addr { return l.t.udp.LocalAddr() }
 
 // forget drops conn from the table if it is still the one recorded for addr.
 func (t *quicTransport) forget(addr string, conn *quic.Conn) {

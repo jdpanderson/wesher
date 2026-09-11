@@ -148,7 +148,7 @@ func Test_Join_rejectsForeignAdmission(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer func() { _ = ln.Close() }()
-	go srv.Serve(ln)
+	go serve(ln, srv)
 	tok, err := srv.Tokens.Mint(time.Minute, 1)
 	require.NoError(t, err)
 	_, _, err = joinTCP(t, ln.Addr().String(), tok, newID(t), "j")
