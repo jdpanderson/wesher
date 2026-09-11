@@ -3,6 +3,7 @@ package enroll
 import (
 	"crypto/hmac"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 
@@ -125,7 +126,7 @@ func Join(conn Conn, token string, id *trust.Identity, name string) (*Welcome, t
 
 	var c challenge
 	if err = readFrame(conn, &c); err != nil {
-		return nil, trust.PublicKey{}, errors.New("member closed the connection; is the join key valid and unexpired?")
+		return nil, trust.PublicKey{}, fmt.Errorf("member closed the connection (is the join key valid and unexpired?): %w", err)
 	}
 	if len(c.Nonce) != nonceLen {
 		return nil, trust.PublicKey{}, errors.New("malformed challenge")
