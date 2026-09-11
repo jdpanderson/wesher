@@ -33,17 +33,17 @@ type hostsWriter interface {
 // loop applies each membership update until ctx is done, then leaves and
 // tears down. systemd is told the service is ready once the interface has been
 // configured from the first snapshot, and kept posted on the peer count.
-func (a *AgentCmd) loop(ctx context.Context, nodec <-chan []overlay.Node, cl clusterController, wgstate wgController, hosts hostsWriter) error {
+func (a *AgentCmd) loop(ctx context.Context, peerc <-chan []overlay.Node, cl clusterController, wgstate wgController, hosts hostsWriter) error {
 	slog.Debug("waiting for cluster events")
 	notify := sdnotify.Ready
 	for {
 		select {
-		case rawNodes, ok := <-nodec:
+		case peers, ok := <-peerc:
 			if !ok {
 				return errors.New("cluster membership channel closed")
 			}
-			peers := a.apply(rawNodes, wgstate, hosts)
-			if err := notify(fmt.Sprintf("%d peers", peers)); err != nil {
+			n := a.apply(peers, wgstate, hosts)
+			if err := notify(fmt.Sprintf("%d peers", n)); err != nil {
 				slog.Warn("could not notify systemd", "err", err)
 			}
 			notify = sdnotify.Status
@@ -72,12 +72,12 @@ func (a *AgentCmd) loop(ctx context.Context, nodec <-chan []overlay.Node, cl clu
 // every snapshot resolves the same way. The nodes' route slices are shared
 // with the cluster, which persists them, so they are filtered into new
 // slices rather than in place.
-func (a *AgentCmd) apply(nodes []overlay.Node, wgstate wgController, hosts hostsWriter) int {
-	hostEntries := make(map[string][]string, len(nodes))
+func (a *AgentCmd) apply(peers []overlay.Node, wgstate wgController, hosts hostsWriter) int {
+	hostEntries := make(map[string][]string, len(peers))
 	routedBy := map[netip.Prefix]string{}
-	slices.SortFunc(nodes, func(x, y overlay.Node) int { return strings.Compare(x.Name, y.Name) })
-	for i := range nodes {
-		node := &nodes[i]
+	slices.SortFunc(peers, func(x, y overlay.Node) int { return strings.Compare(x.Name, y.Name) })
+	for i := range peers {
+		node := &peers[i]
 		var routes []netip.Prefix
 		for _, p := range node.AllowedIPs {
 			switch by, taken := routedBy[p]; {
@@ -94,7 +94,7 @@ func (a *AgentCmd) apply(nodes []overlay.Node, wgstate wgController, hosts hosts
 		slog.Info("cluster member", "addr", node.Addr, "overlay", node.OverlayAddr, "pubkey", node.PubKey, "routes", node.AllowedIPs)
 		hostEntries[node.OverlayAddr.String()] = []string{node.Name}
 	}
-	if err := wgstate.SetUpInterface(nodes); err != nil {
+	if err := wgstate.SetUpInterface(peers); err != nil {
 		slog.Error("could not up interface", "err", err)
 		if err := wgstate.DownInterface(); err != nil {
 			slog.Warn("could not down interface after failed setup", "err", err)
@@ -105,5 +105,5 @@ func (a *AgentCmd) apply(nodes []overlay.Node, wgstate wgController, hosts hosts
 			slog.Error("could not write hosts entries", "err", err)
 		}
 	}
-	return len(nodes)
+	return len(peers)
 }

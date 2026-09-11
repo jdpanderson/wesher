@@ -40,7 +40,7 @@ func Test_state_save_load(t *testing.T) {
 		Seed:    id.Seed(),
 		Root:    &root,
 		Records: trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(id, "root", time.Now())}},
-		Nodes:   []overlay.Node{{Name: "node", Addr: netip.MustParseAddr("10.0.0.2")}},
+		Peers:   []overlay.Node{{Name: "node", Addr: netip.MustParseAddr("10.0.0.2")}},
 	}
 	require.NoError(t, s.save("test"))
 	got, err := loadState("test")
@@ -138,7 +138,7 @@ func Test_KnownNodes(t *testing.T) {
 	require.NoError(t, err)
 	good.Meta = meta
 	bad := overlay.Node{Name: "bad", Addr: netip.MustParseAddr("192.0.2.2"), Meta: []byte("garbage")}
-	require.NoError(t, (&state{Nodes: []overlay.Node{good, bad}}).save("test"))
+	require.NoError(t, (&state{Peers: []overlay.Node{good, bad}}).save("test"))
 
 	got := KnownNodes("test")
 	require.Len(t, got, 1)
@@ -182,7 +182,7 @@ func Test_state_save_atomic(t *testing.T) {
 	go func() {
 		defer close(done)
 		for i := 0; i < 200; i++ {
-			st.Nodes = append(st.Nodes, overlay.Node{Name: fmt.Sprintf("n%d", i), Addr: netip.MustParseAddr("10.0.0.2")})
+			st.Peers = append(st.Peers, overlay.Node{Name: fmt.Sprintf("n%d", i), Addr: netip.MustParseAddr("10.0.0.2")})
 			require.NoError(t, st.save("a"))
 		}
 	}()

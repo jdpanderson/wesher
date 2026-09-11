@@ -18,7 +18,7 @@ type state struct {
 	Seed    []byte           `json:"seed"`
 	Root    *trust.PublicKey `json:"root,omitempty"`
 	Records trust.Records    `json:"records"`
-	Nodes   []overlay.Node   `json:"nodes"`
+	Peers   []overlay.Node   `json:"nodes"`
 }
 
 var statePathTemplate = "/var/lib/cheesecloth/%s.json"
@@ -89,9 +89,8 @@ func KnownNodes(clusterName string) []overlay.Node {
 		slog.Warn("could not load cluster state", "err", err)
 		return nil
 	}
-	nodes := st.Nodes
-	out := make([]overlay.Node, 0, len(nodes))
-	for _, n := range nodes {
+	out := make([]overlay.Node, 0, len(st.Peers))
+	for _, n := range st.Peers {
 		if err := n.DecodeMeta(); err != nil {
 			continue
 		}
@@ -148,7 +147,7 @@ func Load(name string, init bool) (*Bootstrap, error) {
 	if err != nil {
 		return nil, fmt.Errorf("loading identity from %s: %w", statePath(name), err)
 	}
-	b := &Bootstrap{Identity: id, Records: st.Records, Peers: st.Nodes}
+	b := &Bootstrap{Identity: id, Records: st.Records, Peers: st.Peers}
 	if st.Root != nil {
 		b.Root = *st.Root
 	}
@@ -160,7 +159,7 @@ func (b *Bootstrap) Enrolled() bool { return b.Root != (trust.PublicKey{}) }
 
 // save persists the bootstrap as the state for name.
 func (b *Bootstrap) save(name string) error {
-	st := &state{Seed: b.Identity.Seed(), Records: b.Records, Nodes: b.Peers}
+	st := &state{Seed: b.Identity.Seed(), Records: b.Records, Peers: b.Peers}
 	if b.Enrolled() {
 		root := b.Root
 		st.Root = &root

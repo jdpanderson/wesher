@@ -138,7 +138,7 @@ func (a *AgentCmd) Run() error {
 
 	// Keep trying to join until it works or we are told to stop; a node that gives
 	// up would need a manual restart, which is worse than a noisy log.
-	nodec := cl.Members() // avoid deadlocks by starting before join
+	peerc := cl.Members() // avoid deadlocks by starting before join
 	if _, err := backoff.Retry(ctx,
 		func() (struct{}, error) { return struct{}{}, cl.Join(joinAddrs) },
 		backoff.WithMaxElapsedTime(0),
@@ -154,7 +154,7 @@ func (a *AgentCmd) Run() error {
 		return fmt.Errorf("joining cluster: %w", err)
 	}
 
-	return a.loop(ctx, nodec, cl, wgstate, hostsFile)
+	return a.loop(ctx, peerc, cl, wgstate, hostsFile)
 }
 
 // bootstrap settles this node's membership before it joins: a node that is
