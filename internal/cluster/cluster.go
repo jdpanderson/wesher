@@ -24,6 +24,7 @@ import (
 
 // Config is what New needs.
 type Config struct {
+	StateDir      string       // where the state file lives; DefaultDir when empty
 	StateName     string       // the state file is named after it; the wireguard interface in practice
 	BindAddr      netip.Addr   // may be a wildcard
 	AdvertiseAddr netip.Addr   // what other nodes are told to reach us at
@@ -31,11 +32,14 @@ type Config struct {
 	OverlayNet    netip.Prefix // overlay addresses are admission slots inside it
 	LocalNode     *overlay.Node
 	Boot          *Bootstrap // identity, trust and last known peers; owned by the cluster from here on
+	// Memberlist builds the base memberlist config; nil means the WAN profile.
+	// Tests use it for faster timers.
+	Memberlist func() *memberlist.Config
 }
 
 // Cluster represents a running cluster configuration
 type Cluster struct {
-	name      string
+	statePath string
 	ml        atomic.Pointer[memberlist.Memberlist]
 	local     *overlay.Node
 	id        *trust.Identity
@@ -53,9 +57,6 @@ type Cluster struct {
 	leaveOnce sync.Once
 	membersOn atomic.Bool // Members has been called
 }
-
-// newMemberlistConfig builds the base memberlist config; tests swap in faster timers.
-var newMemberlistConfig = memberlist.DefaultWANConfig
 
 // New creates a Cluster for an enrolled node and starts gossiping and accepting
 // enrolments; it is ready to be joined.
@@ -80,17 +81,21 @@ func New(cfg Config) (*Cluster, error) {
 	cfg.LocalNode.Identity = id.Public()
 	cfg.LocalNode.Signature = id.Sign(trust.MetaDigest(cfg.LocalNode.Name, cfg.LocalNode.OverlayAddr, cfg.LocalNode.PubKey, cfg.LocalNode.AllowedIPs))
 
+	dir := cfg.StateDir
+	if dir == "" {
+		dir = DefaultDir
+	}
 	c := &Cluster{
-		name:    cfg.StateName,
-		local:   cfg.LocalNode,
-		id:      id,
-		set:     set,
-		overlay: cfg.OverlayNet,
-		tokens:  enrol.NewTokenStore(),
-		events:  make(chan memberlist.NodeEvent, 16),
-		changed: make(chan struct{}, 1),
-		done:    make(chan struct{}),
-		boot:    cfg.Boot,
+		statePath: statePath(dir, cfg.StateName),
+		local:     cfg.LocalNode,
+		id:        id,
+		set:       set,
+		overlay:   cfg.OverlayNet,
+		tokens:    enrol.NewTokenStore(nil),
+		events:    make(chan memberlist.NodeEvent, 16),
+		changed:   make(chan struct{}, 1),
+		done:      make(chan struct{}),
+		boot:      cfg.Boot,
 	}
 	c.queue = &memberlist.TransmitLimitedQueue{RetransmitMult: 3, NumNodes: func() int {
 		if ml := c.ml.Load(); ml != nil {
@@ -110,7 +115,11 @@ func New(cfg Config) (*Cluster, error) {
 		return nil, err
 	}
 
-	mlConfig := newMemberlistConfig()
+	newConfig := cfg.Memberlist
+	if newConfig == nil {
+		newConfig = memberlist.DefaultWANConfig
+	}
+	mlConfig := newConfig()
 	mlConfig.Name = cfg.LocalNode.Name
 	mlConfig.Logger = logger
 	mlConfig.Transport = transport
@@ -200,8 +209,8 @@ func (c *Cluster) persist() {
 // state only speeds up the next start. Callers hold stateMu.
 func (c *Cluster) saveState() {
 	c.boot.Records = c.set.Records()
-	if err := c.boot.save(c.name); err != nil {
-		slog.Warn("could not save cluster state", "path", statePath(c.name), "err", err)
+	if err := c.boot.save(c.statePath); err != nil {
+		slog.Warn("could not save cluster state", "path", c.statePath, "err", err)
 	}
 }
 

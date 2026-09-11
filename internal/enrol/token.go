@@ -62,9 +62,13 @@ type TokenStore struct {
 	now    func() time.Time
 }
 
-// NewTokenStore creates an empty store.
-func NewTokenStore() *TokenStore {
-	return &TokenStore{tokens: map[tokenID]*token{}, now: time.Now}
+// NewTokenStore creates an empty store that reads the clock through now; nil
+// means the wall clock.
+func NewTokenStore(now func() time.Time) *TokenStore {
+	if now == nil {
+		now = time.Now
+	}
+	return &TokenStore{tokens: map[tokenID]*token{}, now: now}
 }
 
 // Mint creates a token valid for ttl and uses enrolments, returning its printable form.

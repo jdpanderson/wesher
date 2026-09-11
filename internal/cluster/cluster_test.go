@@ -28,8 +28,8 @@ func drainBroadcasts(c *Cluster) {
 }
 
 func Test_Cluster_NotifyMsg(t *testing.T) {
-	useTempStatePaths(t)
-	a := rootCluster(t, "a")
+	dir := useTempStatePaths(t)
+	a := rootCluster(t, dir, "a")
 	defer a.Leave()
 	drain(a.Members())
 
@@ -61,8 +61,8 @@ func Test_Cluster_NotifyMsg(t *testing.T) {
 }
 
 func Test_Cluster_state_pushPull(t *testing.T) {
-	useTempStatePaths(t)
-	a := rootCluster(t, "a")
+	dir := useTempStatePaths(t)
+	a := rootCluster(t, dir, "a")
 	defer a.Leave()
 	drain(a.Members())
 
@@ -81,14 +81,14 @@ func Test_Cluster_state_pushPull(t *testing.T) {
 	a.MergeRemoteState(remote, false) // nothing new: no save, no signal
 
 	// the merged record was persisted
-	b, err := Load("a", false)
+	b, err := Load(dir, "a", false)
 	require.NoError(t, err)
 	assert.Len(t, b.Records.Admissions, 2)
 }
 
 func Test_Cluster_NodeMeta_and_Conflict(t *testing.T) {
-	useTempStatePaths(t)
-	a := rootCluster(t, "a")
+	dir := useTempStatePaths(t)
+	a := rootCluster(t, dir, "a")
 	defer a.Leave()
 
 	assert.Nil(t, a.NodeMeta(1), "metadata that does not fit is not sent")
@@ -97,8 +97,8 @@ func Test_Cluster_NodeMeta_and_Conflict(t *testing.T) {
 }
 
 func Test_Cluster_Join(t *testing.T) {
-	useTempStatePaths(t)
-	a := rootCluster(t, "a")
+	dir := useTempStatePaths(t)
+	a := rootCluster(t, dir, "a")
 	defer a.Leave()
 
 	require.NoError(t, a.Join(nil), "nothing to join and nothing remembered: a cluster of one")
@@ -116,8 +116,8 @@ func Test_recordBroadcast(t *testing.T) {
 }
 
 func Test_Cluster_admit_refusesTakenName(t *testing.T) {
-	useTempStatePaths(t)
-	a := rootCluster(t, "a")
+	dir := useTempStatePaths(t)
+	a := rootCluster(t, dir, "a")
 	defer a.Leave()
 
 	j := testIdentity(t)

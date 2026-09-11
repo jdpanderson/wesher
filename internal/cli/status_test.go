@@ -12,17 +12,15 @@ import (
 
 func Test_StatusCmd_Run(t *testing.T) {
 	report, _, _ := statusFixture()
-	orig := wgStatus
-	wgStatus = func(iface string) (*wg.Report, error) {
+	status := func(iface string) (*wg.Report, error) {
 		if iface != "wgoverlay" {
 			return nil, errors.New("no such device")
 		}
 		return report, nil
 	}
-	t.Cleanup(func() { wgStatus = orig })
 
 	// no cluster state for this interface on this host: peers are shown by key
-	cmd := &StatusCmd{Interface: "wgoverlay"}
+	cmd := &StatusCmd{Interface: "wgoverlay", status: status}
 	stdout, _, err := captureOutput(t, cmd.Run)
 	require.NoError(t, err)
 	assert.Contains(t, stdout, "interface: wgoverlay\n")
@@ -42,6 +40,6 @@ func Test_StatusCmd_Run(t *testing.T) {
 	assert.Equal(t, "wgoverlay", got.Interface)
 	assert.Len(t, got.Peers, 2)
 
-	_, _, err = captureOutput(t, (&StatusCmd{Interface: "absent0"}).Run)
+	_, _, err = captureOutput(t, (&StatusCmd{Interface: "absent0", status: status}).Run)
 	assert.ErrorContains(t, err, "no such device")
 }

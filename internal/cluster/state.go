@@ -21,18 +21,16 @@ type state struct {
 	Peers   []overlay.Node   `json:"peers"`
 }
 
-var statePathTemplate = "/var/lib/cheesecloth/%s.json"
+// DefaultDir is where the agent keeps state unless told otherwise.
+const DefaultDir = "/var/lib/cheesecloth"
 
-// statePath is where the state for clusterName is persisted.
-func statePath(clusterName string) string {
-	return fmt.Sprintf(statePathTemplate, clusterName)
-}
+// statePath is where the state named name is kept under dir.
+func statePath(dir, name string) string { return filepath.Join(dir, name+".json") }
 
 // save writes the state atomically: a reader (the status command, or a
 // restart after a crash mid-write) sees the old file or the new one, never a
 // truncated one.
-func (s *state) save(clusterName string) error {
-	statePath := statePath(clusterName)
+func (s *state) save(statePath string) error {
 	if err := os.MkdirAll(filepath.Dir(statePath), 0700); err != nil {
 		return err
 	}
@@ -61,11 +59,10 @@ func (s *state) save(clusterName string) error {
 	return os.Rename(tmp.Name(), statePath) // CreateTemp made it 0600
 }
 
-// loadState reads the persisted state for clusterName. A missing file is an
+// loadState reads the persisted state at statePath. A missing file is an
 // empty state; a file that cannot be read or decoded is an error, so that a
 // damaged state is never mistaken for a node that has not started before.
-func loadState(clusterName string) (*state, error) {
-	statePath := statePath(clusterName)
+func loadState(statePath string) (*state, error) {
 	content, err := os.ReadFile(statePath)
 	if os.IsNotExist(err) {
 		return &state{}, nil
@@ -80,11 +77,11 @@ func loadState(clusterName string) (*state, error) {
 	return s, nil
 }
 
-// KnownNodes returns the peers persisted for clusterName with their metadata
-// decoded; nodes whose metadata does not decode are skipped, and an unusable
-// state file yields none.
-func KnownNodes(clusterName string) []overlay.Node {
-	st, err := loadState(clusterName)
+// KnownNodes returns the peers persisted under dir for name with their
+// metadata decoded; nodes whose metadata does not decode are skipped, and an
+// unusable state file yields none.
+func KnownNodes(dir, name string) []overlay.Node {
+	st, err := loadState(statePath(dir, name))
 	if err != nil {
 		slog.Warn("could not load cluster state", "err", err)
 		return nil
@@ -99,9 +96,9 @@ func KnownNodes(clusterName string) []overlay.Node {
 	return out
 }
 
-// LocalIdentity returns the identity persisted for clusterName, if any.
-func LocalIdentity(clusterName string) (trust.PublicKey, bool) {
-	st, err := loadState(clusterName)
+// LocalIdentity returns the identity persisted under dir for name, if any.
+func LocalIdentity(dir, name string) (trust.PublicKey, bool) {
+	st, err := loadState(statePath(dir, name))
 	if err != nil || len(st.Seed) == 0 {
 		return trust.PublicKey{}, false
 	}
@@ -122,13 +119,15 @@ type Bootstrap struct {
 	Peers    []overlay.Node // last known peers, with metadata
 }
 
-// Load reads the state for name, or starts fresh when init is set, and makes
-// sure the node has an identity. The identity is persisted immediately.
-func Load(name string, init bool) (*Bootstrap, error) {
+// Load reads the state kept under dir for name, or starts fresh when init is
+// set, and makes sure the node has an identity. The identity is persisted
+// immediately.
+func Load(dir, name string, init bool) (*Bootstrap, error) {
+	path := statePath(dir, name)
 	st := &state{}
 	if !init {
 		var err error
-		if st, err = loadState(name); err != nil {
+		if st, err = loadState(path); err != nil {
 			return nil, err
 		}
 	}
@@ -138,14 +137,14 @@ func Load(name string, init bool) (*Bootstrap, error) {
 			return nil, err
 		}
 		st = &state{Seed: id.Seed()}
-		if err := st.save(name); err != nil {
+		if err := st.save(path); err != nil {
 			return nil, fmt.Errorf("saving new identity: %w", err)
 		}
-		slog.Info("generated node identity", "identity", id.Public().Short(), "path", statePath(name))
+		slog.Info("generated node identity", "identity", id.Public().Short(), "path", path)
 	}
 	id, err := trust.IdentityFromSeed(st.Seed)
 	if err != nil {
-		return nil, fmt.Errorf("loading identity from %s: %w", statePath(name), err)
+		return nil, fmt.Errorf("loading identity from %s: %w", path, err)
 	}
 	b := &Bootstrap{Identity: id, Records: st.Records, Peers: st.Peers}
 	if st.Root != nil {
@@ -157,14 +156,14 @@ func Load(name string, init bool) (*Bootstrap, error) {
 // Enrolled reports whether the node already belongs to a cluster: it knows a root.
 func (b *Bootstrap) Enrolled() bool { return b.Root != (trust.PublicKey{}) }
 
-// save persists the bootstrap as the state for name.
-func (b *Bootstrap) save(name string) error {
+// save persists the bootstrap at statePath.
+func (b *Bootstrap) save(statePath string) error {
 	st := &state{Seed: b.Identity.Seed(), Records: b.Records, Peers: b.Peers}
 	if b.Enrolled() {
 		root := b.Root
 		st.Root = &root
 	}
-	return st.save(name)
+	return st.save(statePath)
 }
 
 // Host is the overlay slot this node's admission assigns it.

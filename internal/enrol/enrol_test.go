@@ -53,7 +53,7 @@ func member(t *testing.T) (*Server, *trust.Set) {
 	_, err := set.AddAdmission(trust.SelfAdmit(id, "root", time.Now()))
 	require.NoError(t, err)
 	srv := &Server{
-		Identity: id, Tokens: NewTokenStore(), Root: id.Public(), GossipAddr: "192.0.2.1:7946",
+		Identity: id, Tokens: NewTokenStore(nil), Root: id.Public(), GossipAddr: "192.0.2.1:7946",
 		Admit: func(joiner trust.PublicKey, dh trust.DHKey, name string) (trust.Admission, trust.Records, error) {
 			a := trust.Admit(id, joiner, dh, name, 2, time.Now())
 			if _, aerr := set.AddAdmission(a); aerr != nil {
@@ -101,10 +101,10 @@ func Test_Join_multiUseAndExpiry(t *testing.T) {
 
 	// expiry
 	now := time.Now()
-	srv.Tokens.now = func() time.Time { return now }
+	srv.Tokens = NewTokenStore(func() time.Time { return now })
 	token, err = srv.Tokens.Mint(time.Minute, 1)
 	require.NoError(t, err)
-	srv.Tokens.now = func() time.Time { return now.Add(2 * time.Minute) }
+	now = now.Add(2 * time.Minute)
 	_, err = join(t, srv, token, newID(t), "late")
 	require.Error(t, err)
 	assert.Equal(t, 0, srv.Tokens.Pending())
@@ -116,7 +116,7 @@ func Test_Join_wrongToken(t *testing.T) {
 	require.NoError(t, err)
 
 	// a different, well-formed token: unknown id, silent close
-	other, err := NewTokenStore().Mint(time.Minute, 1)
+	other, err := NewTokenStore(nil).Mint(time.Minute, 1)
 	require.NoError(t, err)
 	_, err = join(t, srv, other, newID(t), "x")
 	require.Error(t, err)
@@ -136,7 +136,7 @@ func Test_Join_memberMustProveToken(t *testing.T) {
 	key, _ := DecodeToken(real)
 
 	// impostor: same token id (it saw the hello), different key
-	impostor := &Server{Identity: newID(t), Tokens: NewTokenStore(), Root: srv.Root, GossipAddr: "x",
+	impostor := &Server{Identity: newID(t), Tokens: NewTokenStore(nil), Root: srv.Root, GossipAddr: "x",
 		Admit: func(trust.PublicKey, trust.DHKey, string) (trust.Admission, trust.Records, error) {
 			return trust.Admission{}, trust.Records{}, nil
 		}}
@@ -154,7 +154,7 @@ func Test_Join_welcomeMustBeConsistent(t *testing.T) {
 	// a server whose Admit does not actually make the joiner a member of the described cluster
 	id := newID(t)
 	otherRoot := newID(t)
-	srv := &Server{Identity: id, Tokens: NewTokenStore(), Root: otherRoot.Public(), GossipAddr: "x",
+	srv := &Server{Identity: id, Tokens: NewTokenStore(nil), Root: otherRoot.Public(), GossipAddr: "x",
 		Admit: func(trust.PublicKey, trust.DHKey, string) (trust.Admission, trust.Records, error) {
 			return trust.Admission{}, trust.Records{}, nil
 		}}
@@ -167,7 +167,7 @@ func Test_Join_welcomeMustBeConsistent(t *testing.T) {
 }
 
 func Test_TokenStore(t *testing.T) {
-	s := NewTokenStore()
+	s := NewTokenStore(nil)
 	_, err := s.Mint(0, 1)
 	assert.Error(t, err)
 	_, err = s.Mint(time.Minute, 0)

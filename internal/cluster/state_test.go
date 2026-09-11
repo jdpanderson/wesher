@@ -15,14 +15,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// useTempStatePaths points the state path template at a fresh temp dir for the test.
+// useTempStatePaths is a fresh state directory for the test.
 func useTempStatePaths(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	origTemplate := statePathTemplate
-	statePathTemplate = filepath.Join(dir, "%s.json")
-	t.Cleanup(func() { statePathTemplate = origTemplate })
-	return dir
+	return t.TempDir()
 }
 
 func testIdentity(t *testing.T) *trust.Identity {
@@ -33,7 +29,7 @@ func testIdentity(t *testing.T) *trust.Identity {
 }
 
 func Test_state_save_load(t *testing.T) {
-	useTempStatePaths(t)
+	dir := useTempStatePaths(t)
 	id := testIdentity(t)
 	root := id.Public()
 	s := &state{
@@ -42,8 +38,8 @@ func Test_state_save_load(t *testing.T) {
 		Records: trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(id, "root", time.Now())}},
 		Peers:   []overlay.Node{{Name: "node", Addr: netip.MustParseAddr("10.0.0.2")}},
 	}
-	require.NoError(t, s.save("test"))
-	got, err := loadState("test")
+	require.NoError(t, s.save(statePath(dir, "test")))
+	got, err := loadState(statePath(dir, "test"))
 	require.NoError(t, err)
 	assert.Equal(t, s, got)
 }
@@ -52,17 +48,16 @@ func Test_state_save_unwritableDir(t *testing.T) {
 	dir := useTempStatePaths(t)
 	blocker := filepath.Join(dir, "blocker")
 	require.NoError(t, os.WriteFile(blocker, nil, 0o600))
-	statePathTemplate = filepath.Join(blocker, "%s.json")
-	assert.Error(t, (&state{}).save("test"))
+	assert.Error(t, (&state{}).save(statePath(blocker, "test")), "a file where the directory should be")
 }
 
 func Test_loadState_missingOrBroken(t *testing.T) {
 	dir := useTempStatePaths(t)
-	got, err := loadState("test")
+	got, err := loadState(statePath(dir, "test"))
 	require.NoError(t, err)
 	assert.Equal(t, &state{}, got, "no file is a fresh start")
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.json"), []byte("{not json"), 0o600))
-	_, err = loadState("test")
+	_, err = loadState(statePath(dir, "test"))
 	assert.ErrorContains(t, err, "decoding state")
 }
 
@@ -72,40 +67,40 @@ func Test_Load_refusesBrokenState(t *testing.T) {
 	dir := useTempStatePaths(t)
 	path := filepath.Join(dir, "test.json")
 	require.NoError(t, os.WriteFile(path, []byte("{not json"), 0o600))
-	_, err := Load("test", false)
+	_, err := Load(dir, "test", false)
 	require.Error(t, err)
 	content, err := os.ReadFile(path)
 	require.NoError(t, err)
 	assert.Equal(t, "{not json", string(content), "the file is left for the operator")
 
-	assert.Empty(t, KnownNodes("test"))
-	_, ok := LocalIdentity("test")
+	assert.Empty(t, KnownNodes(dir, "test"))
+	_, ok := LocalIdentity(dir, "test")
 	assert.False(t, ok)
 
-	b, err := Load("test", true)
+	b, err := Load(dir, "test", true)
 	require.NoError(t, err, "--init is the explicit way to start over")
 	assert.False(t, b.Enrolled())
 }
 
 func Test_Load_createsAndKeepsIdentity(t *testing.T) {
 	dir := useTempStatePaths(t)
-	b, err := Load("test", false)
+	b, err := Load(dir, "test", false)
 	require.NoError(t, err)
 	assert.False(t, b.Enrolled())
 	assert.FileExists(t, filepath.Join(dir, "test.json"), "identity persisted right away")
 
-	again, err := Load("test", false)
+	again, err := Load(dir, "test", false)
 	require.NoError(t, err)
 	assert.Equal(t, b.Identity.Public(), again.Identity.Public(), "same identity on restart")
 
-	fresh, err := Load("test", true)
+	fresh, err := Load(dir, "test", true)
 	require.NoError(t, err)
 	assert.NotEqual(t, b.Identity.Public(), fresh.Identity.Public(), "--init starts over")
 }
 
 func Test_Bootstrap_initAndEnrol(t *testing.T) {
-	useTempStatePaths(t)
-	b, err := Load("test", true)
+	dir := useTempStatePaths(t)
+	b, err := Load(dir, "test", true)
 	require.NoError(t, err)
 	b.InitRoot("root")
 	assert.True(t, b.Enrolled())
@@ -116,7 +111,7 @@ func Test_Bootstrap_initAndEnrol(t *testing.T) {
 	assert.True(t, set.Valid(b.Identity.Public()))
 
 	other := testIdentity(t)
-	j, err := Load("joiner", true)
+	j, err := Load(dir, "joiner", true)
 	require.NoError(t, err)
 	adm := trust.Admit(other, j.Identity.Public(), j.Identity.DHPublic(), "joiner", 7, time.Now())
 	j.Enrol(other.Public(), trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(other, "o", time.Now()), adm}})
@@ -128,8 +123,8 @@ func Test_Bootstrap_initAndEnrol(t *testing.T) {
 }
 
 func Test_KnownNodes(t *testing.T) {
-	useTempStatePaths(t)
-	assert.Empty(t, KnownNodes("test"))
+	dir := useTempStatePaths(t)
+	assert.Empty(t, KnownNodes(dir, "test"))
 
 	good := overlay.Node{Name: "good", Addr: netip.MustParseAddr("192.0.2.1")}
 	good.OverlayAddr = netip.MustParseAddr("10.0.0.1")
@@ -138,33 +133,33 @@ func Test_KnownNodes(t *testing.T) {
 	require.NoError(t, err)
 	good.Meta = meta
 	bad := overlay.Node{Name: "bad", Addr: netip.MustParseAddr("192.0.2.2"), Meta: []byte("garbage")}
-	require.NoError(t, (&state{Peers: []overlay.Node{good, bad}}).save("test"))
+	require.NoError(t, (&state{Peers: []overlay.Node{good, bad}}).save(statePath(dir, "test")))
 
-	got := KnownNodes("test")
+	got := KnownNodes(dir, "test")
 	require.Len(t, got, 1)
 	assert.Equal(t, "good", got[0].Name)
 	assert.Equal(t, "10.0.0.1", got[0].OverlayAddr.String())
 }
 
 func Test_LocalIdentity(t *testing.T) {
-	useTempStatePaths(t)
-	_, ok := LocalIdentity("none")
+	dir := useTempStatePaths(t)
+	_, ok := LocalIdentity(dir, "none")
 	assert.False(t, ok)
 
-	b, err := Load("a", true)
+	b, err := Load(dir, "a", true)
 	require.NoError(t, err)
-	id, ok := LocalIdentity("a")
+	id, ok := LocalIdentity(dir, "a")
 	require.True(t, ok)
 	assert.Equal(t, b.Identity.Public(), id)
 
-	require.NoError(t, (&state{Seed: []byte("short")}).save("broken"))
-	_, ok = LocalIdentity("broken")
+	require.NoError(t, (&state{Seed: []byte("short")}).save(statePath(dir, "broken")))
+	_, ok = LocalIdentity(dir, "broken")
 	assert.False(t, ok)
 }
 
 func Test_Bootstrap_Host_withoutAdmission(t *testing.T) {
-	useTempStatePaths(t)
-	b, err := Load("a", true)
+	dir := useTempStatePaths(t)
+	b, err := Load(dir, "a", true)
 	require.NoError(t, err)
 	_, err = b.Host()
 	assert.ErrorContains(t, err, "no admission record")
@@ -176,14 +171,14 @@ func Test_state_save_atomic(t *testing.T) {
 	id := testIdentity(t)
 	root := id.Public()
 	st := &state{Seed: id.Seed(), Root: &root, Records: trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(id, "root", time.Now())}}}
-	require.NoError(t, st.save("a"))
+	require.NoError(t, st.save(statePath(dir, "a")))
 
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		for i := 0; i < 200; i++ {
 			st.Peers = append(st.Peers, overlay.Node{Name: fmt.Sprintf("n%d", i), Addr: netip.MustParseAddr("10.0.0.2")})
-			require.NoError(t, st.save("a"))
+			require.NoError(t, st.save(statePath(dir, "a")))
 		}
 	}()
 	for {
@@ -194,7 +189,7 @@ func Test_state_save_atomic(t *testing.T) {
 			assert.Len(t, entries, 1, "no temp files left behind")
 			return
 		default:
-			content, err := os.ReadFile(statePath("a"))
+			content, err := os.ReadFile(statePath(dir, "a"))
 			require.NoError(t, err)
 			var got state
 			require.NoError(t, json.Unmarshal(content, &got), "torn read")

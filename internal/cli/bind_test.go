@@ -72,12 +72,10 @@ func Test_AgentCmd_advertiseAddr(t *testing.T) {
 	assert.Equal(t, cmd.BindAddr, got, "a specific bind address is advertised as is")
 
 	var skipped string
-	orig := interfaceAddrs
-	interfaceAddrs = func(skip string) []net.Addr {
+	cmd.addrs = func(skip string) []net.Addr {
 		skipped = skip
 		return testAddrs(t, "fe80::1/64", "10.1.2.3/24", "fd00::7/64")
 	}
-	t.Cleanup(func() { interfaceAddrs = orig })
 
 	cmd.Interface = "wg7"
 	cmd.BindAddr = netip.IPv4Unspecified()
@@ -91,7 +89,7 @@ func Test_AgentCmd_advertiseAddr(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "fd00::7", got.String())
 
-	interfaceAddrs = func(string) []net.Addr { return testAddrs(t, "fe80::1/64") }
+	cmd.addrs = func(string) []net.Addr { return testAddrs(t, "fe80::1/64") }
 	_, err = cmd.advertiseAddr()
 	assert.ErrorContains(t, err, "no IPv6 address found")
 	cmd.BindAddr = netip.IPv4Unspecified()

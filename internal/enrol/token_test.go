@@ -33,7 +33,7 @@ func Test_token_codec(t *testing.T) {
 
 // A token is pasted after --join-key on a command line, so it must never look like a flag.
 func Test_token_isPlainWord(t *testing.T) {
-	s := NewTokenStore()
+	s := NewTokenStore(nil)
 	for i := 0; i < 200; i++ {
 		tok, err := s.Mint(time.Minute, 1)
 		require.NoError(t, err)
@@ -42,9 +42,8 @@ func Test_token_isPlainWord(t *testing.T) {
 }
 
 func Test_TokenStore_expiry(t *testing.T) {
-	s := NewTokenStore()
 	now := time.Unix(1_700_000_000, 0)
-	s.now = func() time.Time { return now }
+	s := NewTokenStore(func() time.Time { return now })
 
 	tok, err := s.Mint(time.Minute, 2)
 	require.NoError(t, err)
@@ -62,7 +61,7 @@ func Test_TokenStore_expiry(t *testing.T) {
 }
 
 func Test_TokenStore_uses(t *testing.T) {
-	s := NewTokenStore()
+	s := NewTokenStore(nil)
 	tok, err := s.Mint(time.Minute, 2)
 	require.NoError(t, err)
 	key, _ := DecodeToken(tok)
@@ -81,7 +80,7 @@ func Test_TokenStore_uses(t *testing.T) {
 // Two joiners may both look a single-use token up before either has proven
 // it; consuming decides who gets the one use.
 func Test_TokenStore_concurrentJoiners(t *testing.T) {
-	s := NewTokenStore()
+	s := NewTokenStore(nil)
 	tok, err := s.Mint(time.Minute, 1)
 	require.NoError(t, err)
 	key, _ := DecodeToken(tok)
@@ -95,7 +94,7 @@ func Test_TokenStore_concurrentJoiners(t *testing.T) {
 	assert.False(t, s.consume(id), "the second is refused")
 
 	now := time.Now()
-	s.now = func() time.Time { return now }
+	s = NewTokenStore(func() time.Time { return now })
 	tok, err = s.Mint(time.Minute, 1)
 	require.NoError(t, err)
 	key, _ = DecodeToken(tok)

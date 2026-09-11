@@ -56,7 +56,7 @@ func Test_Join_errors(t *testing.T) {
 	_, err := Join(identified{c1, other.Public()}, "not base64!", id, "j")
 	assert.ErrorContains(t, err, "join key")
 
-	tok, _ := NewTokenStore().Mint(time.Minute, 1)
+	tok, _ := NewTokenStore(nil).Mint(time.Minute, 1)
 
 	// a member that answers with a malformed challenge
 	go func() {
@@ -109,7 +109,7 @@ func Test_Join_rejectsForeignAdmission(t *testing.T) {
 	set := trust.NewSet(id.Public())
 	_, err := set.AddAdmission(trust.SelfAdmit(id, "root", time.Now()))
 	require.NoError(t, err)
-	srv := &Server{Identity: id, Tokens: NewTokenStore(), Root: id.Public(), GossipAddr: "x",
+	srv := &Server{Identity: id, Tokens: NewTokenStore(nil), Root: id.Public(), GossipAddr: "x",
 		Admit: func(trust.PublicKey, trust.DHKey, string) (trust.Admission, trust.Records, error) {
 			other := newID(t)
 			return trust.Admit(id, other.Public(), other.DHPublic(), "other", 2, time.Now()), set.Records(), nil

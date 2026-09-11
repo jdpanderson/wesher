@@ -40,6 +40,8 @@ type AgentCmd struct {
 	PersistentKeepalive time.Duration `help:"interval at which peers send keepalives, to keep NAT mappings open (e.g. 25s); 0 disables" default:"0"`
 	NoEtcHosts          bool          `help:"disable writing of entries to /etc/hosts"`
 	ControlSocket       string        `help:"unix socket for 'cheesecloth invite' and 'cheesecloth revoke' (default /run/cheesecloth/<interface>.sock)"`
+
+	addrs func(skip string) []net.Addr // lists this host's candidate addresses; nil means the interfaces
 }
 
 func (a *AgentCmd) Validate() error {
@@ -80,7 +82,7 @@ func (a *AgentCmd) Run() error {
 	ctx, cancelSignals := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer cancelSignals()
 
-	boot, err := cluster.Load(a.Interface, a.Init)
+	boot, err := cluster.Load(cluster.DefaultDir, a.Interface, a.Init)
 	if err != nil {
 		return err
 	}
@@ -117,7 +119,7 @@ func (a *AgentCmd) Run() error {
 	localNode := &overlay.Node{Name: hostname, OverlayAddr: overlayAddr, PubKey: wgstate.PubKey.String(), AllowedIPs: a.AllowedIPs}
 
 	cl, err := cluster.New(cluster.Config{
-		StateName: a.Interface, BindAddr: a.BindAddr, AdvertiseAddr: advertise, BindPort: a.ClusterPort,
+		StateDir: cluster.DefaultDir, StateName: a.Interface, BindAddr: a.BindAddr, AdvertiseAddr: advertise, BindPort: a.ClusterPort,
 		OverlayNet: a.OverlayNet, LocalNode: localNode, Boot: boot,
 	})
 	if err != nil {

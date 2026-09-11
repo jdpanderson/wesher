@@ -15,22 +15,25 @@ import (
 type StatusCmd struct {
 	Interface string `help:"wireguard interface to report on" default:"${default_interface}"`
 	JSON      bool   `help:"print the report as JSON"`
+
+	status func(iface string) (*wg.Report, error) // reports on the interface; nil means wg.Status
 }
 
-// wgStatus reports on the wireguard interface; tests substitute it.
-var wgStatus = wg.Status
-
 func (c *StatusCmd) Run() error {
-	report, err := wgStatus(c.Interface)
+	status := c.status
+	if status == nil {
+		status = wg.Status
+	}
+	report, err := status(c.Interface)
 	if err != nil {
 		return err
 	}
 	names := make(map[string]peerInfo) // wireguard public key -> node
-	for _, n := range cluster.KnownNodes(c.Interface) {
+	for _, n := range cluster.KnownNodes(cluster.DefaultDir, c.Interface) {
 		id := trust.PublicKey(n.Identity)
 		names[n.PubKey] = peerInfo{Name: n.Name, Identity: &id, Overlay: n.OverlayAddr}
 	}
-	local, _ := cluster.LocalIdentity(c.Interface)
+	local, _ := cluster.LocalIdentity(cluster.DefaultDir, c.Interface)
 	if c.JSON {
 		return renderStatusJSON(os.Stdout, report, local, names)
 	}
