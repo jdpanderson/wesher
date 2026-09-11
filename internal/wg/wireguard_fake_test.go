@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/jdpanderson/cheesecloth/overlay"
+	"github.com/jdpanderson/cheesecloth/internal/overlay"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vishvananda/netlink"

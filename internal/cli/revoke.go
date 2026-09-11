@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/jdpanderson/cheesecloth/control"
+	"github.com/jdpanderson/cheesecloth/internal/control"
 )
 
 // RevokeCmd removes a node from the membership.

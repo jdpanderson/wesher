@@ -9,8 +9,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/jdpanderson/cheesecloth/internal/overlay"
 	"github.com/jdpanderson/cheesecloth/internal/sdnotify"
-	"github.com/jdpanderson/cheesecloth/overlay"
 )
 
 // clusterController, wgController and hostsWriter are the parts of the

@@ -10,8 +10,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/jdpanderson/cheesecloth/trust"
-	"github.com/jdpanderson/cheesecloth/wg"
+	"github.com/jdpanderson/cheesecloth/internal/trust"
+	"github.com/jdpanderson/cheesecloth/internal/wg"
 )
 
 // Text and JSON rendering of a status report.

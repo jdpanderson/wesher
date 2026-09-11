@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/jdpanderson/cheesecloth/wg"
+	"github.com/jdpanderson/cheesecloth/internal/wg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

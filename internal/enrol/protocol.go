@@ -13,8 +13,8 @@ import (
 	"net"
 	"time"
 
+	"github.com/jdpanderson/cheesecloth/internal/trust"
 	"github.com/jdpanderson/cheesecloth/internal/wire"
-	"github.com/jdpanderson/cheesecloth/trust"
 )
 
 // Version identifies this exchange format; a mismatch fails closed.

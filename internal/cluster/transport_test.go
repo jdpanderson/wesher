@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jdpanderson/cheesecloth/enrol"
-	"github.com/jdpanderson/cheesecloth/trust"
+	"github.com/jdpanderson/cheesecloth/internal/enrol"
+	"github.com/jdpanderson/cheesecloth/internal/trust"
 	"github.com/quic-go/quic-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

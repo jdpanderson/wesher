@@ -14,13 +14,13 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v6"
-	"github.com/jdpanderson/cheesecloth/cluster"
-	"github.com/jdpanderson/cheesecloth/control"
-	"github.com/jdpanderson/cheesecloth/enrol"
-	"github.com/jdpanderson/cheesecloth/etchosts"
-	"github.com/jdpanderson/cheesecloth/overlay"
-	"github.com/jdpanderson/cheesecloth/trust"
-	"github.com/jdpanderson/cheesecloth/wg"
+	"github.com/jdpanderson/cheesecloth/internal/cluster"
+	"github.com/jdpanderson/cheesecloth/internal/control"
+	"github.com/jdpanderson/cheesecloth/internal/enrol"
+	"github.com/jdpanderson/cheesecloth/internal/etchosts"
+	"github.com/jdpanderson/cheesecloth/internal/overlay"
+	"github.com/jdpanderson/cheesecloth/internal/trust"
+	"github.com/jdpanderson/cheesecloth/internal/wg"
 )
 
 // AgentCmd is the long-running daemon: it joins the cluster and keeps the

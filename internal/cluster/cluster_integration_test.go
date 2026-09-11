@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/hashicorp/memberlist"
-	"github.com/jdpanderson/cheesecloth/overlay"
-	"github.com/jdpanderson/cheesecloth/trust"
+	"github.com/jdpanderson/cheesecloth/internal/overlay"
+	"github.com/jdpanderson/cheesecloth/internal/trust"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

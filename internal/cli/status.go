@@ -5,9 +5,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/jdpanderson/cheesecloth/cluster"
-	"github.com/jdpanderson/cheesecloth/trust"
-	"github.com/jdpanderson/cheesecloth/wg"
+	"github.com/jdpanderson/cheesecloth/internal/cluster"
+	"github.com/jdpanderson/cheesecloth/internal/trust"
+	"github.com/jdpanderson/cheesecloth/internal/wg"
 )
 
 // StatusCmd shows the live wireguard state of a cheesecloth interface, naming peers

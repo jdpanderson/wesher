@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jdpanderson/cheesecloth/control"
+	"github.com/jdpanderson/cheesecloth/internal/control"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

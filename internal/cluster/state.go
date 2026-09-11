@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/jdpanderson/cheesecloth/overlay"
-	"github.com/jdpanderson/cheesecloth/trust"
+	"github.com/jdpanderson/cheesecloth/internal/overlay"
+	"github.com/jdpanderson/cheesecloth/internal/trust"
 )
 
 // state is what a node persists: its identity seed, the membership it trusts

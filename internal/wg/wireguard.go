@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/jdpanderson/cheesecloth/overlay"
+	"github.com/jdpanderson/cheesecloth/internal/overlay"
 	"github.com/vishvananda/netlink"
 	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"

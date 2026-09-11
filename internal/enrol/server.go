@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"net"
 
-	"github.com/jdpanderson/cheesecloth/trust"
+	"github.com/jdpanderson/cheesecloth/internal/trust"
 )
 
 // Server admits joiners who prove knowledge of a pending token.

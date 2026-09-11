@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/jdpanderson/cheesecloth/control"
+	"github.com/jdpanderson/cheesecloth/internal/control"
 )
 
 // InviteCmd mints an enrolment token on the running agent.
