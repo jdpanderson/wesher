@@ -120,12 +120,10 @@ func (a *AgentCmd) Run() error {
 	}
 	slog.Debug("assigned overlay address", "addr", overlayAddr, "slot", host)
 	wgstate, err := wg.New(wg.Config{
-		Interface:   a.Interface,
-		Port:        a.WireguardPort,
-		OverlayNet:  a.OverlayNet,
-		OverlayAddr: overlayAddr,
-		MTU:         a.MTU,
-
+		Interface:           a.Interface,
+		Port:                a.WireguardPort,
+		OverlayAddr:         overlayAddr,
+		MTU:                 a.MTU,
 		PersistentKeepalive: a.PersistentKeepalive,
 	})
 	if err != nil {

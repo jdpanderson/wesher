@@ -43,7 +43,7 @@ func enterTestNetns(t *testing.T) {
 // testConfig uses a non-default MTU so the test proves it is applied.
 func testConfig() Config {
 	return Config{
-		Interface: "wgtest0", Port: 51820, OverlayNet: netip.MustParsePrefix(testPrefix),
+		Interface: "wgtest0", Port: 51820,
 		OverlayAddr: netip.MustParseAddr("10.99.0.100"), MTU: 1400, PersistentKeepalive: 25 * time.Second,
 	}
 }

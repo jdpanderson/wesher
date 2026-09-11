@@ -37,11 +37,10 @@ type netlinker interface {
 
 // Config describes the wireguard interface a State manages.
 type Config struct {
-	Interface   string       // name of the wireguard interface to create
-	Port        int          // wireguard listen port, also used as the peers' port
-	OverlayNet  netip.Prefix // network the overlay addresses are picked from
-	OverlayAddr netip.Addr   // this node's address inside OverlayNet
-	MTU         int          // interface MTU
+	Interface   string     // name of the wireguard interface to create
+	Port        int        // wireguard listen port, also used as the peers' port
+	OverlayAddr netip.Addr // this node's address in the overlay network
+	MTU         int        // interface MTU
 	// PersistentKeepalive, when non-zero, makes every peer send keepalives at this
 	// interval so NAT mappings stay open.
 	PersistentKeepalive time.Duration
@@ -54,7 +53,6 @@ type State struct {
 	keepalive   time.Duration
 	client      wgClient
 	nl          netlinker
-	overlayNet  netip.Prefix
 	privKey     wgtypes.Key
 	OverlayAddr netip.Addr
 	Port        int
@@ -82,7 +80,6 @@ func newState(cfg Config, client wgClient, nl netlinker) (*State, error) {
 		keepalive:   cfg.PersistentKeepalive,
 		client:      client,
 		nl:          nl,
-		overlayNet:  cfg.OverlayNet,
 		privKey:     privKey,
 		OverlayAddr: cfg.OverlayAddr,
 		Port:        cfg.Port,
