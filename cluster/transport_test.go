@@ -1,6 +1,8 @@
 package cluster
 
 import (
+	"context"
+	"crypto/tls"
 	"io"
 	"net"
 	"net/netip"
@@ -9,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jdpanderson/cheesecloth/trust"
+	"github.com/quic-go/quic-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -253,4 +256,69 @@ func Test_quicTransport_oneConnectionPerPair(t *testing.T) {
 	_, err = b.tr.WriteTo([]byte("pong"), a.addr)
 	require.NoError(t, err)
 	expectPacket(t, a, "pong")
+}
+
+func Test_quicTransport_enrolmentCap(t *testing.T) {
+	rootID := testIdentity(t)
+	set := trust.NewSet(rootID.Public())
+	set.Merge(trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(rootID, "a", time.Now())}})
+	started := make(chan net.Conn, maxEnrolments+2)
+	release := make(chan struct{})
+	tr, err := newQUICTransport(netip.MustParseAddr("127.0.0.1"), 0, rootID, set, func(c net.Conn) {
+		started <- c
+		<-release
+		_ = c.Close()
+	})
+	require.NoError(t, err)
+	defer func() { _ = tr.Shutdown() }()
+	addr := tr.udp.LocalAddr().String()
+
+	// fill every slot with an exchange that never finishes
+	joiner := testIdentity(t)
+	opened := 0
+	for i := 0; i < maxEnrolments; i++ {
+		conn, stream := openEnrol(t, addr, joiner)
+		defer func() { _ = stream.Close(); _ = conn.CloseWithError(0, "") }()
+		opened++
+	}
+	for i := 0; i < maxEnrolments; i++ {
+		select {
+		case <-started:
+		case <-time.After(3 * time.Second):
+			t.Fatalf("only %d of %d enrolments reached the handler", i, maxEnrolments)
+		}
+	}
+
+	// one more is refused at once rather than queued
+	conn, stream := openEnrol(t, addr, joiner)
+	_ = stream.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, err = stream.Read(make([]byte, 1))
+	assert.Error(t, err, "the surplus connection is closed")
+	_ = conn.CloseWithError(0, "")
+	select {
+	case <-started:
+		t.Fatal("surplus enrolment reached the handler")
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(release)
+}
+
+// openEnrol dials addr for enrolment as id and opens the stream, without running the exchange.
+func openEnrol(t *testing.T, addr string, id *trust.Identity) (*quic.Conn, *quic.Stream) {
+	t.Helper()
+	cert, err := identityCertificate(id)
+	require.NoError(t, err)
+	tlsConf := enrolTLSConfig(cert)
+	tlsConf.ClientAuth = tls.NoClientCert
+	ua, err := net.ResolveUDPAddr("udp", addr)
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, err := quic.DialAddr(ctx, ua.String(), tlsConf, &quic.Config{})
+	require.NoError(t, err)
+	stream, err := conn.OpenStreamSync(ctx)
+	require.NoError(t, err)
+	_, err = stream.Write([]byte{0}) // announces the stream to the peer
+	require.NoError(t, err)
+	return conn, stream
 }

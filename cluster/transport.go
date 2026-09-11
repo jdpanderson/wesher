@@ -40,25 +40,29 @@ const (
 	// maxDatagram bounds memberlist's packets: QUIC guarantees room for at
 	// least ~1200 bytes of datagram payload on any path.
 	maxDatagram = 1100
+	// maxEnrolments bounds concurrent enrolment exchanges; anyone who can reach
+	// the port can open one, so the rest of the transport must not starve.
+	maxEnrolments = 8
 )
 
 type quicTransport struct {
-	id      *trust.Identity
-	set     *trust.Set
-	udp     *net.UDPConn
-	qt      *quic.Transport
-	ln      *quic.Listener
-	server  *tls.Config
-	client  *tls.Config
-	qconf   *quic.Config
-	packets chan *memberlist.Packet
-	streams chan net.Conn
-	enrol   func(net.Conn) // runs one enrolment on a stream; nil refuses enrolment
-	done    chan struct{}
-	wg      sync.WaitGroup
-	once    sync.Once
-	err     error        // from Shutdown
-	life    sync.RWMutex // held for writing while Shutdown closes the QUIC transport
+	id       *trust.Identity
+	set      *trust.Set
+	udp      *net.UDPConn
+	qt       *quic.Transport
+	ln       *quic.Listener
+	server   *tls.Config
+	client   *tls.Config
+	qconf    *quic.Config
+	packets  chan *memberlist.Packet
+	streams  chan net.Conn
+	enrol    func(net.Conn) // runs one enrolment on a stream; nil refuses enrolment
+	enrolSem chan struct{}  // one slot per enrolment in flight
+	done     chan struct{}
+	wg       sync.WaitGroup
+	once     sync.Once
+	err      error        // from Shutdown
+	life     sync.RWMutex // held for writing while Shutdown closes the QUIC transport
 
 	mu      sync.Mutex
 	conns   map[string]peerConn // by the peer's gossip address
@@ -134,12 +138,13 @@ func newQUICTransport(bind netip.Addr, port int, id *trust.Identity, set *trust.
 			EnableDatagrams: true, MaxIdleTimeout: idleTimeout, KeepAlivePeriod: keepAlive,
 			HandshakeIdleTimeout: handshakeTime,
 		},
-		packets: make(chan *memberlist.Packet),
-		streams: make(chan net.Conn),
-		enrol:   enrol,
-		done:    make(chan struct{}),
-		conns:   map[string]peerConn{},
-		dialing: map[string]bool{},
+		packets:  make(chan *memberlist.Packet),
+		streams:  make(chan net.Conn),
+		enrol:    enrol,
+		enrolSem: make(chan struct{}, maxEnrolments),
+		done:     make(chan struct{}),
+		conns:    map[string]peerConn{},
+		dialing:  map[string]bool{},
 	}
 	t.ln, err = t.qt.Listen(t.server, t.qconf)
 	if err != nil {
@@ -240,6 +245,13 @@ func (t *quicTransport) adopt(conn *quic.Conn, accepted bool) *quic.Conn {
 			_ = conn.CloseWithError(1, "enrolment not offered")
 			return nil
 		}
+		select {
+		case t.enrolSem <- struct{}{}:
+		default:
+			slog.Warn("too many enrolments in flight, refusing one", "from", conn.RemoteAddr())
+			_ = conn.CloseWithError(1, "busy")
+			return nil
+		}
 		t.wg.Add(1)
 		go t.serveEnrol(conn, peer)
 		return nil
@@ -313,6 +325,7 @@ func (t *quicTransport) adopt(conn *quic.Conn, accepted bool) *quic.Conn {
 // connection; closing that stream closes the connection.
 func (t *quicTransport) serveEnrol(conn *quic.Conn, peer trust.PublicKey) {
 	defer t.wg.Done()
+	defer func() { <-t.enrolSem }()
 	ctx, cancel := context.WithTimeout(context.Background(), handshakeTime)
 	defer cancel()
 	s, err := conn.AcceptStream(ctx)
