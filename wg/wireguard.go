@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/jdpanderson/cheesecloth/common"
+	"github.com/jdpanderson/cheesecloth/overlay"
 	"github.com/vishvananda/netlink"
 	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
@@ -104,7 +104,7 @@ func (s *State) DownInterface() error {
 }
 
 // SetUpInterface creates and sets up the associated network interface.
-func (s *State) SetUpInterface(nodes []common.Node) error {
+func (s *State) SetUpInterface(nodes []overlay.Node) error {
 	if err := s.nl.LinkAdd(&netlink.Wireguard{LinkAttrs: netlink.LinkAttrs{Name: s.iface}}); err != nil && !os.IsExist(err) {
 		return fmt.Errorf("creating link %s: %w", s.iface, err)
 	}
@@ -156,7 +156,7 @@ func (s *State) SetUpInterface(nodes []common.Node) error {
 
 // peerPrefixes lists what is reachable through node: its overlay address and
 // the extra networks it advertises.
-func peerPrefixes(node common.Node) []netip.Prefix {
+func peerPrefixes(node overlay.Node) []netip.Prefix {
 	out := make([]netip.Prefix, 0, 1+len(node.AllowedIPs))
 	out = append(out, netip.PrefixFrom(node.OverlayAddr, node.OverlayAddr.BitLen()))
 	return append(out, node.AllowedIPs...)
@@ -212,7 +212,7 @@ func prefixToIPNet(p netip.Prefix) *net.IPNet {
 	}
 }
 
-func (s *State) nodesToPeerConfigs(nodes []common.Node) ([]wgtypes.PeerConfig, error) {
+func (s *State) nodesToPeerConfigs(nodes []overlay.Node) ([]wgtypes.PeerConfig, error) {
 	peerCfgs := make([]wgtypes.PeerConfig, len(nodes))
 	for i, node := range nodes {
 		pubKey, err := wgtypes.ParseKey(node.PubKey)

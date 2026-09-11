@@ -9,20 +9,20 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/jdpanderson/cheesecloth/common"
 	"github.com/jdpanderson/cheesecloth/internal/sdnotify"
+	"github.com/jdpanderson/cheesecloth/overlay"
 )
 
 // clusterController, wgController and hostsWriter are the parts of the
 // cluster, wg and etchosts packages the agent loop drives; they exist so the
 // loop can be tested with fakes.
 type clusterController interface {
-	Members() <-chan []common.Node
+	Members() <-chan []overlay.Node
 	Leave()
 }
 
 type wgController interface {
-	SetUpInterface([]common.Node) error
+	SetUpInterface([]overlay.Node) error
 	DownInterface() error
 }
 
@@ -33,7 +33,7 @@ type hostsWriter interface {
 // loop applies each membership update until ctx is done, then leaves and
 // tears down. systemd is told the service is ready once the interface has been
 // configured from the first snapshot, and kept posted on the peer count.
-func (a *AgentCmd) loop(ctx context.Context, nodec <-chan []common.Node, cl clusterController, wgstate wgController, hosts hostsWriter) error {
+func (a *AgentCmd) loop(ctx context.Context, nodec <-chan []overlay.Node, cl clusterController, wgstate wgController, hosts hostsWriter) error {
 	slog.Debug("waiting for cluster events")
 	notify := sdnotify.Ready
 	for {
@@ -70,10 +70,10 @@ func (a *AgentCmd) loop(ctx context.Context, nodec <-chan []common.Node, cl clus
 // wireguard and /etc/hosts and returns the number of peers installed. A
 // network advertised by more than one node goes to the first by name, so
 // every snapshot resolves the same way.
-func (a *AgentCmd) apply(nodes []common.Node, wgstate wgController, hosts hostsWriter) int {
+func (a *AgentCmd) apply(nodes []overlay.Node, wgstate wgController, hosts hostsWriter) int {
 	hostEntries := make(map[string][]string, len(nodes))
 	routedBy := map[netip.Prefix]string{}
-	slices.SortFunc(nodes, func(x, y common.Node) int { return strings.Compare(x.Name, y.Name) })
+	slices.SortFunc(nodes, func(x, y overlay.Node) int { return strings.Compare(x.Name, y.Name) })
 	for i := range nodes {
 		node := &nodes[i]
 		node.AllowedIPs = slices.DeleteFunc(node.AllowedIPs, func(p netip.Prefix) bool {

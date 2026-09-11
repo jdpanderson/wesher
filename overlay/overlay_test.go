@@ -1,4 +1,4 @@
-package common
+package overlay
 
 import (
 	"math"
@@ -25,7 +25,7 @@ func Test_MaxHost(t *testing.T) {
 	}
 }
 
-func Test_OverlayAddr(t *testing.T) {
+func Test_Addr(t *testing.T) {
 	tests := []struct {
 		prefix string
 		host   uint64
@@ -41,15 +41,15 @@ func Test_OverlayAddr(t *testing.T) {
 		{"fd00:10::1234/120", 255, "fd00:10::12ff"},
 	}
 	for _, tt := range tests {
-		got, ok := OverlayAddr(netip.MustParsePrefix(tt.prefix), tt.host)
+		got, ok := Addr(netip.MustParsePrefix(tt.prefix), tt.host)
 		assert.True(t, ok, tt.want)
 		assert.Equal(t, tt.want, got.String())
 	}
 
-	_, ok := OverlayAddr(netip.MustParsePrefix("10.0.0.0/24"), 0)
+	_, ok := Addr(netip.MustParsePrefix("10.0.0.0/24"), 0)
 	assert.False(t, ok, "slot 0 is the network address")
-	_, ok = OverlayAddr(netip.MustParsePrefix("10.0.0.0/24"), 255)
+	_, ok = Addr(netip.MustParsePrefix("10.0.0.0/24"), 255)
 	assert.False(t, ok, "slot 255 is the broadcast address")
-	_, ok = OverlayAddr(netip.MustParsePrefix("fd00:10::/120"), 256)
+	_, ok = Addr(netip.MustParsePrefix("fd00:10::/120"), 256)
 	assert.False(t, ok, "slot outside the prefix")
 }

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jdpanderson/cheesecloth/common"
+	"github.com/jdpanderson/cheesecloth/overlay"
 	"github.com/jdpanderson/cheesecloth/trust"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -38,7 +38,7 @@ func Test_state_save_load(t *testing.T) {
 		Seed:    id.Seed(),
 		Root:    &root,
 		Records: trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(id, "root", unixTime(nil))}},
-		Nodes:   []common.Node{{Name: "node", Addr: net.ParseIP("10.0.0.2")}},
+		Nodes:   []overlay.Node{{Name: "node", Addr: net.ParseIP("10.0.0.2")}},
 	}
 	require.NoError(t, s.save("test"))
 	assert.Equal(t, s, loadState("test"))
@@ -103,14 +103,14 @@ func Test_KnownNodes(t *testing.T) {
 	useTempStatePaths(t)
 	assert.Empty(t, KnownNodes("test"))
 
-	good := common.Node{Name: "good", Addr: net.ParseIP("192.0.2.1")}
+	good := overlay.Node{Name: "good", Addr: net.ParseIP("192.0.2.1")}
 	good.OverlayAddr = netip.MustParseAddr("10.0.0.1")
 	good.PubKey = "pk"
 	meta, err := good.EncodeMeta(512)
 	require.NoError(t, err)
 	good.Meta = meta
-	bad := common.Node{Name: "bad", Addr: net.ParseIP("192.0.2.2"), Meta: []byte("garbage")}
-	require.NoError(t, (&state{Nodes: []common.Node{good, bad}}).save("test"))
+	bad := overlay.Node{Name: "bad", Addr: net.ParseIP("192.0.2.2"), Meta: []byte("garbage")}
+	require.NoError(t, (&state{Nodes: []overlay.Node{good, bad}}).save("test"))
 
 	got := KnownNodes("test")
 	require.Len(t, got, 1)

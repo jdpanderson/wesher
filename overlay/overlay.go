@@ -1,4 +1,6 @@
-package common
+// Package overlay holds what the mesh shares about a node: its gossiped
+// metadata and the arithmetic of overlay addresses.
+package overlay
 
 import (
 	"encoding/binary"
@@ -21,9 +23,9 @@ func MaxHost(prefix netip.Prefix) uint64 {
 	return max
 }
 
-// OverlayAddr is the address of slot host inside prefix; false if the slot
+// Addr is the address of slot host inside prefix; false if the slot
 // does not fit.
-func OverlayAddr(prefix netip.Prefix, host uint64) (netip.Addr, bool) {
+func Addr(prefix netip.Prefix, host uint64) (netip.Addr, bool) {
 	if host == 0 || host > MaxHost(prefix) {
 		return netip.Addr{}, false
 	}

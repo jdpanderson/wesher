@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jdpanderson/cheesecloth/common"
+	"github.com/jdpanderson/cheesecloth/overlay"
 	"github.com/jdpanderson/cheesecloth/trust"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -35,16 +35,16 @@ func Test_assignedAddr_and_verifyMeta(t *testing.T) {
 	assert.ErrorContains(t, err, "does not fit")
 
 	// metadata must claim the assigned address, signed by the identity
-	meta := func(id *trust.Identity, name, overlay string) *common.Node {
-		n := &common.Node{Name: name}
-		n.OverlayAddr = netip.MustParseAddr(overlay)
+	meta := func(id *trust.Identity, name, overlayAddr string) *overlay.Node {
+		n := &overlay.Node{Name: name}
+		n.OverlayAddr = netip.MustParseAddr(overlayAddr)
 		n.PubKey = testKey
 		n.Identity = id.Public()
 		n.Signature = id.Sign(trust.MetaDigest(n.Name, n.OverlayAddr, n.PubKey, nil))
 		var encErr error
 		n.Meta, encErr = n.EncodeMeta(512)
 		require.NoError(t, encErr)
-		return &common.Node{Name: n.Name, Meta: n.Meta}
+		return &overlay.Node{Name: n.Name, Meta: n.Meta}
 	}
 	id, err := verifyMeta(set, testOverlay, meta(a, "a", "10.0.0.2"))
 	require.NoError(t, err)
@@ -55,7 +55,7 @@ func Test_assignedAddr_and_verifyMeta(t *testing.T) {
 	assert.ErrorContains(t, err, "collides")
 
 	bad := meta(a, "a", "10.0.0.2")
-	var n common.Node
+	var n overlay.Node
 	n.OverlayAddr = netip.MustParseAddr("10.0.0.2")
 	n.PubKey = "not a wireguard key"
 	n.Identity = a.Public()

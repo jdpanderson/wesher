@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jdpanderson/cheesecloth/common"
+	"github.com/jdpanderson/cheesecloth/overlay"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vishvananda/netlink"
@@ -48,12 +48,12 @@ func testConfig() Config {
 	}
 }
 
-func testPeer(t *testing.T, name, addr, overlay string) common.Node {
+func testPeer(t *testing.T, name, addr, overlayAddr string) overlay.Node {
 	t.Helper()
 	key, err := wgtypes.GeneratePrivateKey()
 	require.NoError(t, err)
-	n := common.Node{Name: name, Addr: net.ParseIP(addr)}
-	n.OverlayAddr = netip.MustParseAddr(overlay)
+	n := overlay.Node{Name: name, Addr: net.ParseIP(addr)}
+	n.OverlayAddr = netip.MustParseAddr(overlayAddr)
 	n.PubKey = key.PublicKey().String()
 	return n
 }
@@ -74,7 +74,7 @@ func Test_State_SetUpInterface_and_Down(t *testing.T) {
 	p1 := testPeer(t, "p1", "192.0.2.1", "10.99.0.1")
 	p1.AllowedIPs = []netip.Prefix{netip.MustParsePrefix("192.168.7.0/24")}
 	p2 := testPeer(t, "p2", "192.0.2.2", "10.99.0.2")
-	require.NoError(t, s.SetUpInterface([]common.Node{p1, p2}))
+	require.NoError(t, s.SetUpInterface([]overlay.Node{p1, p2}))
 
 	link, err := netlink.LinkByName("wgtest0")
 	require.NoError(t, err)
@@ -110,10 +110,10 @@ func Test_State_SetUpInterface_and_Down(t *testing.T) {
 	assert.Equal(t, 25*time.Second, report.Peers[0].PersistentKeepalive)
 
 	// idempotent: link and routes already exist
-	require.NoError(t, s.SetUpInterface([]common.Node{p1, p2}))
+	require.NoError(t, s.SetUpInterface([]overlay.Node{p1, p2}))
 
 	// peers and their routes are replaced, not accumulated
-	require.NoError(t, s.SetUpInterface([]common.Node{p2}))
+	require.NoError(t, s.SetUpInterface([]overlay.Node{p2}))
 	dev, err = s.client.Device("wgtest0")
 	require.NoError(t, err)
 	assert.Len(t, dev.Peers, 1)
@@ -137,7 +137,7 @@ func Test_State_SetUpInterface_badPeerKey(t *testing.T) {
 
 	bad := testPeer(t, "bad", "192.0.2.1", "10.99.0.1")
 	bad.PubKey = "not a key"
-	err = s.SetUpInterface([]common.Node{bad})
+	err = s.SetUpInterface([]overlay.Node{bad})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "converting received node information")
 }

@@ -16,20 +16,20 @@ import (
 	"time"
 
 	"github.com/hashicorp/memberlist"
-	"github.com/jdpanderson/cheesecloth/common"
 	"github.com/jdpanderson/cheesecloth/enroll"
+	"github.com/jdpanderson/cheesecloth/overlay"
 	"github.com/jdpanderson/cheesecloth/trust"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
 // Config is what New needs.
 type Config struct {
-	Name          string       // state name; the wireguard interface in practice
+	StateName     string       // the state file is named after it; the wireguard interface in practice
 	BindAddr      netip.Addr   // may be a wildcard
 	AdvertiseAddr netip.Addr   // what other nodes are told to reach us at
 	BindPort      int          // gossip and enrolment, UDP (QUIC)
 	OverlayNet    netip.Prefix // overlay addresses are admission slots inside it
-	LocalNode     *common.Node
+	LocalNode     *overlay.Node
 	Boot          *Bootstrap // identity, trust and last known peers; owned by the cluster from here on
 }
 
@@ -37,7 +37,7 @@ type Config struct {
 type Cluster struct {
 	name      string
 	ml        atomic.Pointer[memberlist.Memberlist]
-	local     *common.Node
+	local     *overlay.Node
 	id        *trust.Identity
 	set       *trust.Set
 	overlay   netip.Prefix
@@ -80,7 +80,7 @@ func New(cfg Config) (*Cluster, error) {
 	cfg.LocalNode.Signature = id.Sign(trust.MetaDigest(cfg.LocalNode.Name, cfg.LocalNode.OverlayAddr, cfg.LocalNode.PubKey, cfg.LocalNode.AllowedIPs))
 
 	c := &Cluster{
-		name:    cfg.Name,
+		name:    cfg.StateName,
 		local:   cfg.LocalNode,
 		id:      id,
 		set:     set,
@@ -179,7 +179,7 @@ func (c *Cluster) admit(joiner trust.PublicKey, dh trust.DHKey, name string) (tr
 		host = cur.Host // an identity enrolling again keeps its address
 	} else {
 		var err error
-		if host, err = c.set.FreeHost(common.MaxHost(c.overlay)); err != nil {
+		if host, err = c.set.FreeHost(overlay.MaxHost(c.overlay)); err != nil {
 			return trust.Admission{}, trust.Records{}, fmt.Errorf("%w in %s", err, c.overlay)
 		}
 	}
@@ -204,14 +204,14 @@ func (c *Cluster) saveState() {
 // assignedAddr is the overlay address id's admission entitles it to. It fails
 // if id is not a member, the slot does not fit the overlay net, or another
 // member holds the slot with a stronger claim (see trust.Set.HostConflict).
-func assignedAddr(set *trust.Set, overlay netip.Prefix, id trust.PublicKey) (netip.Addr, error) {
+func assignedAddr(set *trust.Set, prefix netip.Prefix, id trust.PublicKey) (netip.Addr, error) {
 	if !set.Valid(id) {
 		return netip.Addr{}, fmt.Errorf("identity %s is not a member", id.Short())
 	}
 	adm, _ := set.Lookup(id)
-	addr, ok := common.OverlayAddr(overlay, adm.Host)
+	addr, ok := overlay.Addr(prefix, adm.Host)
 	if !ok {
-		return netip.Addr{}, fmt.Errorf("overlay slot %d of %s does not fit in %s", adm.Host, adm.Name, overlay)
+		return netip.Addr{}, fmt.Errorf("overlay slot %d of %s does not fit in %s", adm.Host, adm.Name, prefix)
 	}
 	if other, clash := set.HostConflict(id); clash {
 		return netip.Addr{}, fmt.Errorf("overlay address %s of %s collides with %s, admitted earlier; %s must be enrolled again", addr, adm.Name, other.Name, adm.Name)
@@ -222,12 +222,12 @@ func assignedAddr(set *trust.Set, overlay netip.Prefix, id trust.PublicKey) (net
 // verifyMeta decodes a node's metadata and checks that a valid member signed
 // it, that it claims the overlay address its admission assigns, and that its
 // wireguard key parses. A node that passes can be installed as a peer as is.
-func verifyMeta(set *trust.Set, overlay netip.Prefix, n *common.Node) (trust.PublicKey, error) {
+func verifyMeta(set *trust.Set, prefix netip.Prefix, n *overlay.Node) (trust.PublicKey, error) {
 	if err := n.DecodeMeta(); err != nil {
 		return trust.PublicKey{}, err
 	}
 	id := trust.PublicKey(n.Identity)
-	want, err := assignedAddr(set, overlay, id)
+	want, err := assignedAddr(set, prefix, id)
 	if err != nil {
 		return id, err
 	}
@@ -319,8 +319,8 @@ func (c *Cluster) Leave() {
 // changes; bursts of changes may be coalesced into one snapshot. Nodes that
 // fail verifyMeta are left out. Call it at most once. The channel is closed
 // after Leave.
-func (c *Cluster) Members() <-chan []common.Node {
-	changes := make(chan []common.Node)
+func (c *Cluster) Members() <-chan []overlay.Node {
+	changes := make(chan []overlay.Node)
 	c.signalChanged() // the first snapshot may well be empty; the interface still needs to come up
 
 	c.routines.Add(1)
@@ -338,12 +338,12 @@ func (c *Cluster) Members() <-chan []common.Node {
 				slog.Error("this node lost its overlay address; peers will drop it", "err", err)
 			}
 			ml := c.ml.Load()
-			nodes := make([]common.Node, 0, ml.NumMembers())
+			nodes := make([]overlay.Node, 0, ml.NumMembers())
 			for _, n := range ml.Members() {
 				if n.Name == c.local.Name {
 					continue
 				}
-				node := common.Node{Name: n.Name, Addr: n.Addr, Meta: n.Meta}
+				node := overlay.Node{Name: n.Name, Addr: n.Addr, Meta: n.Meta}
 				if _, err := verifyMeta(c.set, c.overlay, &node); err != nil {
 					slog.Warn("ignoring node with unverified metadata", "name", n.Name, "addr", n.Addr, "err", err)
 					continue

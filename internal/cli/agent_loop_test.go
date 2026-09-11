@@ -9,27 +9,27 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jdpanderson/cheesecloth/common"
+	"github.com/jdpanderson/cheesecloth/overlay"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
 type fakeCluster struct {
-	ch   chan []common.Node
+	ch   chan []overlay.Node
 	left bool
 }
 
-func (f *fakeCluster) Members() <-chan []common.Node { return f.ch }
-func (f *fakeCluster) Leave()                        { f.left = true }
+func (f *fakeCluster) Members() <-chan []overlay.Node { return f.ch }
+func (f *fakeCluster) Leave()                         { f.left = true }
 
 type fakeWG struct {
 	upErr error
-	ups   [][]common.Node
+	ups   [][]overlay.Node
 	downs int
 }
 
-func (f *fakeWG) SetUpInterface(nodes []common.Node) error {
+func (f *fakeWG) SetUpInterface(nodes []overlay.Node) error {
 	f.ups = append(f.ups, nodes)
 	return f.upErr
 }
@@ -43,12 +43,12 @@ func (f *fakeHosts) WriteEntries(m map[string][]string) error {
 }
 
 // verifiedNode is a node as the cluster hands it over: metadata decoded and checked.
-func verifiedNode(t *testing.T, name, addr, overlay string, routes ...string) common.Node {
+func verifiedNode(t *testing.T, name, addr, overlayAddr string, routes ...string) overlay.Node {
 	t.Helper()
 	key, err := wgtypes.GeneratePrivateKey()
 	require.NoError(t, err)
-	n := common.Node{Name: name, Addr: net.ParseIP(addr)}
-	n.OverlayAddr = netip.MustParseAddr(overlay)
+	n := overlay.Node{Name: name, Addr: net.ParseIP(addr)}
+	n.OverlayAddr = netip.MustParseAddr(overlayAddr)
 	n.PubKey = key.PublicKey().String()
 	for _, r := range routes {
 		n.AllowedIPs = append(n.AllowedIPs, netip.MustParsePrefix(r))
@@ -76,12 +76,12 @@ func waitErr(t *testing.T, errc <-chan error) error {
 }
 
 func Test_AgentCmd_loop_appliesAndTearsDown(t *testing.T) {
-	cl := &fakeCluster{ch: make(chan []common.Node)}
+	cl := &fakeCluster{ch: make(chan []overlay.Node)}
 	wg := &fakeWG{}
 	hosts := &fakeHosts{}
 	cancel, errc := runLoop(t, &AgentCmd{OverlayNet: testOverlay}, cl, wg, hosts)
 
-	cl.ch <- []common.Node{verifiedNode(t, "good", "192.0.2.1", "10.0.0.1")}
+	cl.ch <- []overlay.Node{verifiedNode(t, "good", "192.0.2.1", "10.0.0.1")}
 
 	cancel()
 	require.NoError(t, waitErr(t, errc))
@@ -102,7 +102,7 @@ func Test_AgentCmd_apply_allowedIPs(t *testing.T) {
 	// z is listed first but b wins the shared network by name; the overlay-net prefix is dropped
 	z := verifiedNode(t, "z", "192.0.2.1", "10.0.0.1", "192.168.7.0/24", "10.9.0.0/16", "172.16.0.0/12")
 	b := verifiedNode(t, "b", "192.0.2.2", "10.0.0.2", "192.168.7.0/24")
-	a.apply([]common.Node{z, b}, wg, &fakeHosts{})
+	a.apply([]overlay.Node{z, b}, wg, &fakeHosts{})
 
 	require.Len(t, wg.ups, 1)
 	require.Len(t, wg.ups[0], 2)
@@ -126,12 +126,12 @@ func Test_AgentCmd_loop_notifiesSystemd(t *testing.T) {
 		return string(buf[:n])
 	}
 
-	cl := &fakeCluster{ch: make(chan []common.Node)}
+	cl := &fakeCluster{ch: make(chan []overlay.Node)}
 	cancel, errc := runLoop(t, &AgentCmd{OverlayNet: testOverlay, NoEtcHosts: true}, cl, &fakeWG{}, &fakeHosts{})
 
 	cl.ch <- nil // a lone node: ready with no peers
 	assert.Equal(t, "READY=1\nSTATUS=0 peers", read())
-	cl.ch <- []common.Node{verifiedNode(t, "n", "192.0.2.1", "10.0.0.1")}
+	cl.ch <- []overlay.Node{verifiedNode(t, "n", "192.0.2.1", "10.0.0.1")}
 	assert.Equal(t, "STATUS=1 peers", read())
 	cancel()
 	assert.Equal(t, "STOPPING=1", read())
@@ -139,30 +139,30 @@ func Test_AgentCmd_loop_notifiesSystemd(t *testing.T) {
 }
 
 func Test_AgentCmd_loop_noEtcHosts(t *testing.T) {
-	cl := &fakeCluster{ch: make(chan []common.Node)}
+	cl := &fakeCluster{ch: make(chan []overlay.Node)}
 	wg := &fakeWG{}
 	hosts := &fakeHosts{}
 	cancel, errc := runLoop(t, &AgentCmd{OverlayNet: testOverlay, NoEtcHosts: true}, cl, wg, hosts)
 
-	cl.ch <- []common.Node{verifiedNode(t, "n", "192.0.2.1", "10.0.0.1")}
+	cl.ch <- []overlay.Node{verifiedNode(t, "n", "192.0.2.1", "10.0.0.1")}
 	cancel()
 	require.NoError(t, waitErr(t, errc))
 	assert.Empty(t, hosts.writes)
 }
 
 func Test_AgentCmd_loop_setupFailureDownsInterface(t *testing.T) {
-	cl := &fakeCluster{ch: make(chan []common.Node)}
+	cl := &fakeCluster{ch: make(chan []overlay.Node)}
 	wg := &fakeWG{upErr: errors.New("boom")}
 	cancel, errc := runLoop(t, &AgentCmd{OverlayNet: testOverlay, NoEtcHosts: true}, cl, wg, &fakeHosts{})
 
-	cl.ch <- []common.Node{verifiedNode(t, "n", "192.0.2.1", "10.0.0.1")}
+	cl.ch <- []overlay.Node{verifiedNode(t, "n", "192.0.2.1", "10.0.0.1")}
 	cancel()
 	require.NoError(t, waitErr(t, errc))
 	assert.Equal(t, 2, wg.downs, "once after the failed setup, once on shutdown")
 }
 
 func Test_AgentCmd_loop_closedChannel(t *testing.T) {
-	cl := &fakeCluster{ch: make(chan []common.Node)}
+	cl := &fakeCluster{ch: make(chan []overlay.Node)}
 	_, errc := runLoop(t, &AgentCmd{}, cl, &fakeWG{}, &fakeHosts{})
 	close(cl.ch)
 	err := waitErr(t, errc)

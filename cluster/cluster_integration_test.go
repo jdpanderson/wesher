@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/memberlist"
-	"github.com/jdpanderson/cheesecloth/common"
+	"github.com/jdpanderson/cheesecloth/overlay"
 	"github.com/jdpanderson/cheesecloth/trust"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,13 +28,13 @@ func freePort(t *testing.T) int {
 var testOverlay = netip.MustParsePrefix("10.0.0.0/8")
 
 // testNodeFor builds the local node for b at the overlay address its admission assigns.
-func testNodeFor(t *testing.T, name string, b *Bootstrap) *common.Node {
+func testNodeFor(t *testing.T, name string, b *Bootstrap) *overlay.Node {
 	t.Helper()
 	host, err := b.Host()
 	require.NoError(t, err)
-	addr, ok := common.OverlayAddr(testOverlay, host)
+	addr, ok := overlay.Addr(testOverlay, host)
 	require.True(t, ok)
-	node := &common.Node{Name: name}
+	node := &overlay.Node{Name: name}
 	node.OverlayAddr = addr
 	node.PubKey = testKey
 	return node
@@ -48,7 +48,7 @@ func rootCluster(t *testing.T, name, bindAddr string, gossipPort int) *Cluster {
 	b.InitRoot(name, nil)
 	bind := netip.MustParseAddr(bindAddr)
 	c, err := New(Config{
-		Name: name, BindAddr: bind, AdvertiseAddr: bind, BindPort: gossipPort, OverlayNet: testOverlay,
+		StateName: name, BindAddr: bind, AdvertiseAddr: bind, BindPort: gossipPort, OverlayNet: testOverlay,
 		LocalNode: testNodeFor(t, name, b), Boot: b,
 	})
 	require.NoError(t, err)
@@ -69,7 +69,7 @@ func enrolCluster(t *testing.T, member *Cluster, memberBind string, memberPort i
 	b.Enrol(w.Root, w.Records)
 	bind := netip.MustParseAddr(bindAddr)
 	c, err := New(Config{
-		Name: name, BindAddr: bind, AdvertiseAddr: bind, BindPort: gossipPort, OverlayNet: testOverlay,
+		StateName: name, BindAddr: bind, AdvertiseAddr: bind, BindPort: gossipPort, OverlayNet: testOverlay,
 		LocalNode: testNodeFor(t, name, b), Boot: b,
 	})
 	require.NoError(t, err)
@@ -77,7 +77,7 @@ func enrolCluster(t *testing.T, member *Cluster, memberBind string, memberPort i
 	return c
 }
 
-func waitMembers(t *testing.T, ch <-chan []common.Node, want int) []common.Node {
+func waitMembers(t *testing.T, ch <-chan []overlay.Node, want int) []overlay.Node {
 	t.Helper()
 	deadline := time.After(30 * time.Second)
 	for {
@@ -92,7 +92,7 @@ func waitMembers(t *testing.T, ch <-chan []common.Node, want int) []common.Node 
 	}
 }
 
-func drain(ch <-chan []common.Node) {
+func drain(ch <-chan []overlay.Node) {
 	go func() {
 		for range ch {
 		}
@@ -206,7 +206,7 @@ func Test_New_badBindAddr(t *testing.T) {
 	require.NoError(t, err)
 	b.InitRoot("a", nil)
 	bad := netip.MustParseAddr("192.0.2.1") // TEST-NET, not a local address
-	_, err = New(Config{Name: "a", BindAddr: bad, AdvertiseAddr: bad, BindPort: 0, OverlayNet: testOverlay,
+	_, err = New(Config{StateName: "a", BindAddr: bad, AdvertiseAddr: bad, BindPort: 0, OverlayNet: testOverlay,
 		LocalNode: testNodeFor(t, "a", b), Boot: b})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "gossip transport")
@@ -217,9 +217,9 @@ func Test_New_notAMember(t *testing.T) {
 	b, err := Load("a", true)
 	require.NoError(t, err)
 	b.Root = testIdentity(t).Public() // pinned to a root that never admitted us
-	_, err = New(Config{Name: "a", OverlayNet: testOverlay, LocalNode: &common.Node{Name: "a"}, Boot: b})
+	_, err = New(Config{StateName: "a", OverlayNet: testOverlay, LocalNode: &overlay.Node{Name: "a"}, Boot: b})
 	assert.ErrorContains(t, err, "not a member")
-	_, err = New(Config{Name: "a", LocalNode: &common.Node{Name: "a"}})
+	_, err = New(Config{StateName: "a", LocalNode: &overlay.Node{Name: "a"}})
 	assert.ErrorContains(t, err, "bootstrap and local node are required")
 }
 

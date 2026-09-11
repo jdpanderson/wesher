@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/jdpanderson/cheesecloth/common"
+	"github.com/jdpanderson/cheesecloth/overlay"
 	"github.com/jdpanderson/cheesecloth/trust"
 )
 
@@ -17,7 +17,7 @@ type state struct {
 	Seed    []byte           `json:"seed"`
 	Root    *trust.PublicKey `json:"root,omitempty"`
 	Records trust.Records    `json:"records"`
-	Nodes   []common.Node    `json:"nodes"`
+	Nodes   []overlay.Node   `json:"nodes"`
 }
 
 var statePathTemplate = "/var/lib/cheesecloth/%s.json"
@@ -63,9 +63,9 @@ func loadState(clusterName string) *state {
 
 // KnownNodes returns the peers persisted for clusterName with their metadata
 // decoded; nodes whose metadata does not decode are skipped.
-func KnownNodes(clusterName string) []common.Node {
+func KnownNodes(clusterName string) []overlay.Node {
 	nodes := loadState(clusterName).Nodes
-	out := make([]common.Node, 0, len(nodes))
+	out := make([]overlay.Node, 0, len(nodes))
 	for _, n := range nodes {
 		if err := n.DecodeMeta(); err != nil {
 			continue
@@ -95,7 +95,7 @@ type Bootstrap struct {
 	Identity *trust.Identity
 	Root     trust.PublicKey // zero until enrolled or initialised
 	Records  trust.Records
-	Peers    []common.Node // last known peers, with metadata
+	Peers    []overlay.Node // last known peers, with metadata
 	enrolled bool
 }
 

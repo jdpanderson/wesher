@@ -15,10 +15,10 @@ import (
 
 	"github.com/cenkalti/backoff/v6"
 	"github.com/jdpanderson/cheesecloth/cluster"
-	"github.com/jdpanderson/cheesecloth/common"
 	"github.com/jdpanderson/cheesecloth/control"
 	"github.com/jdpanderson/cheesecloth/enroll"
 	"github.com/jdpanderson/cheesecloth/etchosts"
+	"github.com/jdpanderson/cheesecloth/overlay"
 	"github.com/jdpanderson/cheesecloth/trust"
 	"github.com/jdpanderson/cheesecloth/wg"
 )
@@ -43,7 +43,7 @@ type AgentCmd struct {
 }
 
 func (a *AgentCmd) Validate() error {
-	if common.MaxHost(a.OverlayNet) < 2 {
+	if overlay.MaxHost(a.OverlayNet) < 2 {
 		return fmt.Errorf("overlay network %s has no room for two nodes", a.OverlayNet)
 	}
 	for i, p := range a.AllowedIPs {
@@ -114,7 +114,7 @@ func (a *AgentCmd) Run() error {
 	if err != nil {
 		return err
 	}
-	overlayAddr, ok := common.OverlayAddr(a.OverlayNet, host)
+	overlayAddr, ok := overlay.Addr(a.OverlayNet, host)
 	if !ok {
 		return fmt.Errorf("this node's overlay slot %d does not fit in %s; is --overlay-net the same on every node?", host, a.OverlayNet)
 	}
@@ -132,13 +132,13 @@ func (a *AgentCmd) Run() error {
 		return fmt.Errorf("instantiating wireguard controller: %w", err)
 	}
 	// what peers learn about us: name, overlay address, wireguard key, routes
-	localNode := &common.Node{Name: hostname}
+	localNode := &overlay.Node{Name: hostname}
 	localNode.OverlayAddr = wgstate.OverlayAddr
 	localNode.PubKey = wgstate.PubKey.String()
 	localNode.AllowedIPs = a.AllowedIPs
 
 	cluster, err := cluster.New(cluster.Config{
-		Name: a.Interface, BindAddr: a.BindAddr, AdvertiseAddr: advertise, BindPort: a.ClusterPort,
+		StateName: a.Interface, BindAddr: a.BindAddr, AdvertiseAddr: advertise, BindPort: a.ClusterPort,
 		OverlayNet: a.OverlayNet, LocalNode: localNode, Boot: boot,
 	})
 	if err != nil {

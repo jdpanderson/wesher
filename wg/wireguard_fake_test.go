@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/jdpanderson/cheesecloth/common"
+	"github.com/jdpanderson/cheesecloth/overlay"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vishvananda/netlink"
@@ -122,7 +122,7 @@ func Test_State_SetUpInterface_fake(t *testing.T) {
 	s := newFakeState(t, nl, wgc)
 
 	p1 := testPeer(t, "p1", "192.0.2.1", "10.99.0.1")
-	require.NoError(t, s.SetUpInterface([]common.Node{p1}))
+	require.NoError(t, s.SetUpInterface([]overlay.Node{p1}))
 
 	assert.Equal(t, []string{"LinkAdd", "LinkByName", "AddrReplace", "LinkSetMTU", "LinkSetUp", "RouteAdd", "RouteList"}, nl.calls)
 	assert.Equal(t, "wireguard", nl.link.Type())
@@ -140,7 +140,7 @@ func Test_State_SetUpInterface_fake(t *testing.T) {
 func Test_State_SetUpInterface_fake_existingTolerated(t *testing.T) {
 	nl := &fakeNL{errs: map[string]error{"LinkAdd": os.ErrExist, "RouteAdd": os.ErrExist}}
 	s := newFakeState(t, nl, &fakeWG{})
-	require.NoError(t, s.SetUpInterface([]common.Node{testPeer(t, "p1", "192.0.2.1", "10.99.0.1")}))
+	require.NoError(t, s.SetUpInterface([]overlay.Node{testPeer(t, "p1", "192.0.2.1", "10.99.0.1")}))
 }
 
 func Test_State_SetUpInterface_fake_removesStaleRoutes(t *testing.T) {
@@ -156,7 +156,7 @@ func Test_State_SetUpInterface_fake_removesStaleRoutes(t *testing.T) {
 	_, wide, _ := net.ParseCIDR("10.99.0.0/24")
 	nl.routes = append(nl.routes, &netlink.Route{Dst: foreign}, &netlink.Route{Dst: wide}, &netlink.Route{Dst: addrToIPNet(s.OverlayAddr)}, &netlink.Route{Dst: nil})
 
-	require.NoError(t, s.SetUpInterface([]common.Node{p1, p2}))
+	require.NoError(t, s.SetUpInterface([]overlay.Node{p1, p2}))
 	dsts := func() []string {
 		out := make([]string, 0, len(nl.routes))
 		for _, r := range nl.routes {
@@ -168,7 +168,7 @@ func Test_State_SetUpInterface_fake_removesStaleRoutes(t *testing.T) {
 		"routes nobody advertises are removed, routes without a destination are left alone")
 
 	nl.calls = nil
-	require.NoError(t, s.SetUpInterface([]common.Node{p2}))
+	require.NoError(t, s.SetUpInterface([]overlay.Node{p2}))
 	assert.Contains(t, nl.calls, "RouteDel")
 	assert.ElementsMatch(t, []string{"<nil>", s.OverlayAddr.String() + "/32", "10.99.0.2/32"}, dsts(), "p1's address and network went with it")
 
@@ -199,7 +199,7 @@ func Test_State_SetUpInterface_fake_errors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := newFakeState(t, &fakeNL{errs: tt.nlErrs}, &fakeWG{cfgErr: tt.cfgErr})
-			err := s.SetUpInterface([]common.Node{testPeer(t, "p1", "192.0.2.1", "10.99.0.1")})
+			err := s.SetUpInterface([]overlay.Node{testPeer(t, "p1", "192.0.2.1", "10.99.0.1")})
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.wantMsg)
 			assert.ErrorIs(t, err, boom)
