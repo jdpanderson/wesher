@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jdpanderson/cheesecloth/cluster"
 	"github.com/jdpanderson/cheesecloth/trust"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -74,6 +75,39 @@ func Test_AgentCmd_Validate_joinKey(t *testing.T) {
 func Test_AgentCmd_enrolAddrs(t *testing.T) {
 	cmd := AgentCmd{ClusterPort: 7946, Join: []string{"member", "10.0.0.1:1234", "fd00::1", "[fd00::2]:99"}}
 	assert.Equal(t, []string{"member:7946", "10.0.0.1:1234", "[fd00::1]:7946", "[fd00::2]:99"}, cmd.enrolAddrs())
+}
+
+func Test_AgentCmd_bootstrap(t *testing.T) {
+	newBoot := func() *cluster.Bootstrap {
+		id, err := trust.NewIdentity()
+		require.NoError(t, err)
+		return &cluster.Bootstrap{Identity: id}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	// not a member and nothing asked for: told what to do
+	_, err := (&AgentCmd{}).bootstrap(ctx, newBoot(), "h")
+	assert.ErrorContains(t, err, "not a member of any cluster")
+
+	// --init: root of a new cluster, joining whatever --join names
+	boot := newBoot()
+	addrs, err := (&AgentCmd{Init: true, Join: []string{"x"}}).bootstrap(ctx, boot, "h")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"x"}, addrs)
+	assert.True(t, boot.Enrolled())
+	assert.Equal(t, boot.Identity.Public(), boot.Root)
+	require.Len(t, boot.Records.Admissions, 1)
+	assert.Equal(t, "h", boot.Records.Admissions[0].Name)
+
+	// already enrolled: the join key is ignored, --join is used as given
+	addrs, err = (&AgentCmd{JoinKey: "stale", Join: []string{"a", "b"}}).bootstrap(ctx, boot, "h")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a", "b"}, addrs)
+
+	// --join-key with no reachable member fails
+	_, err = (&AgentCmd{ClusterPort: 1, JoinKey: "token", Join: []string{"127.0.0.1"}}).bootstrap(ctx, newBoot(), "h")
+	assert.ErrorContains(t, err, "enrolling with 127.0.0.1:1")
 }
 
 func Test_AgentCmd_enrol_unreachable(t *testing.T) {

@@ -89,25 +89,9 @@ func (a *AgentCmd) Run() error {
 		return err
 	}
 
-	joinAddrs := a.Join
-	switch {
-	case boot.Enrolled():
-		if a.JoinKey != "" {
-			slog.Info("already a member of a cluster; ignoring --join-key")
-		}
-	case a.Init:
-		boot.InitRoot(hostname)
-		slog.Info("initialised a new cluster", "root", boot.Root.Short())
-	case a.JoinKey != "":
-		w, enrolErr := a.enrol(ctx, boot.Identity, hostname)
-		if enrolErr != nil {
-			return enrolErr
-		}
-		boot.Enrol(w.Root, w.Records)
-		joinAddrs = []string{w.GossipAddr}
-		slog.Info("enrolled in cluster", "root", w.Root.Short(), "via", w.GossipAddr, "member", w.Member.Short())
-	default:
-		return errors.New("this node is not a member of any cluster: use --init to start one, or --join HOST --join-key TOKEN to enrol (get a token with 'cheesecloth invite' on a member)")
+	joinAddrs, err := a.bootstrap(ctx, boot, hostname)
+	if err != nil {
+		return err
 	}
 
 	host, err := boot.Host()
@@ -132,7 +116,7 @@ func (a *AgentCmd) Run() error {
 	// what peers learn about us: name, overlay address, wireguard key, routes
 	localNode := &overlay.Node{Name: hostname, OverlayAddr: overlayAddr, PubKey: wgstate.PubKey.String(), AllowedIPs: a.AllowedIPs}
 
-	cluster, err := cluster.New(cluster.Config{
+	cl, err := cluster.New(cluster.Config{
 		StateName: a.Interface, BindAddr: a.BindAddr, AdvertiseAddr: advertise, BindPort: a.ClusterPort,
 		OverlayNet: a.OverlayNet, LocalNode: localNode, Boot: boot,
 	})
@@ -140,9 +124,9 @@ func (a *AgentCmd) Run() error {
 		return fmt.Errorf("creating cluster: %w", err)
 	}
 
-	ctl, err := control.Listen(socketFor(a.Interface, a.ControlSocket), agentControl{cluster})
+	ctl, err := control.Listen(socketFor(a.Interface, a.ControlSocket), agentControl{cl})
 	if err != nil {
-		cluster.Leave()
+		cl.Leave()
 		return err
 	}
 	defer ctl.Close()
@@ -154,9 +138,9 @@ func (a *AgentCmd) Run() error {
 
 	// Keep trying to join until it works or we are told to stop; a node that gives
 	// up would need a manual restart, which is worse than a noisy log.
-	nodec := cluster.Members() // avoid deadlocks by starting before join
+	nodec := cl.Members() // avoid deadlocks by starting before join
 	if _, err := backoff.Retry(ctx,
-		func() (struct{}, error) { return struct{}{}, cluster.Join(joinAddrs) },
+		func() (struct{}, error) { return struct{}{}, cl.Join(joinAddrs) },
 		backoff.WithMaxElapsedTime(0),
 		backoff.WithNotify(func(err error, dur time.Duration) {
 			slog.Error("could not join cluster, retrying", "err", err, "in", dur)
@@ -164,13 +148,41 @@ func (a *AgentCmd) Run() error {
 	); err != nil {
 		if ctx.Err() != nil {
 			slog.Info("terminating")
-			cluster.Leave()
+			cl.Leave()
 			return nil
 		}
 		return fmt.Errorf("joining cluster: %w", err)
 	}
 
-	return a.loop(ctx, nodec, cluster, wgstate, hostsFile)
+	return a.loop(ctx, nodec, cl, wgstate, hostsFile)
+}
+
+// bootstrap settles this node's membership before it joins: a node that is
+// already enrolled carries on, --init makes it the root of a new cluster, and
+// --join-key enrols it with one of the --join members. It returns the
+// addresses to join the gossip ring at.
+func (a *AgentCmd) bootstrap(ctx context.Context, boot *cluster.Bootstrap, hostname string) ([]string, error) {
+	switch {
+	case boot.Enrolled():
+		if a.JoinKey != "" {
+			slog.Info("already a member of a cluster; ignoring --join-key")
+		}
+		return a.Join, nil
+	case a.Init:
+		boot.InitRoot(hostname)
+		slog.Info("initialised a new cluster", "root", boot.Root.Short())
+		return a.Join, nil
+	case a.JoinKey != "":
+		w, err := a.enrol(ctx, boot.Identity, hostname)
+		if err != nil {
+			return nil, err
+		}
+		boot.Enrol(w.Root, w.Records)
+		slog.Info("enrolled in cluster", "root", w.Root.Short(), "via", w.GossipAddr, "member", w.Member.Short())
+		return []string{w.GossipAddr}, nil
+	default:
+		return nil, errors.New("this node is not a member of any cluster: use --init to start one, or --join HOST --join-key TOKEN to enrol (get a token with 'cheesecloth invite' on a member)")
+	}
 }
 
 // enrol tries each --join member in turn with the join key.
