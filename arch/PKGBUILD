@@ -1,0 +1,44 @@
+# Maintainer: Jonathan Anderson <janderson@vectorface.com>
+# Builds from the git repository; there are no release tarballs yet.
+pkgname=cheesecloth-git
+pkgver=r0
+pkgrel=1
+pkgdesc="WireGuard mesh network with identity-based membership"
+arch=('x86_64' 'aarch64')
+url="https://github.com/jdpanderson/cheesecloth"
+license=('GPL-3.0-or-later')
+makedepends=('git' 'go>=1.26')
+optdepends=('wireguard-tools: inspect the interface with wg')
+provides=('cheesecloth')
+conflicts=('cheesecloth')
+backup=('etc/cheesecloth/config.yaml')
+install=cheesecloth.install
+source=("$pkgname::git+$url.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$pkgname"
+  git describe --long --tags 2>/dev/null | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g' ||
+    printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+build() {
+  cd "$pkgname"
+  export CGO_ENABLED=0
+  export GOFLAGS="-trimpath -mod=mod -buildvcs=false"
+  go build -ldflags "-X main.version=$(git describe --tags --always) -buildid=" -o cheesecloth ./cmd/cheesecloth
+  sed 's|/usr/local/sbin/cheesecloth|/usr/bin/cheesecloth|' dist/cheesecloth.service > cheesecloth.service
+}
+
+check() {
+  cd "$pkgname"
+  go test ./...
+}
+
+package() {
+  cd "$pkgname"
+  install -Dm755 cheesecloth "$pkgdir/usr/bin/cheesecloth"
+  install -Dm644 cheesecloth.service "$pkgdir/usr/lib/systemd/system/cheesecloth.service"
+  install -Dm644 dist/config.yaml "$pkgdir/etc/cheesecloth/config.yaml"
+  install -Dm644 README.md docs/configuration.md docs/operations.md docs/membership.md -t "$pkgdir/usr/share/doc/cheesecloth"
+}

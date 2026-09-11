@@ -1,0 +1,12 @@
+Build a package from a checkout with:
+
+    dpkg-buildpackage -us -uc -b
+
+The build needs Go 1.26 or newer on PATH and network access to download the
+Go modules (or run `go mod vendor` first). If Debian's golang-go is too old,
+install a toolchain from https://go.dev/dl/ and add `-d` to skip the
+build-dependency check. `DEB_BUILD_OPTIONS=nocheck` skips the tests.
+
+After installing, initialise or enrol the node once by hand (see
+/usr/share/doc/cheesecloth/README.md), put its settings in
+/etc/cheesecloth/config.yaml, then `systemctl enable --now cheesecloth`.

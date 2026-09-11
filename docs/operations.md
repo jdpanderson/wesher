@@ -80,6 +80,19 @@ Go version as the tag. Without a checkout (`--version` will then report `dev`):
 $ go install github.com/jdpanderson/cheesecloth/cmd/cheesecloth@latest
 ```
 
+## Packages
+
+The repository carries packaging for two distributions. Both install the
+binary, the systemd unit and `/etc/cheesecloth/config.yaml` as a configuration
+file, and leave the service disabled: initialise or enrol the node once by
+hand, edit the configuration, then `systemctl enable --now cheesecloth`.
+
+- Debian and derivatives: `debian/`. Build with `dpkg-buildpackage -us -uc -b`
+  from a checkout; see `debian/README.source` for the Go toolchain
+  requirement. The binary is installed as `/usr/sbin/cheesecloth`.
+- Arch Linux: `arch/PKGBUILD` builds the `cheesecloth-git` package from the
+  repository with `makepkg`. The binary is installed as `/usr/bin/cheesecloth`.
+
 ## Security considerations
 
 There is no cluster-wide secret. Each node has a persisted identity (an Ed25519

@@ -16,3 +16,13 @@
 # Misc
 *.tmp
 *.sha256sums
+
+# Debian package build artifacts
+/debian/build/
+/debian/.gocache/
+/debian/cheesecloth/
+/debian/files
+/debian/*.substvars
+/debian/*.debhelper
+/debian/*.debhelper.log
+/debian/debhelper-build-stamp

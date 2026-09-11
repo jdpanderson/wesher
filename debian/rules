@@ -1,0 +1,40 @@
+#!/usr/bin/make -f
+# Builds with the Go toolchain on PATH. Debian's own golang-go may be older
+# than the module requires; a toolchain from go.dev works with
+# `dpkg-buildpackage -d`. Modules are downloaded during the build unless a
+# vendor/ directory is present.
+
+export CGO_ENABLED = 0
+export GOCACHE = $(CURDIR)/debian/.gocache
+export GOFLAGS = -trimpath -mod=mod -buildvcs=false
+VERSION := $(shell dpkg-parsechangelog -SVersion)
+BUILD := debian/build
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	mkdir -p $(BUILD)
+	go build -ldflags "-X main.version=$(VERSION) -buildid=" -o $(BUILD)/cheesecloth ./cmd/cheesecloth
+	sed 's|/usr/local/sbin/cheesecloth|/usr/sbin/cheesecloth|' dist/cheesecloth.service > $(BUILD)/cheesecloth.service
+
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	go test ./...
+endif
+
+override_dh_auto_install:
+	install -D -m 0755 $(BUILD)/cheesecloth debian/cheesecloth/usr/sbin/cheesecloth
+	install -D -m 0644 $(BUILD)/cheesecloth.service debian/cheesecloth/usr/lib/systemd/system/cheesecloth.service
+	install -D -m 0644 dist/config.yaml debian/cheesecloth/etc/cheesecloth/config.yaml
+
+# The unit is installed but neither enabled nor started: the node has to be
+# initialised or enrolled by hand once before the service can run.
+override_dh_installsystemd:
+	dh_installsystemd --no-enable --no-start
+
+# dwz cannot handle the compressed DWARF in Go binaries; dh_strip still runs.
+override_dh_dwz:
+
+override_dh_auto_clean:
+	rm -rf $(BUILD) debian/.gocache

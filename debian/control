@@ -1,0 +1,24 @@
+Source: cheesecloth
+Section: net
+Priority: optional
+Maintainer: Jonathan Anderson <janderson@vectorface.com>
+Build-Depends: debhelper-compat (= 13), golang-go (>= 2:1.26~)
+Standards-Version: 4.7.0
+Homepage: https://github.com/jdpanderson/cheesecloth
+Vcs-Git: https://github.com/jdpanderson/cheesecloth.git
+Vcs-Browser: https://github.com/jdpanderson/cheesecloth
+Rules-Requires-Root: no
+
+Package: cheesecloth
+Architecture: any
+Depends: ${misc:Depends}
+Recommends: wireguard-tools
+Description: WireGuard mesh network with identity-based membership
+ cheesecloth builds a private mesh network between a small number of
+ machines using WireGuard. Every node connects directly to every other
+ node over an encrypted tunnel, gets a fixed private address and a
+ hostname entry, and reconnects after a restart without intervention.
+ .
+ There is no central server and no shared password. Nodes are admitted
+ with a short-lived invitation token and removed with a single command.
+ Membership is a set of signed records rooted at the first node.
