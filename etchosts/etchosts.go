@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // DefaultBanner is the default magic comment used to identify entries managed by etchosts
@@ -138,9 +139,14 @@ func (eh *EtcHosts) movePreservePerms(src, dst *os.File) error {
 	if err != nil {
 		return fmt.Errorf("could not stat %s: %w", dst.Name(), err)
 	}
-	// CreateTemp made src 0600; match the hosts file before it becomes the hosts file
+	// CreateTemp made src 0600 and ours; match the hosts file before it becomes the hosts file
 	if err = src.Chmod(etcHostsInfo.Mode()); err != nil {
 		return fmt.Errorf("could not chmod %s: %w", src.Name(), err)
+	}
+	if st, ok := etcHostsInfo.Sys().(*syscall.Stat_t); ok {
+		if err = src.Chown(int(st.Uid), int(st.Gid)); err != nil {
+			eh.log(slog.LevelWarn, "could not keep the owner of the hosts file", "path", dst.Name(), "err", err)
+		}
 	}
 
 	rename := eh.rename
@@ -162,7 +168,5 @@ func (eh *EtcHosts) movePreservePerms(src, dst *os.File) error {
 		_, err = io.Copy(dst, src)
 		return err
 	}
-	// TODO: also keep user?
-
 	return nil
 }
