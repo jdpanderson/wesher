@@ -53,7 +53,7 @@ func Test_Join_errors(t *testing.T) {
 	id, other := newID(t), newID(t)
 	c1, c2 := net.Pipe()
 	defer func() { _ = c1.Close(); _ = c2.Close() }()
-	_, err := Join(identified{c1, other.Public()}, "not base64!", id, "j")
+	_, _, err := Join(identified{c1, other.Public()}, "not base64!", id, "j")
 	assert.ErrorContains(t, err, "join key")
 
 	tok, _ := NewTokenStore(nil).Mint(time.Minute, 1)
@@ -65,7 +65,7 @@ func Test_Join_errors(t *testing.T) {
 		_ = writeFrame(c2, challenge{Nonce: []byte{1}})
 		_ = c2.Close()
 	}()
-	_, err = Join(identified{c1, other.Public()}, tok, id, "j")
+	_, _, err = Join(identified{c1, other.Public()}, tok, id, "j")
 	assert.ErrorContains(t, err, "malformed challenge")
 }
 
@@ -86,13 +86,13 @@ func Test_identityBinding(t *testing.T) {
 	assert.Equal(t, 1, srv.Tokens.Pending())
 
 	// joiner side: the challenge claims the member but the connection belongs to other
-	_, err = Join(identified{pipeTo(t, srv, joiner.Public()), other.Public()}, tok, joiner, "j")
+	_, _, err = Join(identified{pipeTo(t, srv, joiner.Public()), other.Public()}, tok, joiner, "j")
 	assert.ErrorContains(t, err, "does not match the connection")
 
 	// and with matching identities the exchange succeeds
-	w, err := Join(pipeTo(t, srv, joiner.Public()), tok, joiner, "j")
+	w, member, err := Join(pipeTo(t, srv, joiner.Public()), tok, joiner, "j")
 	require.NoError(t, err)
-	assert.Equal(t, srv.Identity.Public(), w.Member)
+	assert.Equal(t, srv.Identity.Public(), member)
 	assert.Equal(t, joiner.Public(), w.Admission.Identity)
 }
 
@@ -116,6 +116,6 @@ func Test_Join_rejectsForeignAdmission(t *testing.T) {
 		}}
 	tok, err := srv.Tokens.Mint(time.Minute, 1)
 	require.NoError(t, err)
-	_, err = join(t, srv, tok, newID(t), "j")
+	_, _, err = join(t, srv, tok, newID(t), "j")
 	assert.ErrorContains(t, err, "someone else")
 }

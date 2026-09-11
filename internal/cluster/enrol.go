@@ -11,34 +11,36 @@ import (
 )
 
 // Enrol runs the joiner's side of enrolment against the member at addr (its
-// gossip ip:port) over a QUIC stream from a throwaway socket.
-func Enrol(ctx context.Context, addr, token string, id *trust.Identity, name string) (*enrol.Welcome, error) {
+// gossip ip:port) over a QUIC stream from a throwaway socket, and returns the
+// welcome and the member's identity.
+func Enrol(ctx context.Context, addr, token string, id *trust.Identity, name string) (*enrol.Welcome, trust.PublicKey, error) {
+	var none trust.PublicKey
 	cert, err := identityCertificate(id)
 	if err != nil {
-		return nil, err
+		return nil, none, err
 	}
 	ua, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
-		return nil, err
+		return nil, none, err
 	}
 	udp, err := net.ListenUDP("udp", &net.UDPAddr{IP: wildcardFor(ua.IP)})
 	if err != nil {
-		return nil, err
+		return nil, none, err
 	}
 	qt := &quic.Transport{Conn: udp}
 	defer func() { _ = qt.Close(); _ = udp.Close() }()
 
 	conn, err := qt.Dial(ctx, ua, enrolClientTLSConfig(cert), &quic.Config{HandshakeIdleTimeout: handshakeTime})
 	if err != nil {
-		return nil, fmt.Errorf("connecting to %s: %w", addr, err)
+		return nil, none, fmt.Errorf("connecting to %s: %w", addr, err)
 	}
 	defer func() { _ = conn.CloseWithError(0, "done") }()
 	if conn.ConnectionState().TLS.NegotiatedProtocol != alpnEnrol {
-		return nil, fmt.Errorf("%s does not offer enrolment", addr)
+		return nil, none, fmt.Errorf("%s does not offer enrolment", addr)
 	}
 	s, err := conn.OpenStreamSync(ctx)
 	if err != nil {
-		return nil, err
+		return nil, none, err
 	}
 	stream := newStreamConn(conn, s, peerOf(conn))
 	defer func() { _ = stream.Close() }()

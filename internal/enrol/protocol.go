@@ -62,9 +62,6 @@ type Welcome struct {
 	Records    trust.Records   `json:"records"`
 	Admission  trust.Admission `json:"admission"`  // the joiner's own
 	GossipAddr string          `json:"gossipAddr"` // member's ip:port for memberlist
-	// Member is the identity of the member that ran the exchange, verified
-	// against the connection by Join; it is not part of the message.
-	Member trust.PublicKey `json:"-"`
 }
 
 // deriveKey derives the exchange's MAC key, mixing the DH secret and the token

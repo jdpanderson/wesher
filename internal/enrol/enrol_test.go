@@ -38,7 +38,7 @@ func pipeTo(t *testing.T, srv *Server, joiner trust.PublicKey) Conn {
 }
 
 // join runs the joiner's side of the exchange against srv.
-func join(t *testing.T, srv *Server, token string, id *trust.Identity, name string) (*Welcome, error) {
+func join(t *testing.T, srv *Server, token string, id *trust.Identity, name string) (*Welcome, trust.PublicKey, error) {
 	t.Helper()
 	conn := pipeTo(t, srv, id.Public())
 	defer func() { _ = conn.Close() }()
@@ -71,9 +71,9 @@ func Test_Join_happyPath(t *testing.T) {
 	require.NoError(t, err)
 
 	joiner := newID(t)
-	w, err := join(t, srv, token, joiner, "joiner")
+	w, member, err := join(t, srv, token, joiner, "joiner")
 	require.NoError(t, err)
-	assert.Equal(t, srv.Identity.Public(), w.Member)
+	assert.Equal(t, srv.Identity.Public(), member)
 	assert.Equal(t, srv.Root, w.Root)
 	assert.Equal(t, "192.0.2.1:7946", w.GossipAddr)
 	assert.Equal(t, joiner.Public(), w.Admission.Identity)
@@ -83,7 +83,7 @@ func Test_Join_happyPath(t *testing.T) {
 	assert.Equal(t, 0, srv.Tokens.Pending(), "single-use token is consumed")
 
 	// the token cannot be reused
-	_, err = join(t, srv, token, newID(t), "again")
+	_, _, err = join(t, srv, token, newID(t), "again")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "closed the connection")
 }
@@ -92,10 +92,10 @@ func Test_Join_multiUseAndExpiry(t *testing.T) {
 	srv, _ := member(t)
 	token, err := srv.Tokens.Mint(time.Minute, 2)
 	require.NoError(t, err)
-	_, err = join(t, srv, token, newID(t), "one")
+	_, _, err = join(t, srv, token, newID(t), "one")
 	require.NoError(t, err)
 	assert.Equal(t, 1, srv.Tokens.Pending())
-	_, err = join(t, srv, token, newID(t), "two")
+	_, _, err = join(t, srv, token, newID(t), "two")
 	require.NoError(t, err)
 	assert.Equal(t, 0, srv.Tokens.Pending())
 
@@ -105,7 +105,7 @@ func Test_Join_multiUseAndExpiry(t *testing.T) {
 	token, err = srv.Tokens.Mint(time.Minute, 1)
 	require.NoError(t, err)
 	now = now.Add(2 * time.Minute)
-	_, err = join(t, srv, token, newID(t), "late")
+	_, _, err = join(t, srv, token, newID(t), "late")
 	require.Error(t, err)
 	assert.Equal(t, 0, srv.Tokens.Pending())
 }
@@ -118,13 +118,13 @@ func Test_Join_wrongToken(t *testing.T) {
 	// a different, well-formed token: unknown id, silent close
 	other, err := NewTokenStore(nil).Mint(time.Minute, 1)
 	require.NoError(t, err)
-	_, err = join(t, srv, other, newID(t), "x")
+	_, _, err = join(t, srv, other, newID(t), "x")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "closed the connection")
 	assert.Equal(t, 1, srv.Tokens.Pending(), "a failed attempt does not consume the token")
 
 	// malformed token
-	_, err = join(t, srv, "nope", newID(t), "x")
+	_, _, err = join(t, srv, "nope", newID(t), "x")
 	assert.ErrorContains(t, err, "join key")
 }
 
@@ -145,7 +145,7 @@ func Test_Join_memberMustProveToken(t *testing.T) {
 	wrong[0] ^= 1
 	impostor.Tokens.tokens[idOf(key)] = &token{key: wrong, expires: time.Now().Add(time.Minute), uses: 1}
 
-	_, err = join(t, impostor, real, newID(t), "victim")
+	_, _, err = join(t, impostor, real, newID(t), "victim")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "member could not prove knowledge")
 }
@@ -161,7 +161,7 @@ func Test_Join_welcomeMustBeConsistent(t *testing.T) {
 	token, err := srv.Tokens.Mint(time.Minute, 1)
 	require.NoError(t, err)
 
-	_, err = join(t, srv, token, newID(t), "j")
+	_, _, err = join(t, srv, token, newID(t), "j")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a valid member")
 }

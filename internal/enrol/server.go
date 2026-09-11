@@ -114,71 +114,72 @@ func (s *Server) handle(conn Conn) error {
 }
 
 // Join enrols with the member on conn using token, proving knowledge of it and
-// verifying the member's proof in return. The caller owns conn.
-func Join(conn Conn, token string, id *trust.Identity, name string) (*Welcome, error) {
+// verifying the member's proof in return. It returns the welcome and the
+// identity of the member that ran the exchange, which is the connection's
+// peer. The caller owns conn.
+func Join(conn Conn, token string, id *trust.Identity, name string) (*Welcome, trust.PublicKey, error) {
 	key, err := DecodeToken(token)
 	if err != nil {
-		return nil, err
+		return nil, trust.PublicKey{}, err
 	}
 	setDeadline(conn)
 
 	nJ, err := randomNonce()
 	if err != nil {
-		return nil, err
+		return nil, trust.PublicKey{}, err
 	}
 	tid := idOf(key)
 	if err = writeFrame(conn, hello{
 		Version: Version, TokenID: tid[:], Identity: id.Public(), DH: id.DHPublic(), Nonce: nJ, Name: name,
 	}); err != nil {
-		return nil, err
+		return nil, trust.PublicKey{}, err
 	}
 
 	var c challenge
 	if err = readFrame(conn, &c); err != nil {
-		return nil, fmt.Errorf("member closed the connection (is the join key valid and unexpired?): %w", err)
+		return nil, trust.PublicKey{}, fmt.Errorf("member closed the connection (is the join key valid and unexpired?): %w", err)
 	}
 	if len(c.Nonce) != nonceLen {
-		return nil, errors.New("malformed challenge")
+		return nil, trust.PublicKey{}, errors.New("malformed challenge")
 	}
 	if err = bound(conn, c.Identity); err != nil {
-		return nil, err
+		return nil, trust.PublicKey{}, err
 	}
 	ss, err := id.SharedSecret(c.DH)
 	if err != nil {
-		return nil, err
+		return nil, trust.PublicKey{}, err
 	}
 	k := deriveKey(ss, key, nJ, c.Nonce)
 	tr := transcript(id.Public(), id.DHPublic(), c.Identity, c.DH, nJ, c.Nonce, name)
 	if !hmac.Equal(c.MAC, mac(k, labelMember, tr)) {
-		return nil, errors.New("member could not prove knowledge of the join key")
+		return nil, trust.PublicKey{}, errors.New("member could not prove knowledge of the join key")
 	}
 	if err = writeFrame(conn, proof{MAC: mac(k, labelJoiner, tr)}); err != nil {
-		return nil, err
+		return nil, trust.PublicKey{}, err
 	}
 
 	var w Welcome
 	if err = readFrame(conn, &w); err != nil {
-		return nil, err
+		return nil, trust.PublicKey{}, err
 	}
 
 	// Trust nothing in the welcome that the records do not prove.
 	set := trust.NewSet(w.Root)
 	set.Merge(w.Records)
 	if !set.Valid(c.Identity) {
-		return nil, errors.New("member is not a valid member of the cluster it described")
+		return nil, trust.PublicKey{}, errors.New("member is not a valid member of the cluster it described")
 	}
 	if w.Admission.Identity != id.Public() || w.Admission.Admitter != c.Identity {
-		return nil, errors.New("welcome carries an admission for someone else")
+		return nil, trust.PublicKey{}, errors.New("welcome carries an admission for someone else")
 	}
 	if _, err = set.AddAdmission(w.Admission); err != nil {
-		return nil, err
+		return nil, trust.PublicKey{}, err
 	}
 	if !set.Valid(id.Public()) {
-		return nil, errors.New("admission does not make us a member")
+		return nil, trust.PublicKey{}, errors.New("admission does not make us a member")
 	}
 	if err = writeFrame(conn, ack{}); err != nil {
-		return nil, err
+		return nil, trust.PublicKey{}, err
 	}
-	w.Member = c.Identity
-	return &w, nil
+	return &w, c.Identity, nil
 }

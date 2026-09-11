@@ -174,12 +174,12 @@ func (a *AgentCmd) bootstrap(ctx context.Context, boot *cluster.Bootstrap, hostn
 		slog.Info("initialised a new cluster", "root", boot.Root.Short())
 		return a.Join, nil
 	case a.JoinKey != "":
-		w, err := a.enrol(ctx, boot.Identity, hostname)
+		w, member, err := a.enrol(ctx, boot.Identity, hostname)
 		if err != nil {
 			return nil, err
 		}
 		boot.Enrol(w.Root, w.Records)
-		slog.Info("enrolled in cluster", "root", w.Root.Short(), "via", w.GossipAddr, "member", w.Member.Short())
+		slog.Info("enrolled in cluster", "root", w.Root.Short(), "via", w.GossipAddr, "member", member.Short())
 		return []string{w.GossipAddr}, nil
 	default:
 		return nil, errors.New("this node is not a member of any cluster: use --init to start one, or --join HOST --join-key TOKEN to enrol (get a token with 'cheesecloth invite' on a member)")
@@ -195,18 +195,19 @@ func masked(prefixes []netip.Prefix) []netip.Prefix {
 	return out
 }
 
-// enrol tries each --join member in turn with the join key.
-func (a *AgentCmd) enrol(ctx context.Context, id *trust.Identity, name string) (*enrol.Welcome, error) {
+// enrol tries each --join member in turn with the join key, returning the
+// welcome and the identity of the member that admitted us.
+func (a *AgentCmd) enrol(ctx context.Context, id *trust.Identity, name string) (*enrol.Welcome, trust.PublicKey, error) {
 	var lastErr error
 	for _, addr := range a.enrolAddrs() {
-		w, err := cluster.Enrol(ctx, addr, a.JoinKey, id, name)
+		w, member, err := cluster.Enrol(ctx, addr, a.JoinKey, id, name)
 		if err == nil {
-			return w, nil
+			return w, member, nil
 		}
 		lastErr = fmt.Errorf("enrolling with %s: %w", addr, err)
 		slog.Warn("enrolment attempt failed", "member", addr, "err", err)
 	}
-	return nil, lastErr
+	return nil, trust.PublicKey{}, lastErr
 }
 
 // enrolAddrs are the --join members as ip:port, defaulting to the cluster port.
