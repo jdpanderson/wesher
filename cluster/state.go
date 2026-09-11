@@ -121,7 +121,6 @@ type Bootstrap struct {
 	Root     trust.PublicKey // zero until enrolled or initialised
 	Records  trust.Records
 	Peers    []overlay.Node // last known peers, with metadata
-	enrolled bool
 }
 
 // Load reads the state for name, or starts fresh when init is set, and makes
@@ -152,18 +151,17 @@ func Load(name string, init bool) (*Bootstrap, error) {
 	b := &Bootstrap{Identity: id, Records: st.Records, Peers: st.Nodes}
 	if st.Root != nil {
 		b.Root = *st.Root
-		b.enrolled = true
 	}
 	return b, nil
 }
 
-// Enrolled reports whether the node already belongs to a cluster.
-func (b *Bootstrap) Enrolled() bool { return b.enrolled }
+// Enrolled reports whether the node already belongs to a cluster: it knows a root.
+func (b *Bootstrap) Enrolled() bool { return b.Root != (trust.PublicKey{}) }
 
 // save persists the bootstrap as the state for name.
 func (b *Bootstrap) save(name string) error {
 	st := &state{Seed: b.Identity.Seed(), Records: b.Records, Nodes: b.Peers}
-	if b.enrolled {
+	if b.Enrolled() {
 		root := b.Root
 		st.Root = &root
 	}
@@ -186,7 +184,6 @@ func (b *Bootstrap) InitRoot(nodeName string) {
 	adm := trust.SelfAdmit(b.Identity, nodeName, time.Now())
 	b.Records = trust.Records{Admissions: []trust.Admission{adm}}
 	b.Peers = nil
-	b.enrolled = true
 }
 
 // Enrol records the outcome of an enrolment exchange.
@@ -194,5 +191,4 @@ func (b *Bootstrap) Enrol(root trust.PublicKey, records trust.Records) {
 	b.Root = root
 	b.Records = records
 	b.Peers = nil
-	b.enrolled = true
 }
