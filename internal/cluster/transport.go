@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -310,7 +311,7 @@ func (t *quicTransport) register(conn *quic.Conn, peer, client trust.PublicKey) 
 // preferredDialer is the side whose connection both keep when a and b dial
 // each other at once: the smaller identity, so both sides pick the same one.
 func preferredDialer(a, b trust.PublicKey) trust.PublicKey {
-	if b.String() < a.String() {
+	if bytes.Compare(b[:], a[:]) < 0 {
 		return b
 	}
 	return a

@@ -1,6 +1,7 @@
 package trust
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/netip"
 	"testing"
@@ -260,7 +261,8 @@ func Test_Set_HostConflict(t *testing.T) {
 	_, eLoses := set.HostConflict(e.Public())
 	_, fLoses := set.HostConflict(f.Public())
 	assert.NotEqual(t, eLoses, fLoses)
-	assert.Equal(t, e.Public().String() > f.Public().String(), eLoses)
+	eKey, fKey := e.Public(), f.Public()
+	assert.Equal(t, bytes.Compare(eKey[:], fKey[:]) > 0, eLoses)
 
 	// an unknown identity has nothing to conflict with
 	_, clash = set.HostConflict(newID(t).Public())

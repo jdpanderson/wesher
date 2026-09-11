@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"io"
@@ -255,7 +256,7 @@ func Test_quicTransport_oneConnectionPerPair(t *testing.T) {
 // Both sides must settle on the same connection whatever order the dials land in.
 func Test_keepNew(t *testing.T) {
 	a, b := testIdentity(t).Public(), testIdentity(t).Public()
-	if b.String() < a.String() {
+	if bytes.Compare(b[:], a[:]) < 0 {
 		a, b = b, a
 	}
 	assert.Equal(t, a, preferredDialer(a, b))

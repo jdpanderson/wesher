@@ -217,7 +217,7 @@ func (s *Set) HostConflict(id PublicKey) (Admission, bool) {
 		if a.Identity == id || a.Host != mine.Host {
 			continue
 		}
-		if a.IssuedAt < mine.IssuedAt || (a.IssuedAt == mine.IssuedAt && a.Identity.String() < id.String()) {
+		if a.IssuedAt < mine.IssuedAt || (a.IssuedAt == mine.IssuedAt && bytes.Compare(a.Identity[:], id[:]) < 0) {
 			return a, true
 		}
 	}
