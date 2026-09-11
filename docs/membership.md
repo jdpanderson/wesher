@@ -173,7 +173,16 @@ can be revoked.
 - `cheesecloth revoke NAME|IDENTITY`: sign and broadcast a revocation.
 - `cheesecloth status`: peers now show identity fingerprints.
 
+## Clocks
+
+Records carry the issuer's wall-clock time, and the rules compare them: a
+revocation counts only against admissions the revoker made before it, and
+the earlier of two admissions to one overlay slot wins. Nodes are expected to
+keep their clocks synchronised (NTP or equivalent); with skew of more than a
+few seconds between admitters, a revocation could appear to predate an
+admission it should cover. Revocations are rare enough that this is accepted.
+
 ## Out of scope for now
 
 Rotation of the pinned root; cascading revocation; a PAKE for short human
-codes.
+codes; clock-independent ordering of records.
