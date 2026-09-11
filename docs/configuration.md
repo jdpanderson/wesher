@@ -5,7 +5,7 @@ Options come from command-line flags or from a YAML configuration file,
 Config keys are the flag names without the leading dashes, e.g. `bind-addr: "::"`.
 A flag given on the command line overrides the file. Unknown keys in the file are
 an error, as are `join-key` and `init`, which are one-time actions and stay on the
-command line. Environment variables are not read. An annotated example lives in
+command line. Environment variables are not read. An annotated example is in
 [`dist/config.yaml`](../dist/config.yaml).
 
 | Option | Config key | Description | Default |
@@ -33,12 +33,12 @@ The overlay IP address of each node is allocated out of a private network
 reach each other). The node that ran `--init` takes the first address; each node
 enrolled afterwards is assigned the lowest free address by the member that
 admitted it, and that assignment is part of its signed admission record.
-Addresses are therefore stable across restarts, packed from the bottom of the
-network, and agreed on by every member; a node claiming an address other than
-its assigned one is ignored.
+Addresses are therefore stable across restarts, allocated from the start of
+the network, and agreed on by every member. A node claiming an address other
+than its assigned one is ignored.
 
 The overlay network must be the same on every node. Changing `--overlay-net`
-everywhere moves the whole mesh, as each node keeps its position in the network.
+on every node changes every address, since each node keeps its slot number.
 
 The node's hostname identifies it in the cluster and must be unique; enrolment
 refuses a name another member already holds.
@@ -48,8 +48,8 @@ refuses a name another member already holds.
 Any address option accepts either family. Two independent choices are made per
 cluster:
 
-- **Underlay** (cluster gossip and wireguard endpoints): the family of
-  `--bind-addr` decides. `0.0.0.0` (the default) or a specific IPv4 address makes
+- **Underlay** (cluster gossip and wireguard endpoints): set by the family of
+  `--bind-addr`. `0.0.0.0` (the default) or a specific IPv4 address makes
   an IPv4 cluster; `::` or a specific IPv6 address makes an IPv6 cluster. Every
   node of a cluster must use the same family, since an IPv4-only node cannot
   reach an IPv6-only one. Dual-stack hosts can join either kind of cluster.

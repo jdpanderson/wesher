@@ -54,9 +54,9 @@ linode2  mFrk3G+0  10.0.0.2  178.79.147.187:51820  2s ago     348 B  404 B  -
 linode3  kwvzJSL2  10.0.0.3  172.105.13.112:51820  1s ago     348 B  404 B  -
 ```
 
-`cheesecloth invite [--ttl 10m] [--uses 1]` mints an invitation token on a
-running member. `cheesecloth revoke NAME|IDENTITY` removes a member; the
-revoked node is cut off by every peer rather than told.
+`cheesecloth invite [--ttl 10m] [--uses 1]` creates an invitation token on a
+running member. `cheesecloth revoke NAME|IDENTITY` removes a member. Every
+peer stops talking to the revoked node; the revoked node is not notified.
 
 ## Restarts and recovery
 
@@ -92,8 +92,9 @@ and a node installs a peer's wireguard key only if the peer's identity is a vali
 member and signed its metadata. The design is described in
 [membership.md](membership.md).
 
-Compromise of a node yields that node's identity, which any member can revoke
-with `cheesecloth revoke`. Until revoked, an attacker holding it can:
+An attacker who compromises a node obtains that node's identity, which any
+member can revoke with `cheesecloth revoke`. Until it is revoked, the attacker
+can:
 
 - access services exposed on the overlay network
 - impersonate that node and disrupt traffic to and from it
@@ -119,9 +120,10 @@ keeps running without peers until it is enrolled again: stop it, delete
 
 ### Split-brain
 
-There is no way to distinguish a failed node from one that was removed on
-purpose, by design: growing and shrinking a cluster dynamically should be easy.
-A long connection loss between two parts of the cluster (for example across a
-WAN link between providers) can therefore leave each side believing the other is
-gone. Edge nodes that periodically restart cheesecloth with `--join` pointing at
-the other side work around it; static seed nodes are a candidate for future work.
+cheesecloth does not distinguish a failed node from one that was removed on
+purpose. This is intentional, so that a cluster can grow and shrink without
+configuration changes. A long connection loss between two parts of the cluster
+(for example across a WAN link between providers) therefore causes each side to
+treat the other as failed. A workaround is to restart cheesecloth periodically
+on one node of each side with `--join` pointing at the other side. Static seed
+nodes are a candidate for future work.
