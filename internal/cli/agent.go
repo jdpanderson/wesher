@@ -48,11 +48,10 @@ func (a *AgentCmd) Validate() error {
 	if overlay.MaxHost(a.OverlayNet) < 2 {
 		return fmt.Errorf("overlay network %s has no room for two nodes", a.OverlayNet)
 	}
-	for i, p := range a.AllowedIPs {
+	for _, p := range a.AllowedIPs {
 		if p.Overlaps(a.OverlayNet) {
 			return fmt.Errorf("--allowed-ips %s overlaps the overlay network %s", p, a.OverlayNet)
 		}
-		a.AllowedIPs[i] = p.Masked()
 	}
 
 	if a.JoinKey != "" && len(a.Join) == 0 {
@@ -116,7 +115,7 @@ func (a *AgentCmd) Run() error {
 		return fmt.Errorf("instantiating wireguard controller: %w", err)
 	}
 	// what peers learn about us: name, overlay address, wireguard key, routes
-	localNode := &overlay.Node{Name: hostname, OverlayAddr: overlayAddr, PubKey: wgstate.PubKey.String(), AllowedIPs: a.AllowedIPs}
+	localNode := &overlay.Node{Name: hostname, OverlayAddr: overlayAddr, PubKey: wgstate.PubKey.String(), AllowedIPs: masked(a.AllowedIPs)}
 
 	cl, err := cluster.New(cluster.Config{
 		StateDir: cluster.DefaultDir, StateName: a.Interface, BindAddr: a.BindAddr, AdvertiseAddr: advertise, BindPort: a.ClusterPort,
@@ -185,6 +184,15 @@ func (a *AgentCmd) bootstrap(ctx context.Context, boot *cluster.Bootstrap, hostn
 	default:
 		return nil, errors.New("this node is not a member of any cluster: use --init to start one, or --join HOST --join-key TOKEN to enrol (get a token with 'cheesecloth invite' on a member)")
 	}
+}
+
+// masked is the prefixes with their host bits cleared, as routes are written.
+func masked(prefixes []netip.Prefix) []netip.Prefix {
+	out := make([]netip.Prefix, len(prefixes))
+	for i, p := range prefixes {
+		out[i] = p.Masked()
+	}
+	return out
 }
 
 // enrol tries each --join member in turn with the join key.

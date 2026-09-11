@@ -55,11 +55,11 @@ func Test_AgentCmd_Validate_errors(t *testing.T) {
 	}
 }
 
-func Test_AgentCmd_Validate_masksAllowedIPs(t *testing.T) {
-	cmd := validCmd()
-	cmd.AllowedIPs = []netip.Prefix{netip.MustParsePrefix("192.168.7.9/24")}
-	require.NoError(t, cmd.Validate())
-	assert.Equal(t, "192.168.7.0/24", cmd.AllowedIPs[0].String())
+func Test_masked(t *testing.T) {
+	got := masked([]netip.Prefix{netip.MustParsePrefix("192.168.7.9/24"), netip.MustParsePrefix("fd00::1/64")})
+	assert.Equal(t, "192.168.7.0/24", got[0].String())
+	assert.Equal(t, "fd00::/64", got[1].String())
+	assert.Empty(t, masked(nil))
 }
 
 func Test_AgentCmd_Validate_joinKey(t *testing.T) {
