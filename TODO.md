@@ -287,6 +287,21 @@ before starting; none are committed yet.
       control socket and sd_notify. The trust, enrolment, gossip and cluster
       packages are portable already. Decide whether to target both, macOS
       only, or neither.
+- [ ] Tool dependencies as `tool` directives in `go.mod` (Go 1.24+), run with
+      `go tool golangci-lint` and `go tool govulncheck`, instead of
+      `go run pkg@version` pinned in the Makefile; Dependabot then updates
+      them like any dependency.
+- [ ] **DECISION** Release pipeline with GoReleaser: one config for the
+      cross-compiled binaries, checksums, SBOM, cosign signing and the
+      GitHub release, with nfpm producing the .deb and Arch packages. Would
+      replace the hand-written Makefile loop and the per-distribution
+      container jobs; `debian/` and `arch/` could stay for local builds or go.
+      Releases currently carry no signature or provenance.
+- [ ] Fuzz tests (native `go test -fuzz`) for the parsers: enrolment frames
+      and messages, the token codec, node metadata JSON, records JSON and the
+      config file.
+- [ ] Fill `--version` from `debug.ReadBuildInfo` (commit and dirty flag) when
+      no tag is stamped with `-X main.version`.
 - [ ] **DECISION** Drop the X25519 key from identities and admission records.
       It fed the pairwise gossip keys, which QUIC replaced, and the enrolment
       MAC key, where the identity-to-TLS-peer binding now does the same job:
