@@ -50,15 +50,13 @@ func twoMembers(t *testing.T) (a, b *testNode) {
 // first sends are dropped while the transport connects, as UDP would drop them.
 func sendUntilConnected(t *testing.T, from *testNode, to string, msg string) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for from.tr.lookup(to) == nil {
-		_, err := from.tr.WriteTo([]byte(msg), to)
-		require.NoError(t, err)
-		if time.Now().After(deadline) {
-			t.Fatalf("never connected to %s", to)
+	require.Eventually(t, func() bool {
+		if from.tr.lookup(to) != nil {
+			return true
 		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		_, _ = from.tr.WriteTo([]byte(msg), to) // dropped, and starts the connection
+		return false
+	}, 5*time.Second, 20*time.Millisecond, "never connected to %s", to)
 	_, err := from.tr.WriteTo([]byte(msg), to)
 	require.NoError(t, err)
 }
@@ -66,11 +64,7 @@ func sendUntilConnected(t *testing.T, from *testNode, to string, msg string) {
 // waitForgotten waits for n to drop its connection to addr.
 func waitForgotten(t *testing.T, n *testNode, addr string) {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for n.tr.lookup(addr) != nil && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
-	}
-	assert.Nil(t, n.tr.lookup(addr), "connection to %s still present", addr)
+	assert.Eventually(t, func() bool { return n.tr.lookup(addr) == nil }, 3*time.Second, 20*time.Millisecond, "connection to %s still present", addr)
 }
 
 // streamDies checks that a stream the peer will not accept fails on first use.
@@ -231,24 +225,23 @@ func Test_quicTransport_oneConnectionPerPair(t *testing.T) {
 		go func() { defer wg.Done(); _, _ = b.tr.DialTimeout(a.addr, 2*time.Second) }()
 	}
 	wg.Wait()
-	time.Sleep(200 * time.Millisecond) // closes propagate
 
-	preferred := a.id.Public()
-	if b.id.Public().String() < preferred.String() {
-		preferred = b.id.Public()
+	preferred := preferredDialer(a.id.Public(), b.id.Public())
+	recorded := func() (ca, cb peerConn) {
+		a.tr.mu.Lock()
+		ca = a.tr.conns[b.addr]
+		a.tr.mu.Unlock()
+		b.tr.mu.Lock()
+		cb = b.tr.conns[a.addr]
+		b.tr.mu.Unlock()
+		return ca, cb
 	}
-	a.tr.mu.Lock()
-	ca := a.tr.conns[b.addr]
-	a.tr.mu.Unlock()
-	b.tr.mu.Lock()
-	cb := b.tr.conns[a.addr]
-	b.tr.mu.Unlock()
-	require.NotNil(t, ca.conn)
-	require.NotNil(t, cb.conn)
-	assert.Equal(t, preferred, ca.client, "a kept the connection dialled by the smaller identity")
-	assert.Equal(t, preferred, cb.client, "and so did b")
-	assert.NoError(t, ca.conn.Context().Err())
-	assert.NoError(t, cb.conn.Context().Err())
+	live := func(c peerConn) bool { return c.conn != nil && c.conn.Context().Err() == nil }
+	// the losing connections close asynchronously; both sides end up on the one dialled by the smaller identity
+	require.Eventually(t, func() bool {
+		ca, cb := recorded()
+		return live(ca) && live(cb) && ca.client == preferred && cb.client == preferred
+	}, 3*time.Second, 20*time.Millisecond, "both sides settle on the connection dialled by the smaller identity")
 
 	// the survivor carries traffic both ways
 	_, err := a.tr.WriteTo([]byte("ping"), b.addr)
