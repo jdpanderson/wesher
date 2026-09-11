@@ -17,16 +17,18 @@ import (
 // DefaultConfigPath is read when it exists; --config names another file.
 const DefaultConfigPath = "/etc/cheesecloth/config.yaml"
 
-// commandLineOnly are flags that must not appear in the config file: --join-key
-// is a one-time secret, --init is a one-time destructive action, --config is
-// how the file itself is found.
+// commandLineOnly are flags that must not appear in the config file, with the
+// reason the operator is told: --join-key is a one-time secret, --init is a
+// one-time destructive action, --config is how the file itself is found.
 var commandLineOnly = map[string]string{
 	"join-key": "it is a one-time secret; pass it on the command line",
 	"init":     "it starts a new cluster and forgets state; pass it on the command line once",
 	"config":   "it names the config file itself",
-	"help":     "",
-	"version":  "",
 }
+
+// notSettings are flags that are not settings at all; in the config file they
+// are unknown keys like any other.
+var notSettings = map[string]bool{"help": true, "version": true}
 
 // configLoader parses a YAML config file whose keys are flag names, e.g.
 // "bind-addr: ::". Values apply to every command that has the flag, and an
@@ -54,10 +56,10 @@ func (c *configResolver) Validate(app *kong.Application) error {
 	collectFlags(app.Node, known)
 	var bad []string
 	for key := range c.values {
-		switch reason, only := commandLineOnly[key]; {
-		case only && reason != "":
+		if reason, only := commandLineOnly[key]; only {
 			return fmt.Errorf("config: %q cannot be set in the config file: %s", key, reason)
-		case only, !known[key]:
+		}
+		if !known[key] || notSettings[key] {
 			bad = append(bad, key)
 		}
 	}

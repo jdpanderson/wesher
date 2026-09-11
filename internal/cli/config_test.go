@@ -106,6 +106,10 @@ func Test_config_rejectsUnknownAndCommandLineOnlyKeys(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "init")
 
+	_, err = parse(t, writeConfig(t, "version: true\n"), "agent")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown setting(s) version")
+
 	_, err = parse(t, writeConfig(t, "mtu: [1, 2]\n"), "agent")
 	require.Error(t, err, "a value of the wrong shape is an error")
 
