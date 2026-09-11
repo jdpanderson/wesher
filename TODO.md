@@ -279,6 +279,14 @@ before starting; none are committed yet.
       the wireguard port. WireGuard keeps its own UDP port: the kernel owns it.
       Done the same day; the welcome message lost its own encryption since
       the stream carries it, and `--join` takes an optional port.
+- [ ] **DECISION** macOS and Windows support. Both need the userspace
+      `wireguard-go` (macOS has no kernel module; Windows has the WireGuardNT
+      driver, driven through `wireguard-go`/`wgctrl` over its own IPC) and
+      replacements for the Linux-only parts: `vishvananda/netlink` for
+      interface, address and route setup, `/etc/hosts` handling, the unix
+      control socket and sd_notify. The trust, enrolment, gossip and cluster
+      packages are portable already. Decide whether to target both, macOS
+      only, or neither.
 - [ ] **DECISION** Drop the X25519 key from identities and admission records.
       It fed the pairwise gossip keys, which QUIC replaced, and the enrolment
       MAC key, where the identity-to-TLS-peer binding now does the same job:
