@@ -82,7 +82,7 @@ func Test_AgentCmd_enrol_unreachable(t *testing.T) {
 	cmd := AgentCmd{ClusterPort: 1, JoinKey: "token", Join: []string{"127.0.0.1", "127.0.0.1:2"}}
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
-	_, _, err = cmd.enrol(ctx, joiner, "j")
+	_, err = cmd.enrol(ctx, joiner, "j")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "enrolling with 127.0.0.1:2", "the last member tried is reported")
 }

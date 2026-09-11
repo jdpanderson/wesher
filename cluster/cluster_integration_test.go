@@ -63,9 +63,9 @@ func enrolCluster(t *testing.T, member *Cluster, memberBind string, memberPort i
 	require.NoError(t, err)
 	b, err := Load(name, true)
 	require.NoError(t, err)
-	w, memberID, err := Enrol(context.Background(), fmt.Sprintf("%s:%d", memberBind, memberPort), token, b.Identity, name)
+	w, err := Enrol(context.Background(), fmt.Sprintf("%s:%d", memberBind, memberPort), token, b.Identity, name)
 	require.NoError(t, err)
-	require.Equal(t, member.Identity(), memberID)
+	require.Equal(t, member.Identity(), w.Member)
 	b.Enrol(w.Root, w.Records)
 	bind := netip.MustParseAddr(bindAddr)
 	c, err := New(Config{
