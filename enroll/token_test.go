@@ -68,11 +68,37 @@ func Test_TokenStore_uses(t *testing.T) {
 	key, _ := DecodeToken(tok)
 	id := idOf(key)
 
-	s.consume(tokenID{9}) // unknown: no-op
-	s.consume(id)
+	assert.False(t, s.consume(tokenID{9}), "unknown token")
+	assert.True(t, s.consume(id))
 	_, ok := s.lookup(id)
 	assert.True(t, ok, "one use left")
-	s.consume(id)
+	assert.True(t, s.consume(id))
 	_, ok = s.lookup(id)
 	assert.False(t, ok)
+	assert.False(t, s.consume(id), "spent")
+}
+
+// Two joiners may both look a single-use token up before either has proven
+// it; consuming decides who gets the one use.
+func Test_TokenStore_concurrentJoiners(t *testing.T) {
+	s := NewTokenStore()
+	tok, err := s.Mint(time.Minute, 1)
+	require.NoError(t, err)
+	key, _ := DecodeToken(tok)
+	id := idOf(key)
+
+	_, ok := s.lookup(id)
+	require.True(t, ok)
+	_, ok = s.lookup(id)
+	require.True(t, ok, "both joiners see the token")
+	assert.True(t, s.consume(id), "the first proof spends it")
+	assert.False(t, s.consume(id), "the second is refused")
+
+	now := time.Now()
+	s.now = func() time.Time { return now }
+	tok, err = s.Mint(time.Minute, 1)
+	require.NoError(t, err)
+	key, _ = DecodeToken(tok)
+	now = now.Add(2 * time.Minute)
+	assert.False(t, s.consume(idOf(key)), "a token that expired mid-exchange is not spent")
 }

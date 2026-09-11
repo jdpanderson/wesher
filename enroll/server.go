@@ -91,7 +91,9 @@ func (s *Server) handle(conn net.Conn) error {
 	if !hmac.Equal(p.MAC, mac(k.mac, labelJoiner, tr)) {
 		return errors.New("joiner could not prove knowledge of the token")
 	}
-	s.Tokens.consume(id)
+	if !s.Tokens.consume(id) {
+		return errors.New("token was spent or expired during the exchange")
+	}
 
 	adm, records, err := s.Admit(h.Identity, h.DH, h.Name)
 	if err != nil {

@@ -95,18 +95,21 @@ func (s *TokenStore) lookup(id tokenID) ([]byte, bool) {
 	return t.key, true
 }
 
-// consume spends one use of a token after a successful proof.
-func (s *TokenStore) consume(id tokenID) {
+// consume spends one use of a token after a successful proof and reports
+// whether a use was left to spend. Two joiners proving the same token at once
+// both pass lookup; only as many as the token has uses may be admitted.
+func (s *TokenStore) consume(id tokenID) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t, ok := s.tokens[id]
-	if !ok {
-		return
+	if !ok || !s.now().Before(t.expires) {
+		return false
 	}
 	t.uses--
 	if t.uses <= 0 {
 		delete(s.tokens, id)
 	}
+	return true
 }
 
 // Pending is the number of live tokens.
