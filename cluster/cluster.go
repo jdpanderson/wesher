@@ -51,6 +51,7 @@ type Cluster struct {
 	done      chan struct{}  // closed by Leave
 	routines  sync.WaitGroup // forwardEvents and Members goroutines; Leave waits for them
 	leaveOnce sync.Once
+	membersOn atomic.Bool // Members has been called
 }
 
 // newMemberlistConfig builds the base memberlist config; tests swap in faster timers.
@@ -317,9 +318,12 @@ func (c *Cluster) Leave() {
 // Members returns a channel that receives the current list of other verified
 // nodes, metadata decoded, right away and then whenever the membership
 // changes; bursts of changes may be coalesced into one snapshot. Nodes that
-// fail verifyMeta are left out. Call it at most once. The channel is closed
-// after Leave.
+// fail verifyMeta are left out. There is one such channel per cluster: a
+// second call panics. The channel is closed after Leave.
 func (c *Cluster) Members() <-chan []overlay.Node {
+	if !c.membersOn.CompareAndSwap(false, true) {
+		panic("cluster: Members called more than once")
+	}
 	changes := make(chan []overlay.Node)
 	c.signalChanged() // the first snapshot may well be empty; the interface still needs to come up
 

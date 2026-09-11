@@ -228,6 +228,7 @@ func Test_Cluster_Leave_closesMembers(t *testing.T) {
 	useTempStatePaths(t)
 	c := rootCluster(t, "a", "127.0.0.1", freePort(t))
 	ch := c.Members()
+	assert.Panics(t, func() { c.Members() }, "one membership channel per cluster")
 
 	c.Leave()
 	c.Leave() // idempotent
