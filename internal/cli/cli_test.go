@@ -72,5 +72,5 @@ func Test_Parser_versionAndHelp(t *testing.T) {
 	out.Reset()
 	_, _ = parse("--help")
 	assert.Contains(t, out.String(), "mesh overlay network manager")
-	assert.Contains(t, out.String(), DefaultConfigPath)
+	assert.Contains(t, out.String(), "absent.yaml", "the help names the config file the parser reads")
 }

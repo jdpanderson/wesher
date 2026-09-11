@@ -4,6 +4,9 @@ import (
 	"github.com/alecthomas/kong"
 )
 
+// DefaultInterface is the wireguard interface the commands act on unless told otherwise.
+const DefaultInterface = "wgoverlay"
+
 // CLI is the command tree.
 type CLI struct {
 	Config   kong.ConfigFlag  `help:"configuration file to read instead of ${default_config}" placeholder:"PATH"`
@@ -21,10 +24,10 @@ type CLI struct {
 func Parser(c *CLI, configPath, version string) (*kong.Kong, error) {
 	return kong.New(c,
 		kong.Name("cheesecloth"),
-		kong.Description("mesh overlay network manager. Settings may come from a YAML config file ("+DefaultConfigPath+
+		kong.Description("mesh overlay network manager. Settings may come from a YAML config file ("+configPath+
 			" or --config) keyed by flag name; command-line flags override it."),
 		kong.UsageOnError(),
-		kong.Vars{"version": version, "default_config": DefaultConfigPath},
+		kong.Vars{"version": version, "default_config": configPath, "default_interface": DefaultInterface},
 		kong.Configuration(configLoader, configPath),
 	)
 }

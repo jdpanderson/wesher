@@ -34,7 +34,7 @@ type AgentCmd struct {
 	WireguardPort int            `help:"port used for wireguard traffic (UDP); must be the same across cluster" default:"51820"`
 	OverlayNet    netip.Prefix   `help:"the network in which to allocate addresses for the overlay mesh network (CIDR format); must be the same across cluster" default:"10.0.0.0/8"`
 	AllowedIPs    []netip.Prefix `name:"allowed-ips" help:"extra networks reachable through this node (CIDR, comma separated); peers route them over the mesh via this node, which must forward. Must not overlap --overlay-net"`
-	Interface     string         `help:"name of the wireguard interface to create and manage" default:"wgoverlay"`
+	Interface     string         `help:"name of the wireguard interface to create and manage" default:"${default_interface}"`
 	MTU           int            `help:"MTU of the wireguard interface" default:"1420"`
 	// PersistentKeepalive is a time.Duration so kong accepts "25s"; 0 disables it.
 	PersistentKeepalive time.Duration `help:"interval at which peers send keepalives, to keep NAT mappings open (e.g. 25s); 0 disables" default:"0"`
@@ -140,11 +140,7 @@ func (a *AgentCmd) Run() error {
 		return fmt.Errorf("creating cluster: %w", err)
 	}
 
-	socket := a.ControlSocket
-	if socket == "" {
-		socket = control.DefaultSocket(a.Interface)
-	}
-	ctl, err := control.Listen(socket, agentControl{cluster})
+	ctl, err := control.Listen(socketFor(a.Interface, a.ControlSocket), agentControl{cluster})
 	if err != nil {
 		cluster.Leave()
 		return err

@@ -12,15 +12,18 @@ import (
 
 // controlFlags are shared by the commands that talk to a running agent.
 type controlFlags struct {
-	Interface     string `help:"wireguard interface of the agent to talk to" default:"wgoverlay"`
+	Interface     string `help:"wireguard interface of the agent to talk to" default:"${default_interface}"`
 	ControlSocket string `help:"agent control socket (default /run/cheesecloth/<interface>.sock)"`
 }
 
-func (c *controlFlags) socket() string {
-	if c.ControlSocket != "" {
-		return c.ControlSocket
+func (c *controlFlags) socket() string { return socketFor(c.Interface, c.ControlSocket) }
+
+// socketFor is the control socket of the agent for iface, unless one is given explicitly.
+func socketFor(iface, explicit string) string {
+	if explicit != "" {
+		return explicit
 	}
-	return control.DefaultSocket(c.Interface)
+	return control.DefaultSocket(iface)
 }
 
 // membership is what agentControl needs from a *cluster.Cluster.
