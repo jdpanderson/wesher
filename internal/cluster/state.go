@@ -18,7 +18,7 @@ type state struct {
 	Seed    []byte           `json:"seed"`
 	Root    *trust.PublicKey `json:"root,omitempty"`
 	Records trust.Records    `json:"records"`
-	Peers   []overlay.Node   `json:"nodes"`
+	Peers   []overlay.Node   `json:"peers"`
 }
 
 var statePathTemplate = "/var/lib/cheesecloth/%s.json"
