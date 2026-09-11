@@ -42,24 +42,18 @@ func (f *fakeHosts) WriteEntries(m map[string][]string) error {
 	return nil
 }
 
-func encodedNode(t *testing.T, name, addr, overlay string) common.Node {
+// verifiedNode is a node as the cluster hands it over: metadata decoded and checked.
+func verifiedNode(t *testing.T, name, addr, overlay string, routes ...string) common.Node {
 	t.Helper()
 	key, err := wgtypes.GeneratePrivateKey()
 	require.NoError(t, err)
-	return encodedNodeWithKey(t, name, addr, overlay, key.PublicKey().String())
-}
-
-func encodedNodeWithKey(t *testing.T, name, addr, overlay, pubKey string, routes ...string) common.Node {
-	t.Helper()
-	src := common.Node{}
-	src.OverlayAddr = netip.MustParseAddr(overlay)
-	src.PubKey = pubKey
+	n := common.Node{Name: name, Addr: net.ParseIP(addr)}
+	n.OverlayAddr = netip.MustParseAddr(overlay)
+	n.PubKey = key.PublicKey().String()
 	for _, r := range routes {
-		src.AllowedIPs = append(src.AllowedIPs, netip.MustParsePrefix(r))
+		n.AllowedIPs = append(n.AllowedIPs, netip.MustParsePrefix(r))
 	}
-	meta, err := src.EncodeMeta(512)
-	require.NoError(t, err)
-	return common.Node{Name: name, Addr: net.ParseIP(addr), Meta: meta}
+	return n
 }
 
 func runLoop(t *testing.T, a *AgentCmd, cl *fakeCluster, wg *fakeWG, hosts *fakeHosts) (context.CancelFunc, <-chan error) {
@@ -87,17 +81,13 @@ func Test_AgentCmd_loop_appliesAndTearsDown(t *testing.T) {
 	hosts := &fakeHosts{}
 	cancel, errc := runLoop(t, &AgentCmd{OverlayNet: testOverlay}, cl, wg, hosts)
 
-	good := encodedNode(t, "good", "192.0.2.1", "10.0.0.1")
-	bad := common.Node{Name: "bad", Addr: net.ParseIP("192.0.2.2"), Meta: []byte("garbage")}
-	outside := encodedNode(t, "outside", "192.0.2.3", "192.168.7.7")
-	badKey := encodedNodeWithKey(t, "badkey", "192.0.2.4", "10.0.0.4", "not-a-key")
-	cl.ch <- []common.Node{good, bad, outside, badKey}
+	cl.ch <- []common.Node{verifiedNode(t, "good", "192.0.2.1", "10.0.0.1")}
 
 	cancel()
 	require.NoError(t, waitErr(t, errc))
 
 	require.Len(t, wg.ups, 1)
-	require.Len(t, wg.ups[0], 1, "undecodable, out-of-net and bad-key nodes must be skipped")
+	require.Len(t, wg.ups[0], 1)
 	assert.Equal(t, "good", wg.ups[0][0].Name)
 	require.Len(t, hosts.writes, 2)
 	assert.Equal(t, map[string][]string{"10.0.0.1": {"good"}}, hosts.writes[0])
@@ -109,11 +99,9 @@ func Test_AgentCmd_loop_appliesAndTearsDown(t *testing.T) {
 func Test_AgentCmd_apply_allowedIPs(t *testing.T) {
 	wg := &fakeWG{}
 	a := &AgentCmd{OverlayNet: testOverlay, NoEtcHosts: true}
-	k1, _ := wgtypes.GeneratePrivateKey()
-	k2, _ := wgtypes.GeneratePrivateKey()
 	// z is listed first but b wins the shared network by name; the overlay-net prefix is dropped
-	z := encodedNodeWithKey(t, "z", "192.0.2.1", "10.0.0.1", k1.PublicKey().String(), "192.168.7.0/24", "10.9.0.0/16", "172.16.0.0/12")
-	b := encodedNodeWithKey(t, "b", "192.0.2.2", "10.0.0.2", k2.PublicKey().String(), "192.168.7.0/24")
+	z := verifiedNode(t, "z", "192.0.2.1", "10.0.0.1", "192.168.7.0/24", "10.9.0.0/16", "172.16.0.0/12")
+	b := verifiedNode(t, "b", "192.0.2.2", "10.0.0.2", "192.168.7.0/24")
 	a.apply([]common.Node{z, b}, wg, &fakeHosts{})
 
 	require.Len(t, wg.ups, 1)
@@ -143,7 +131,7 @@ func Test_AgentCmd_loop_notifiesSystemd(t *testing.T) {
 
 	cl.ch <- nil // a lone node: ready with no peers
 	assert.Equal(t, "READY=1\nSTATUS=0 peers", read())
-	cl.ch <- []common.Node{encodedNode(t, "n", "192.0.2.1", "10.0.0.1")}
+	cl.ch <- []common.Node{verifiedNode(t, "n", "192.0.2.1", "10.0.0.1")}
 	assert.Equal(t, "STATUS=1 peers", read())
 	cancel()
 	assert.Equal(t, "STOPPING=1", read())
@@ -156,7 +144,7 @@ func Test_AgentCmd_loop_noEtcHosts(t *testing.T) {
 	hosts := &fakeHosts{}
 	cancel, errc := runLoop(t, &AgentCmd{OverlayNet: testOverlay, NoEtcHosts: true}, cl, wg, hosts)
 
-	cl.ch <- []common.Node{encodedNode(t, "n", "192.0.2.1", "10.0.0.1")}
+	cl.ch <- []common.Node{verifiedNode(t, "n", "192.0.2.1", "10.0.0.1")}
 	cancel()
 	require.NoError(t, waitErr(t, errc))
 	assert.Empty(t, hosts.writes)
@@ -167,7 +155,7 @@ func Test_AgentCmd_loop_setupFailureDownsInterface(t *testing.T) {
 	wg := &fakeWG{upErr: errors.New("boom")}
 	cancel, errc := runLoop(t, &AgentCmd{OverlayNet: testOverlay, NoEtcHosts: true}, cl, wg, &fakeHosts{})
 
-	cl.ch <- []common.Node{encodedNode(t, "n", "192.0.2.1", "10.0.0.1")}
+	cl.ch <- []common.Node{verifiedNode(t, "n", "192.0.2.1", "10.0.0.1")}
 	cancel()
 	require.NoError(t, waitErr(t, errc))
 	assert.Equal(t, 2, wg.downs, "once after the failed setup, once on shutdown")

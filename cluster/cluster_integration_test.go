@@ -36,7 +36,7 @@ func testNodeFor(t *testing.T, name string, b *Bootstrap) *common.Node {
 	require.True(t, ok)
 	node := &common.Node{Name: name}
 	node.OverlayAddr = addr
-	node.PubKey = "pubkey-" + name
+	node.PubKey = testKey
 	return node
 }
 
@@ -121,7 +121,7 @@ func Test_Cluster_enrolJoinLeave(t *testing.T) {
 	members := waitMembers(t, chA, 1)
 	assert.Equal(t, "b", members[0].Name)
 	assert.Equal(t, "10.0.0.2", members[0].OverlayAddr.String())
-	assert.Equal(t, "pubkey-b", members[0].PubKey)
+	assert.Equal(t, testKey, members[0].PubKey)
 	assert.Equal(t, b.Identity(), trust.PublicKey(members[0].Identity))
 	assert.True(t, a.Trust().Valid(b.Identity()))
 	assert.True(t, b.Trust().Valid(a.Identity()))

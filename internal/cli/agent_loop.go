@@ -11,7 +11,6 @@ import (
 
 	"github.com/jdpanderson/cheesecloth/common"
 	"github.com/jdpanderson/cheesecloth/internal/sdnotify"
-	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
 // clusterController, wgController and hostsWriter are the parts of the
@@ -67,24 +66,16 @@ func (a *AgentCmd) loop(ctx context.Context, nodec <-chan []common.Node, cl clus
 	}
 }
 
-// apply pushes one membership snapshot to wireguard and /etc/hosts and returns
-// the number of peers installed; nodes with undecodable or invalid metadata are
-// skipped. A network advertised by more than one node goes to the first by
-// name, so every snapshot resolves the same way.
-func (a *AgentCmd) apply(rawNodes []common.Node, wgstate wgController, hosts hostsWriter) int {
-	nodes := make([]common.Node, 0, len(rawNodes))
-	hostEntries := make(map[string][]string, len(rawNodes))
+// apply pushes one membership snapshot, already verified by the cluster, to
+// wireguard and /etc/hosts and returns the number of peers installed. A
+// network advertised by more than one node goes to the first by name, so
+// every snapshot resolves the same way.
+func (a *AgentCmd) apply(nodes []common.Node, wgstate wgController, hosts hostsWriter) int {
+	hostEntries := make(map[string][]string, len(nodes))
 	routedBy := map[netip.Prefix]string{}
-	slices.SortFunc(rawNodes, func(x, y common.Node) int { return strings.Compare(x.Name, y.Name) })
-	for _, node := range rawNodes {
-		if err := node.DecodeMeta(); err != nil {
-			slog.Warn("could not decode node metadata, skipping", "addr", node.Addr, "err", err)
-			continue
-		}
-		if err := a.validateNode(&node); err != nil {
-			slog.Warn("invalid node metadata, skipping", "name", node.Name, "addr", node.Addr, "err", err)
-			continue
-		}
+	slices.SortFunc(nodes, func(x, y common.Node) int { return strings.Compare(x.Name, y.Name) })
+	for i := range nodes {
+		node := &nodes[i]
 		node.AllowedIPs = slices.DeleteFunc(node.AllowedIPs, func(p netip.Prefix) bool {
 			if p.Overlaps(a.OverlayNet) {
 				slog.Warn("ignoring advertised network inside the overlay net", "name", node.Name, "net", p)
@@ -98,7 +89,6 @@ func (a *AgentCmd) apply(rawNodes []common.Node, wgstate wgController, hosts hos
 			return false
 		})
 		slog.Info("cluster member", "addr", node.Addr, "overlay", node.OverlayAddr, "pubkey", node.PubKey, "routes", node.AllowedIPs)
-		nodes = append(nodes, node)
 		hostEntries[node.OverlayAddr.String()] = []string{node.Name}
 	}
 	if err := wgstate.SetUpInterface(nodes); err != nil {
@@ -113,19 +103,4 @@ func (a *AgentCmd) apply(rawNodes []common.Node, wgstate wgController, hosts hos
 		}
 	}
 	return len(nodes)
-}
-
-// validateNode rejects peer metadata we would not want to install: an overlay
-// address outside our overlay net or an unparseable wireguard public key.
-func (a *AgentCmd) validateNode(node *common.Node) error {
-	if node.Name == "" {
-		return errors.New("empty node name")
-	}
-	if !a.OverlayNet.Contains(node.OverlayAddr) {
-		return fmt.Errorf("overlay address %s is outside %s", node.OverlayAddr, a.OverlayNet)
-	}
-	if _, err := wgtypes.ParseKey(node.PubKey); err != nil {
-		return fmt.Errorf("public key: %w", err)
-	}
-	return nil
 }

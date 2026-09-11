@@ -38,7 +38,7 @@ func Test_assignedAddr_and_verifyMeta(t *testing.T) {
 	meta := func(id *trust.Identity, name, overlay string) *common.Node {
 		n := &common.Node{Name: name}
 		n.OverlayAddr = netip.MustParseAddr(overlay)
-		n.PubKey = "pubkey-" + name
+		n.PubKey = testKey
 		n.Identity = id.Public()
 		n.Signature = id.Sign(trust.MetaDigest(n.Name, n.OverlayAddr, n.PubKey, nil))
 		var encErr error
@@ -53,4 +53,18 @@ func Test_assignedAddr_and_verifyMeta(t *testing.T) {
 	assert.ErrorContains(t, err, "is assigned 10.0.0.2")
 	_, err = verifyMeta(set, testOverlay, meta(b, "b", "10.0.0.2"))
 	assert.ErrorContains(t, err, "collides")
+
+	bad := meta(a, "a", "10.0.0.2")
+	var n common.Node
+	n.OverlayAddr = netip.MustParseAddr("10.0.0.2")
+	n.PubKey = "not a wireguard key"
+	n.Identity = a.Public()
+	n.Signature = a.Sign(trust.MetaDigest("a", n.OverlayAddr, n.PubKey, nil))
+	bad.Meta, err = n.EncodeMeta(512)
+	require.NoError(t, err)
+	_, err = verifyMeta(set, testOverlay, bad)
+	assert.ErrorContains(t, err, "wireguard key")
 }
+
+// testKey is a syntactically valid wireguard public key.
+const testKey = "gm/3EV7bl46Z2QPUa5CppLUjwoL45BwHO1nrEgIFsFA="

@@ -19,6 +19,7 @@ import (
 	"github.com/jdpanderson/cheesecloth/common"
 	"github.com/jdpanderson/cheesecloth/enroll"
 	"github.com/jdpanderson/cheesecloth/trust"
+	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
 // Config is what New needs; the agent assembles it from a Bootstrap.
@@ -215,7 +216,8 @@ func assignedAddr(set *trust.Set, overlay netip.Prefix, id trust.PublicKey) (net
 }
 
 // verifyMeta decodes a node's metadata and checks that a valid member signed
-// it and that it claims the overlay address its admission assigns.
+// it, that it claims the overlay address its admission assigns, and that its
+// wireguard key parses. A node that passes can be installed as a peer as is.
 func verifyMeta(set *trust.Set, overlay netip.Prefix, n *common.Node) (trust.PublicKey, error) {
 	if err := n.DecodeMeta(); err != nil {
 		return trust.PublicKey{}, err
@@ -230,6 +232,9 @@ func verifyMeta(set *trust.Set, overlay netip.Prefix, n *common.Node) (trust.Pub
 	}
 	if !trust.Verify(id, trust.MetaDigest(n.Name, n.OverlayAddr, n.PubKey, n.AllowedIPs), n.Signature) {
 		return id, fmt.Errorf("metadata signature of %s does not verify", n.Name)
+	}
+	if _, err := wgtypes.ParseKey(n.PubKey); err != nil {
+		return id, fmt.Errorf("wireguard key of %s: %w", n.Name, err)
 	}
 	return id, nil
 }
@@ -306,10 +311,10 @@ func (c *Cluster) Leave() {
 }
 
 // Members returns a channel that receives the current list of other verified
-// nodes right away and then whenever the membership changes; bursts of changes
-// may be coalesced into one snapshot. Nodes whose metadata is not signed by a
-// valid member are left out. Call it at most once. The channel is closed after
-// Leave.
+// nodes, metadata decoded, right away and then whenever the membership
+// changes; bursts of changes may be coalesced into one snapshot. Nodes that
+// fail verifyMeta are left out. Call it at most once. The channel is closed
+// after Leave.
 func (c *Cluster) Members() <-chan []common.Node {
 	changes := make(chan []common.Node)
 	c.signalChanged() // the first snapshot may well be empty; the interface still needs to come up
@@ -346,7 +351,7 @@ func (c *Cluster) Members() <-chan []common.Node {
 			c.saveState()
 			c.stateMu.Unlock()
 			select {
-			case changes <- slices.Clone(nodes): // consumer decodes meta in place
+			case changes <- slices.Clone(nodes):
 			case <-c.done:
 				return
 			}
