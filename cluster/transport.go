@@ -70,8 +70,7 @@ type quicTransport struct {
 	done     chan struct{}
 	wg       sync.WaitGroup
 	once     sync.Once
-	err      error        // from Shutdown
-	life     sync.RWMutex // held for writing while Shutdown closes the QUIC transport
+	err      error // from Shutdown
 
 	mu      sync.Mutex
 	conns   map[string]peerConn  // by the peer's gossip address
@@ -471,8 +470,6 @@ func (t *quicTransport) WriteTo(b []byte, addr string) (time.Time, error) {
 // memberlist treats a lost probe as a sign of failure and an error as its own
 // fault, so dropping is what makes failure detection work.
 func (t *quicTransport) WriteToAddress(b []byte, a memberlist.Address) (time.Time, error) {
-	t.life.RLock()
-	defer t.life.RUnlock()
 	select {
 	case <-t.done:
 		return time.Now(), nil
