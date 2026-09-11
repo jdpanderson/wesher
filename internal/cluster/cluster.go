@@ -53,9 +53,10 @@ type Cluster struct {
 	events    chan memberlist.NodeEvent
 	changed   chan struct{}  // one-slot signal that the member list changed
 	done      chan struct{}  // closed by Leave
-	routines  sync.WaitGroup // forwardEvents and Members goroutines; Leave waits for them
+	routines  sync.WaitGroup // forwardEvents and watch; Leave waits for them
 	leaveOnce sync.Once
-	membersOn atomic.Bool // Members has been called
+	subMu     sync.Mutex
+	subs      []chan []overlay.Node // Members channels; fed by watch, closed by Leave
 }
 
 // New creates a Cluster for an enrolled node and starts gossiping and accepting
@@ -137,8 +138,9 @@ func New(cfg Config) (*Cluster, error) {
 	}
 	c.ml.Store(ml)
 
-	c.routines.Add(1)
+	c.routines.Add(2)
 	go c.forwardEvents()
+	go c.watch()
 
 	c.persist()
 	return c, nil
@@ -308,67 +310,83 @@ func (c *Cluster) Leave() {
 		}
 		close(c.done)
 		c.routines.Wait()
+		c.subMu.Lock() // watch has stopped: nothing sends on these any more
+		for _, ch := range c.subs {
+			close(ch)
+		}
+		c.subs = nil
+		c.subMu.Unlock()
 	})
 }
 
 // Members returns a channel that receives the current list of other verified
 // nodes, metadata decoded, right away and then whenever the membership
-// changes; bursts of changes may be coalesced into one snapshot. Nodes that
-// fail verifyMeta are left out. There is one such channel per cluster: a
-// second call panics. The channel is closed after Leave.
+// changes. A subscriber that falls behind gets the latest snapshot, not every
+// one: bursts of changes coalesce. Nodes that fail verifyMeta are left out.
+// The channel is closed after Leave.
 func (c *Cluster) Members() <-chan []overlay.Node {
-	if !c.membersOn.CompareAndSwap(false, true) {
-		panic("cluster: Members called more than once")
-	}
-	changes := make(chan []overlay.Node)
+	ch := make(chan []overlay.Node, 1)
+	c.subMu.Lock()
+	c.subs = append(c.subs, ch)
+	c.subMu.Unlock()
 	c.signalChanged() // the first snapshot may well be empty; the interface still needs to come up
+	return ch
+}
 
-	c.routines.Add(1)
-	go func() {
-		defer c.routines.Done()
-		defer close(changes)
-		for {
-			select {
-			case <-c.done:
-				return
-			case <-c.changed:
-			}
-
-			if _, err := assignedAddr(c.set, c.overlay, c.id.Public()); err != nil {
-				slog.Error("this node lost its overlay address; peers will drop it", "err", err)
-			}
-			ml := c.ml.Load()
-			nodes := make([]overlay.Node, 0, ml.NumMembers())
-			for _, n := range ml.Members() {
-				if n.Name == c.local.Name {
-					continue
-				}
-				meta, err := overlay.DecodeMeta(n.Meta)
-				if err != nil {
-					slog.Warn("ignoring node with undecodable metadata", "name", n.Name, "addr", n.Addr, "err", err)
-					continue
-				}
-				addr, _ := netip.AddrFromSlice(n.Addr)
-				node := overlay.Node{Name: n.Name, Addr: addr.Unmap(), Meta: meta}
-				if _, err := verifyMeta(c.set, c.overlay, &node); err != nil {
-					slog.Warn("ignoring node with unverified metadata", "name", n.Name, "addr", n.Addr, "err", err)
-					continue
-				}
-				nodes = append(nodes, node)
-			}
-			c.stateMu.Lock()
-			c.boot.Peers = nodes
-			c.saveState()
-			c.stateMu.Unlock()
-			select {
-			case changes <- slices.Clone(nodes):
-			case <-c.done:
-				return
-			}
+// watch turns each change signal into one verified snapshot: it is persisted
+// as the peers to rejoin on the next start and delivered to every Members
+// channel, replacing a snapshot the subscriber has not read yet.
+func (c *Cluster) watch() {
+	defer c.routines.Done()
+	for {
+		select {
+		case <-c.done:
+			return
+		case <-c.changed:
 		}
-	}()
+		peers := c.snapshot()
+		c.stateMu.Lock()
+		c.boot.Peers = peers
+		c.saveState()
+		c.stateMu.Unlock()
 
-	return changes
+		c.subMu.Lock()
+		for _, ch := range c.subs {
+			select {
+			case <-ch: // an unread snapshot is stale now
+			default:
+			}
+			ch <- slices.Clone(peers) // watch is the only sender, so the slot is free
+		}
+		c.subMu.Unlock()
+	}
+}
+
+// snapshot is the current list of other members whose metadata verifies.
+func (c *Cluster) snapshot() []overlay.Node {
+	if _, err := assignedAddr(c.set, c.overlay, c.id.Public()); err != nil {
+		slog.Error("this node lost its overlay address; peers will drop it", "err", err)
+	}
+	ml := c.ml.Load()
+	nodes := make([]overlay.Node, 0, ml.NumMembers())
+	for _, n := range ml.Members() {
+		if n.Name == c.local.Name {
+			continue
+		}
+		meta, err := overlay.DecodeMeta(n.Meta)
+		if err != nil {
+			slog.Warn("ignoring node with undecodable metadata", "name", n.Name, "addr", n.Addr, "err", err)
+			continue
+		}
+		addr, _ := netip.AddrFromSlice(n.Addr)
+		node := overlay.Node{Name: n.Name, Addr: addr.Unmap(), Meta: meta}
+		if _, err := verifyMeta(c.set, c.overlay, &node); err != nil {
+			slog.Warn("ignoring node with unverified metadata", "name", n.Name, "addr", n.Addr, "err", err)
+			continue
+		}
+		nodes = append(nodes, node)
+	}
+	return nodes
 }
 
 // --- memberlist.Delegate: node metadata and membership record distribution ---

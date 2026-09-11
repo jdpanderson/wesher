@@ -226,16 +226,34 @@ func Test_Cluster_Leave_closesMembers(t *testing.T) {
 	dir := useTempStatePaths(t)
 	c := rootCluster(t, dir, "a")
 	ch := c.Members()
-	assert.Panics(t, func() { c.Members() }, "one membership channel per cluster")
+	second := c.Members()
+	for _, sub := range []<-chan []overlay.Node{ch, second} {
+		select {
+		case peers := <-sub:
+			assert.Empty(t, peers, "every subscriber gets a first snapshot")
+		case <-time.After(5 * time.Second):
+			t.Fatal("no first snapshot")
+		}
+	}
+	c.signalChanged()
+	c.signalChanged() // a subscriber that does not read keeps only the latest snapshot
+	time.Sleep(100 * time.Millisecond)
+	assert.LessOrEqual(t, len(second), 1)
 
 	c.Leave()
 	c.Leave() // idempotent
 
-	select {
-	case _, ok := <-ch:
-		assert.False(t, ok, "Members channel must be closed after Leave")
-	case <-time.After(5 * time.Second):
-		t.Fatal("Members channel not closed after Leave")
+	// a snapshot still buffered is delivered, then every subscriber's channel is closed
+	for _, sub := range []<-chan []overlay.Node{ch, second} {
+		deadline := time.After(5 * time.Second)
+		for closed := false; !closed; {
+			select {
+			case _, ok := <-sub:
+				closed = !ok
+			case <-deadline:
+				t.Fatal("Members channel not closed after Leave")
+			}
+		}
 	}
 }
 

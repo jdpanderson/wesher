@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/jdpanderson/cheesecloth/internal/enrol"
 	"github.com/jdpanderson/cheesecloth/internal/trust"
@@ -44,7 +45,18 @@ func Enrol(ctx context.Context, addr, token string, id *trust.Identity, name str
 	}
 	stream := newStreamConn(conn, s, peerOf(conn))
 	defer func() { _ = stream.Close() }()
-	return enrol.Join(stream, token, id, name)
+	w, member, err := enrol.Join(stream, token, id, name)
+	if err != nil {
+		return nil, none, err
+	}
+	// The member closes the connection once it has our acknowledgement;
+	// closing from this side first could discard the acknowledgement unsent.
+	select {
+	case <-conn.Context().Done():
+	case <-ctx.Done():
+	case <-time.After(handshakeTime):
+	}
+	return w, member, nil
 }
 
 // wildcardFor is the unspecified address of ip's family.
