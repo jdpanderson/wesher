@@ -13,26 +13,25 @@ import (
 // Failure paths of the exchange; the successful and token-related paths are in enroll_test.go.
 
 func Test_handle_malformedHello(t *testing.T) {
-	_, _, addr := member(t)
-	conn, err := net.Dial("tcp", addr)
-	require.NoError(t, err)
-	defer func() { _ = conn.Close() }()
-	require.NoError(t, writeFrame(conn, hello{Version: Version + 1, TokenID: make([]byte, tokenIDLen), Nonce: make([]byte, nonceLen), Name: "j"}))
+	srv, _ := member(t)
+	joiner := newID(t)
+	conn := pipeTo(t, srv, joiner.Public())
+	setDeadline(conn)
+	require.NoError(t, writeFrame(conn, hello{Version: Version + 1, TokenID: make([]byte, tokenIDLen), Identity: joiner.Public(), Nonce: make([]byte, nonceLen), Name: "j"}))
 	var c challenge
 	assert.Error(t, readFrame(conn, &c), "the member hangs up without a challenge")
 }
 
 func Test_handle_badProof(t *testing.T) {
-	srv, _, addr := member(t)
+	srv, _ := member(t)
 	tok, err := srv.Tokens.Mint(time.Minute, 1)
 	require.NoError(t, err)
 	key, err := DecodeToken(tok)
 	require.NoError(t, err)
 	joiner := newID(t)
 
-	conn, err := net.Dial("tcp", addr)
-	require.NoError(t, err)
-	defer func() { _ = conn.Close() }()
+	conn := pipeTo(t, srv, joiner.Public())
+	setDeadline(conn)
 	tid := idOf(key)
 	nJ, _ := randomNonce()
 	require.NoError(t, writeFrame(conn, hello{Version: Version, TokenID: tid[:], Identity: joiner.Public(), DH: joiner.DHPublic(), Nonce: nJ, Name: "j"}))
@@ -50,65 +49,35 @@ func Test_handle_badProof(t *testing.T) {
 	assert.Equal(t, 1, srv.Tokens.Pending(), "a failed proof does not spend the token")
 }
 
-// identified is a conn whose peer the transport has authenticated.
-type identified struct {
-	net.Conn
-	peer trust.PublicKey
-}
-
-func (c identified) PeerIdentity() trust.PublicKey { return c.peer }
-
 func Test_Join_errors(t *testing.T) {
-	id := newID(t)
+	id, other := newID(t), newID(t)
 	c1, c2 := net.Pipe()
 	defer func() { _ = c1.Close(); _ = c2.Close() }()
-	_, _, err := Join(c1, "not base64!", id, "j")
+	_, _, err := Join(identified{c1, other.Public()}, "not base64!", id, "j")
 	assert.ErrorContains(t, err, "join key")
 
 	tok, _ := NewTokenStore().Mint(time.Minute, 1)
 
 	// a member that answers with a malformed challenge
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	defer func() { _ = ln.Close() }()
 	go func() {
-		conn, aerr := ln.Accept()
-		if aerr != nil {
-			return
-		}
-		defer func() { _ = conn.Close() }()
 		var h hello
-		_ = readFrame(conn, &h)
-		_ = writeFrame(conn, challenge{Nonce: []byte{1}})
+		_ = readFrame(c2, &h)
+		_ = writeFrame(c2, challenge{Nonce: []byte{1}})
+		_ = c2.Close()
 	}()
-	_, _, err = joinTCP(t, ln.Addr().String(), tok, id, "j")
+	_, _, err = Join(identified{c1, other.Public()}, tok, id, "j")
 	assert.ErrorContains(t, err, "malformed challenge")
 }
 
 // On an authenticated connection the identities in the messages must be the peer's.
 func Test_identityBinding(t *testing.T) {
-	srv, _, _ := member(t)
+	srv, _ := member(t)
 	tok, err := srv.Tokens.Mint(time.Minute, 1)
 	require.NoError(t, err)
 	joiner, other := newID(t), newID(t)
 
-	// serve runs the member's side of one exchange on a pipe and returns the joiner's end.
-	serve := func(peer *trust.Identity) net.Conn {
-		c1, c2 := net.Pipe()
-		go func() {
-			if peer != nil {
-				_ = srv.handle(identified{c2, peer.Public()})
-			} else {
-				_ = srv.handle(c2)
-			}
-			_ = c2.Close()
-		}()
-		t.Cleanup(func() { _ = c1.Close() })
-		return c1
-	}
-
 	// server side: hello claims joiner but the connection belongs to other
-	c1 := serve(other)
+	c1 := pipeTo(t, srv, other.Public())
 	setDeadline(c1)
 	tid := idOf(mustKey(t, tok))
 	require.NoError(t, writeFrame(c1, hello{Version: Version, TokenID: tid[:], Identity: joiner.Public(), DH: joiner.DHPublic(), Nonce: make([]byte, nonceLen), Name: "j"}))
@@ -117,11 +86,11 @@ func Test_identityBinding(t *testing.T) {
 	assert.Equal(t, 1, srv.Tokens.Pending())
 
 	// joiner side: the challenge claims the member but the connection belongs to other
-	_, _, err = Join(identified{serve(nil), other.Public()}, tok, joiner, "j")
+	_, _, err = Join(identified{pipeTo(t, srv, joiner.Public()), other.Public()}, tok, joiner, "j")
 	assert.ErrorContains(t, err, "does not match the connection")
 
-	// and with matching identities the exchange succeeds over a pipe
-	w, memberID, err := Join(identified{serve(joiner), srv.Identity.Public()}, tok, joiner, "j")
+	// and with matching identities the exchange succeeds
+	w, memberID, err := Join(pipeTo(t, srv, joiner.Public()), tok, joiner, "j")
 	require.NoError(t, err)
 	assert.Equal(t, srv.Identity.Public(), memberID)
 	assert.Equal(t, joiner.Public(), w.Admission.Identity)
@@ -145,12 +114,8 @@ func Test_Join_rejectsForeignAdmission(t *testing.T) {
 			other := newID(t)
 			return trust.Admit(id, other.Public(), other.DHPublic(), "other", 2, time.Now()), set.Records(), nil
 		}}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	defer func() { _ = ln.Close() }()
-	go serve(ln, srv)
 	tok, err := srv.Tokens.Mint(time.Minute, 1)
 	require.NoError(t, err)
-	_, _, err = joinTCP(t, ln.Addr().String(), tok, newID(t), "j")
+	_, _, err = join(t, srv, tok, newID(t), "j")
 	assert.ErrorContains(t, err, "someone else")
 }

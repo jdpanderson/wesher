@@ -21,23 +21,23 @@ type Server struct {
 	GossipAddr string
 }
 
-// Authenticated is a connection whose peer identity the transport has verified
-// (a QUIC stream); the exchange then requires the identities in the messages
-// to match it.
-type Authenticated interface {
+// Conn is a connection whose peer identity the transport has verified (a QUIC
+// stream); the exchange requires the identities in the messages to match it.
+type Conn interface {
+	net.Conn
 	PeerIdentity() trust.PublicKey
 }
 
 // bound checks that the identity a message claims is the one on the wire.
-func bound(conn net.Conn, claimed trust.PublicKey) error {
-	if a, ok := conn.(Authenticated); ok && a.PeerIdentity() != claimed {
+func bound(conn Conn, claimed trust.PublicKey) error {
+	if conn.PeerIdentity() != claimed {
 		return errors.New("claimed identity does not match the connection's")
 	}
 	return nil
 }
 
 // Handle runs the member's side of one enrolment on conn and closes it.
-func (s *Server) Handle(conn net.Conn) {
+func (s *Server) Handle(conn Conn) {
 	defer func() { _ = conn.Close() }()
 	if err := s.handle(conn); err != nil && !errors.Is(err, errSilent) {
 		slog.Warn("enrolment failed", "from", conn.RemoteAddr(), "err", err)
@@ -48,7 +48,7 @@ func (s *Server) Handle(conn net.Conn) {
 // server is not an oracle for token guessing.
 var errSilent = errors.New("silent")
 
-func (s *Server) handle(conn net.Conn) error {
+func (s *Server) handle(conn Conn) error {
 	setDeadline(conn)
 	var h hello
 	if err := readFrame(conn, &h); err != nil {
@@ -105,7 +105,7 @@ func (s *Server) handle(conn net.Conn) error {
 
 // Join enrols with the member on conn using token, proving knowledge of it and
 // verifying the member's proof in return. The caller owns conn.
-func Join(conn net.Conn, token string, id *trust.Identity, name string) (*Welcome, trust.PublicKey, error) {
+func Join(conn Conn, token string, id *trust.Identity, name string) (*Welcome, trust.PublicKey, error) {
 	key, err := DecodeToken(token)
 	if err != nil {
 		return nil, trust.PublicKey{}, err

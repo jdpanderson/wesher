@@ -17,28 +17,35 @@ func newID(t *testing.T) *trust.Identity {
 	return id
 }
 
-// joinTCP dials addr and runs the joiner's side of the exchange.
-func joinTCP(t *testing.T, addr, token string, id *trust.Identity, name string) (*Welcome, trust.PublicKey, error) {
+// identified is a conn whose peer the transport has authenticated.
+type identified struct {
+	net.Conn
+	peer trust.PublicKey
+}
+
+func (c identified) PeerIdentity() trust.PublicKey { return c.peer }
+
+// pipeTo runs the member's side of one exchange on srv for a joiner with the
+// given identity and returns the joiner's end, each end knowing its peer the
+// way the transport's TLS would tell it.
+func pipeTo(t *testing.T, srv *Server, joiner trust.PublicKey) Conn {
 	t.Helper()
-	conn, err := net.Dial("tcp", addr)
-	require.NoError(t, err)
+	c1, c2 := net.Pipe()
+	go srv.Handle(identified{c2, joiner})
+	t.Cleanup(func() { _ = c1.Close() })
+	return identified{c1, srv.Identity.Public()}
+}
+
+// join runs the joiner's side of the exchange against srv.
+func join(t *testing.T, srv *Server, token string, id *trust.Identity, name string) (*Welcome, trust.PublicKey, error) {
+	t.Helper()
+	conn := pipeTo(t, srv, id.Public())
 	defer func() { _ = conn.Close() }()
 	return Join(conn, token, id, name)
 }
 
-// serve feeds every connection ln accepts to srv, the way the transport does.
-func serve(ln net.Listener, srv *Server) {
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			return
-		}
-		go srv.Handle(conn)
-	}
-}
-
-// member starts an enrolment server for a one-node cluster rooted at its identity.
-func member(t *testing.T) (*Server, *trust.Set, string) {
+// member is an enrolment server for a one-node cluster rooted at its identity.
+func member(t *testing.T) (*Server, *trust.Set) {
 	t.Helper()
 	id := newID(t)
 	set := trust.NewSet(id.Public())
@@ -54,20 +61,16 @@ func member(t *testing.T) (*Server, *trust.Set, string) {
 			return a, set.Records(), nil
 		},
 	}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	go serve(ln, srv)
-	t.Cleanup(func() { _ = ln.Close() })
-	return srv, set, ln.Addr().String()
+	return srv, set
 }
 
 func Test_Join_happyPath(t *testing.T) {
-	srv, set, addr := member(t)
+	srv, set := member(t)
 	token, err := srv.Tokens.Mint(time.Minute, 1)
 	require.NoError(t, err)
 
 	joiner := newID(t)
-	w, memberID, err := joinTCP(t, addr, token, joiner, "joiner")
+	w, memberID, err := join(t, srv, token, joiner, "joiner")
 	require.NoError(t, err)
 	assert.Equal(t, srv.Identity.Public(), memberID)
 	assert.Equal(t, srv.Root, w.Root)
@@ -79,19 +82,19 @@ func Test_Join_happyPath(t *testing.T) {
 	assert.Equal(t, 0, srv.Tokens.Pending(), "single-use token is consumed")
 
 	// the token cannot be reused
-	_, _, err = joinTCP(t, addr, token, newID(t), "again")
+	_, _, err = join(t, srv, token, newID(t), "again")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "closed the connection")
 }
 
 func Test_Join_multiUseAndExpiry(t *testing.T) {
-	srv, _, addr := member(t)
+	srv, _ := member(t)
 	token, err := srv.Tokens.Mint(time.Minute, 2)
 	require.NoError(t, err)
-	_, _, err = joinTCP(t, addr, token, newID(t), "one")
+	_, _, err = join(t, srv, token, newID(t), "one")
 	require.NoError(t, err)
 	assert.Equal(t, 1, srv.Tokens.Pending())
-	_, _, err = joinTCP(t, addr, token, newID(t), "two")
+	_, _, err = join(t, srv, token, newID(t), "two")
 	require.NoError(t, err)
 	assert.Equal(t, 0, srv.Tokens.Pending())
 
@@ -101,32 +104,32 @@ func Test_Join_multiUseAndExpiry(t *testing.T) {
 	token, err = srv.Tokens.Mint(time.Minute, 1)
 	require.NoError(t, err)
 	srv.Tokens.now = func() time.Time { return now.Add(2 * time.Minute) }
-	_, _, err = joinTCP(t, addr, token, newID(t), "late")
+	_, _, err = join(t, srv, token, newID(t), "late")
 	require.Error(t, err)
 	assert.Equal(t, 0, srv.Tokens.Pending())
 }
 
 func Test_Join_wrongToken(t *testing.T) {
-	srv, _, addr := member(t)
+	srv, _ := member(t)
 	_, err := srv.Tokens.Mint(time.Minute, 1)
 	require.NoError(t, err)
 
 	// a different, well-formed token: unknown id, silent close
 	other, err := NewTokenStore().Mint(time.Minute, 1)
 	require.NoError(t, err)
-	_, _, err = joinTCP(t, addr, other, newID(t), "x")
+	_, _, err = join(t, srv, other, newID(t), "x")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "closed the connection")
 	assert.Equal(t, 1, srv.Tokens.Pending(), "a failed attempt does not consume the token")
 
 	// malformed token
-	_, _, err = joinTCP(t, addr, "nope", newID(t), "x")
+	_, _, err = join(t, srv, "nope", newID(t), "x")
 	assert.ErrorContains(t, err, "join key")
 }
 
 // A man in the middle who knows the token id but not the token cannot pass as the member.
 func Test_Join_memberMustProveToken(t *testing.T) {
-	srv, _, addr := member(t)
+	srv, _ := member(t)
 	real, err := srv.Tokens.Mint(time.Minute, 1)
 	require.NoError(t, err)
 	key, _ := DecodeToken(real)
@@ -140,15 +143,10 @@ func Test_Join_memberMustProveToken(t *testing.T) {
 	copy(wrong, key)
 	wrong[0] ^= 1
 	impostor.Tokens.tokens[idOf(key)] = &token{key: wrong, expires: time.Now().Add(time.Minute), uses: 1}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	defer func() { _ = ln.Close() }()
-	go serve(ln, impostor)
 
-	_, _, err = joinTCP(t, ln.Addr().String(), real, newID(t), "victim")
+	_, _, err = join(t, impostor, real, newID(t), "victim")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "member could not prove knowledge")
-	_ = addr
 }
 
 func Test_Join_welcomeMustBeConsistent(t *testing.T) {
@@ -159,14 +157,10 @@ func Test_Join_welcomeMustBeConsistent(t *testing.T) {
 		Admit: func(trust.PublicKey, trust.DHKey, string) (trust.Admission, trust.Records, error) {
 			return trust.Admission{}, trust.Records{}, nil
 		}}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	defer func() { _ = ln.Close() }()
-	go serve(ln, srv)
 	token, err := srv.Tokens.Mint(time.Minute, 1)
 	require.NoError(t, err)
 
-	_, _, err = joinTCP(t, ln.Addr().String(), token, newID(t), "j")
+	_, _, err = join(t, srv, token, newID(t), "j")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a valid member")
 }
