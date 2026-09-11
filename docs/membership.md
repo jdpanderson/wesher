@@ -107,7 +107,7 @@ DH public keys, and `K` the token:
    `TokenID = SHA-256(K)[:8]` lets the member pick the pending token without
    revealing it.
 2. Both derive `ss = X25519(own DH private, other DH public)` and
-   `kMac = HKDF-SHA256(ss || K, salt = nJ || nM, info="cheesecloth/enroll/v1")`.
+   `kMac = HKDF-SHA256(ss || K, salt = nJ || nM, info="cheesecloth/enrol/v2")`.
    Member -> Joiner: `M, Md, nM, HMAC(kMac, "member" || transcript)`.
 3. Joiner verifies; it now knows the member holds `K`. Joiner -> Member:
    `HMAC(kMac, "joiner" || transcript)`.
@@ -115,8 +115,10 @@ DH public keys, and `K` the token:
    broadcasts it, and sends the joiner the root record, the full record set,
    and its own gossip address. Both sides discard `K`.
 
-`transcript = J || Jd || M || Md || nJ || nM || Name`. Because both identities
-and both DH keys are included in the MACs, the token can be discarded after
+`transcript = "cheesecloth/enrol/transcript/v2" || 0 || J || Jd || M || Md || nJ || nM || Name`,
+each field length-prefixed: the canonical encoding the signed records use,
+under its own domain string. Because both identities and both DH keys are
+included in the MACs, the token can be discarded after
 step 4; from then on the identities are the trust anchors. The two different
 labels prevent a MAC from being reflected back to its sender. The nonces
 prevent replay. Including `ss` in the key derivation means that someone who

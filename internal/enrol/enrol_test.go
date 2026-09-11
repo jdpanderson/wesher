@@ -1,6 +1,7 @@
 package enrol
 
 import (
+	"bytes"
 	"net"
 	"testing"
 	"time"
@@ -189,6 +190,7 @@ func Test_transcriptAndKeys(t *testing.T) {
 	t1 := transcript(a.Public(), a.DHPublic(), b.Public(), b.DHPublic(), nJ, nM, "n")
 	t2 := transcript(a.Public(), a.DHPublic(), b.Public(), b.DHPublic(), nJ, nM, "m")
 	assert.NotEqual(t, t1, t2)
+	assert.True(t, bytes.HasPrefix(t1, []byte(transcriptDomain+"\x00")), "domain-separated from the signed records")
 	assert.NotEqual(t, mac([]byte("k"), labelMember, t1), mac([]byte("k"), labelJoiner, t1), "direction labels differ")
 
 	ss, _ := a.SharedSecret(b.DHPublic())

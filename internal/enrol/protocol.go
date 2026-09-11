@@ -18,15 +18,16 @@ import (
 )
 
 // Version identifies this exchange format; a mismatch fails closed.
-const Version = 1
+const Version = 2
 
 const (
-	nonceLen     = 32
-	maxFrame     = 1 << 20 // records for a large cluster fit comfortably
-	exchangeTime = 15 * time.Second
-	kdfInfo      = "cheesecloth/enroll/v1"
-	labelMember  = "member"
-	labelJoiner  = "joiner"
+	nonceLen         = 32
+	maxFrame         = 1 << 20 // records for a large cluster fit comfortably
+	exchangeTime     = 15 * time.Second
+	kdfInfo          = "cheesecloth/enrol/v2"
+	transcriptDomain = "cheesecloth/enrol/transcript/v2"
+	labelMember      = "member"
+	labelJoiner      = "joiner"
 )
 
 // hello is the joiner's first message, in the clear.
@@ -74,9 +75,10 @@ func deriveKey(ss, token, nJ, nM []byte) []byte {
 	return k
 }
 
-// transcript binds both identities, both DH keys, both nonces and the name.
+// transcript binds both identities, both DH keys, both nonces and the name,
+// under its own domain like every other signed or authenticated message.
 func transcript(j trust.PublicKey, jd trust.DHKey, m trust.PublicKey, md trust.DHKey, nJ, nM []byte, name string) []byte {
-	return wire.Fields(j[:], jd[:], m[:], md[:], nJ, nM, []byte(name))
+	return wire.Canonical(transcriptDomain, j[:], jd[:], m[:], md[:], nJ, nM, []byte(name))
 }
 
 func mac(key []byte, label string, transcript []byte) []byte {
