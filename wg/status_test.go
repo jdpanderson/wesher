@@ -27,7 +27,7 @@ func Test_status_fake(t *testing.T) {
 				ReceiveBytes: 100, TransmitBytes: 200, PersistentKeepaliveInterval: 25 * time.Second,
 			},
 			{PublicKey: wgtypes.Key{2}, AllowedIPs: []net.IPNet{*allowed, *allowed6}}, // never connected, two allowed IPs
-			{PublicKey: wgtypes.Key{3}, AllowedIPs: []net.IPNet{*allowed, *routed}},   // routes a network
+			{PublicKey: wgtypes.Key{3}, AllowedIPs: []net.IPNet{*allowed, *routed}},   // also routes a network
 		},
 	}
 	_, ifaddr, _ := net.ParseCIDR("10.99.0.1/32")
@@ -48,23 +48,15 @@ func Test_status_fake(t *testing.T) {
 	assert.EqualValues(t, 100, p.ReceiveBytes)
 	assert.EqualValues(t, 200, p.TransmitBytes)
 	assert.Equal(t, 25*time.Second, p.PersistentKeepalive)
-	overlay, ok := p.OverlayAddr()
-	require.True(t, ok)
-	assert.Equal(t, "10.99.0.2", overlay.String())
+	assert.Equal(t, []netip.Prefix{netip.MustParsePrefix("10.99.0.2/32")}, p.AllowedIPs)
 
 	p = r.Peers[1]
 	assert.Empty(t, p.Endpoint)
 	assert.True(t, p.LastHandshake.IsZero())
 	assert.Equal(t, []netip.Prefix{netip.MustParsePrefix("10.99.0.2/32"), netip.MustParsePrefix("fd00::2/128")}, p.AllowedIPs)
-	_, ok = p.OverlayAddr()
-	assert.False(t, ok, "two single addresses: no one overlay address")
-	assert.Empty(t, p.Routes())
 
 	p = r.Peers[2]
-	overlay, ok = p.OverlayAddr()
-	require.True(t, ok, "the single address is the overlay address, the network is a route")
-	assert.Equal(t, "10.99.0.2", overlay.String())
-	assert.Equal(t, []netip.Prefix{netip.MustParsePrefix("192.168.7.0/24")}, p.Routes())
+	assert.Equal(t, []netip.Prefix{netip.MustParsePrefix("10.99.0.2/32"), netip.MustParsePrefix("192.168.7.0/24")}, p.AllowedIPs)
 }
 
 func Test_status_fake_errors(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/netip"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -62,20 +63,24 @@ func renderStatus(w io.Writer, r *wg.Report, local trust.PublicKey, names map[st
 	tw := tabwriter.NewWriter(w, 0, 8, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "\nNAME\tIDENTITY\tOVERLAY\tENDPOINT\tHANDSHAKE\tRX\tTX\tROUTES")
 	for _, p := range peers {
-		overlay := "-"
-		if a, ok := p.OverlayAddr(); ok {
-			overlay = a.String()
-		}
+		info := names[p.PublicKey]
 		endpoint := p.Endpoint
 		if endpoint == "" {
 			endpoint = "-"
 		}
 		identity := "-"
-		if info, ok := names[p.PublicKey]; ok && info.Identity != nil {
+		if info.Identity != nil {
 			identity = info.Identity.Short()
 		}
+		// the cluster state says which allowed IP is the peer's own address; the rest are routes
+		overlay := "-"
+		rs := p.AllowedIPs
+		if info.Overlay.IsValid() {
+			overlay = info.Overlay.String()
+			rs = slices.DeleteFunc(slices.Clone(rs), func(x netip.Prefix) bool { return x.IsSingleIP() && x.Addr() == info.Overlay })
+		}
 		routes := "-"
-		if rs := p.Routes(); len(rs) > 0 {
+		if len(rs) > 0 {
 			strs := make([]string, len(rs))
 			for i, r := range rs {
 				strs[i] = r.String()

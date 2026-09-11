@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"net/netip"
 	"os"
 	"time"
 
@@ -24,7 +25,7 @@ func (c *StatusCmd) Run() error {
 	names := make(map[string]peerInfo) // wireguard public key -> node
 	for _, n := range cluster.KnownNodes(c.Interface) {
 		id := trust.PublicKey(n.Identity)
-		names[n.PubKey] = peerInfo{Name: n.Name, Identity: &id}
+		names[n.PubKey] = peerInfo{Name: n.Name, Identity: &id, Overlay: n.OverlayAddr}
 	}
 	local, _ := cluster.LocalIdentity(c.Interface)
 	if c.JSON {
@@ -37,4 +38,5 @@ func (c *StatusCmd) Run() error {
 type peerInfo struct {
 	Name     string           `json:"name,omitempty"`
 	Identity *trust.PublicKey `json:"identity,omitempty"`
+	Overlay  netip.Addr       `json:"overlay,omitzero"`
 }
