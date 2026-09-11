@@ -284,8 +284,28 @@ func (t *quicTransport) adoptEnrol(conn *quic.Conn, peer trust.PublicKey) {
 		_ = conn.CloseWithError(1, "busy")
 		return
 	}
-	t.wg.Add(1)
+	if !t.track(1) {
+		<-t.enrolSem
+		_ = conn.CloseWithError(0, "shutdown")
+		return
+	}
 	go t.serveEnrol(conn, peer)
+}
+
+// track counts n goroutines about to start, unless the transport is shutting
+// down, in which case it reports false and the caller starts none. Shutdown
+// closes done under the same lock before it waits, so nothing is added to the
+// wait group once the wait has begun.
+func (t *quicTransport) track(n int) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	select {
+	case <-t.done:
+		return false
+	default:
+		t.wg.Add(n)
+		return true
+	}
 }
 
 // register records conn, dialled by client, as the connection to its peer and
@@ -328,7 +348,10 @@ func keepNew(cur, client, preferred trust.PublicKey) bool {
 // streams are handed to memberlist, for as long as the peer stays a member.
 func (t *quicTransport) serve(conn *quic.Conn, peer trust.PublicKey) {
 	addr := conn.RemoteAddr().String()
-	t.wg.Add(2)
+	if !t.track(2) {
+		t.forget(addr, conn)
+		return
+	}
 	go func() {
 		defer t.wg.Done()
 		defer t.forget(addr, conn)
@@ -384,13 +407,18 @@ func (t *quicTransport) serveEnrol(conn *quic.Conn, peer trust.PublicKey) {
 	t.enrol(&enrolStream{streamConn: *newStreamConn(conn, s, peer), conn: conn, wg: &t.wg})
 }
 
-// forget drops conn from the table if it is still the one recorded for addr.
+// forget drops conn from the table if it is still the one recorded for addr,
+// and closes it: a connection that is not the one for its address is of no
+// further use, and closing it now tells the peer, where leaving it for
+// Shutdown to destroy would not. Closing an already closed connection returns
+// at once.
 func (t *quicTransport) forget(addr string, conn *quic.Conn) {
 	t.mu.Lock()
 	if t.conns[addr].conn == conn {
 		delete(t.conns, addr)
 	}
 	t.mu.Unlock()
+	_ = conn.CloseWithError(0, "connection dropped")
 }
 
 // lookup returns the live connection to addr, if any.
@@ -453,15 +481,24 @@ func (t *quicTransport) dial(ctx context.Context, addr string) (*quic.Conn, erro
 	return nil, fmt.Errorf("gossip to %s: connection not usable", addr)
 }
 
-// dialAsync starts a connection attempt to addr unless one is under way.
+// dialAsync starts a connection attempt to addr unless one is under way or
+// the transport is shutting down.
 func (t *quicTransport) dialAsync(addr string) {
 	t.mu.Lock()
 	_, busy := t.dialing[addr]
+	shutdown := false
+	select {
+	case <-t.done:
+		shutdown = true
+	default:
+	}
+	if !busy && !shutdown {
+		t.wg.Add(1)
+	}
 	t.mu.Unlock()
-	if busy {
+	if busy || shutdown {
 		return
 	}
-	t.wg.Add(1)
 	go func() {
 		defer t.wg.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), handshakeTime)
@@ -570,14 +607,24 @@ func peerOf(conn *quic.Conn) trust.PublicKey {
 func (t *quicTransport) StreamCh() <-chan net.Conn { return t.streams }
 
 // Shutdown implements memberlist.Transport. Safe to call more than once.
+// Every connection is closed, which waits for the close to reach the wire,
+// before the QUIC transport goes: closing the transport destroys whatever is
+// still open without a word to the peer, which would then only notice at the
+// idle timeout.
 func (t *quicTransport) Shutdown() error {
 	t.once.Do(func() {
-		close(t.done)
 		_ = t.ln.Close()
 		t.mu.Lock()
+		conns := make([]*quic.Conn, 0, len(t.conns))
 		for _, c := range t.conns {
-			_ = c.conn.CloseWithError(0, "shutdown")
+			conns = append(conns, c.conn)
 		}
+		t.mu.Unlock()
+		for _, c := range conns {
+			_ = c.CloseWithError(0, "shutdown")
+		}
+		t.mu.Lock()
+		close(t.done) // under mu: see track
 		t.mu.Unlock()
 		t.err = t.qt.Close()
 		_ = t.udp.Close()

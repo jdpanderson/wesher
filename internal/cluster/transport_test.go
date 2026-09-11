@@ -47,18 +47,18 @@ func twoMembers(t *testing.T) (a, b *testNode) {
 	return newTestNode(t, rootID, setA), newTestNode(t, bID, setB)
 }
 
-// sendUntilConnected sends msg until a connection exists to carry it; the
+// sendUntilConnected sends "ping" until a connection exists to carry it; the
 // first sends are dropped while the transport connects, as UDP would drop them.
-func sendUntilConnected(t *testing.T, from *testNode, to string, msg string) {
+func sendUntilConnected(t *testing.T, from *testNode, to string) {
 	t.Helper()
 	require.Eventually(t, func() bool {
 		if from.tr.lookup(to) != nil {
 			return true
 		}
-		_, _ = from.tr.WriteTo([]byte(msg), to) // dropped, and starts the connection
+		_, _ = from.tr.WriteTo([]byte("ping"), to) // dropped, and starts the connection
 		return false
 	}, 5*time.Second, 20*time.Millisecond, "never connected to %s", to)
-	_, err := from.tr.WriteTo([]byte(msg), to)
+	_, err := from.tr.WriteTo([]byte("ping"), to)
 	require.NoError(t, err)
 }
 
@@ -93,7 +93,7 @@ func Test_quicTransport_packetsAndStreams(t *testing.T) {
 
 	// the first packet to an unknown address is dropped and starts a connection; packets flow once it is up
 	assert.Nil(t, a.tr.lookup(b.addr))
-	sendUntilConnected(t, a, b.addr, "ping")
+	sendUntilConnected(t, a, b.addr)
 	expectPacket(t, b, "ping")
 
 	// the accepting side reuses the same connection in the other direction
@@ -131,6 +131,41 @@ func Test_quicTransport_packetsAndStreams(t *testing.T) {
 	assert.NoError(t, err, "packets to a dead peer are dropped, not failed")
 	_, err = a.tr.DialTimeout("127.0.0.1:1", time.Second)
 	assert.ErrorContains(t, err, "gossip to 127.0.0.1:1")
+}
+
+// A connection dropped from the table is closed, so the peer drops it too.
+// Before, it lingered until the QUIC transport destroyed it silently at
+// shutdown, and the peer only noticed at the idle timeout.
+func Test_quicTransport_forgetClosesConnection(t *testing.T) {
+	a, b := twoMembers(t)
+	sendUntilConnected(t, a, b.addr)
+	expectPacket(t, b, "ping")
+	conn := a.tr.lookup(b.addr)
+	require.NotNil(t, conn)
+	require.NotNil(t, b.tr.lookup(a.addr))
+
+	a.tr.forget(b.addr, conn)
+	assert.Nil(t, a.tr.lookup(b.addr))
+	assert.Error(t, conn.Context().Err(), "the dropped connection is closed")
+	assert.Eventually(t, func() bool { return b.tr.lookup(a.addr) == nil }, time.Second, 10*time.Millisecond, "b was not told")
+}
+
+// Shutdown must tell peers even about a connection whose pump is stuck on a
+// packet nobody has read, which is the shape that first exposed the silent
+// destroy: the pump woke on done and dropped the connection before Shutdown
+// reached it.
+func Test_quicTransport_shutdownTellsPeers(t *testing.T) {
+	a, b := twoMembers(t)
+	sendUntilConnected(t, a, b.addr)
+	expectPacket(t, b, "ping")
+	for i := 0; i < 3; i++ { // unread: b's pump for this connection blocks on the packet channel
+		_, err := a.tr.WriteTo([]byte("unread"), b.addr)
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, b.tr.Shutdown())
+	assert.Eventually(t, func() bool { return a.tr.lookup(b.addr) == nil }, time.Second, 10*time.Millisecond,
+		"a was not told that b closed")
 }
 
 func Test_quicTransport_advertiseAddr(t *testing.T) {
@@ -195,7 +230,7 @@ func Test_quicTransport_rejectsStrangers(t *testing.T) {
 
 func Test_quicTransport_revocationCutsConnection(t *testing.T) {
 	a, b := twoMembers(t)
-	sendUntilConnected(t, a, b.addr, "ping")
+	sendUntilConnected(t, a, b.addr)
 	expectPacket(t, b, "ping")
 
 	// a revokes b; b's next packet closes the connection instead of being delivered
