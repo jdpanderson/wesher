@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -62,12 +63,18 @@ func Test_state_save_unwritableDir(t *testing.T) {
 	blocker := filepath.Join(dir, "blocker")
 	require.NoError(t, os.WriteFile(blocker, nil, 0o600))
 	assert.Error(t, (&state{}).save(statePath(blocker, "test")), "a file where the directory should be")
+	// Which failure it is depends on the system: unix reports a file in a
+	// path as not a directory, windows as a path that is not there, which
+	// looks like a fresh node until the identity cannot be written either.
 	_, err := Load(blocker, "test")
-	assert.ErrorContains(t, err, "reading state", "a file where the directory should be")
+	assert.Error(t, err, "a file where the directory should be")
 }
 
 // Nothing to read, and nowhere to write the identity that would replace it.
 func Test_Load_reportsUnwritableIdentity(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory permissions do not stop a write on windows")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("a read-only directory does not stop root")
 	}
