@@ -98,7 +98,7 @@ func Test_Cluster_Join_rememberedPeers(t *testing.T) {
 	chA := a.Members()
 
 	// b shares a's port on another loopback address, as real nodes share the cluster port
-	other := netip.MustParseAddr("127.0.0.2")
+	other := secondLoopback(t)
 	samePort := func(cfg *Config) { cfg.BindAddr, cfg.AdvertiseAddr, cfg.BindPort = other, other, a.port }
 	b := enrolCluster(t, dir, a, "b", samePort)
 	waitMembers(t, b.Members(), 1) // a is now remembered
@@ -118,6 +118,20 @@ func Test_Cluster_Join_rememberedPeers(t *testing.T) {
 	drain(b.Members())
 	require.NoError(t, b.Join(nil))
 	assert.Equal(t, "b", waitMembers(t, chA, 1)[0].Name)
+}
+
+// secondLoopback is a loopback address other than 127.0.0.1. Linux answers to
+// all of 127.0.0.0/8; macOS configures only 127.0.0.1 unless an alias is added
+// (ifconfig lo0 alias 127.0.0.2), so the test skips there.
+func secondLoopback(t *testing.T) netip.Addr {
+	t.Helper()
+	addr := netip.MustParseAddr("127.0.0.2")
+	l, err := net.ListenUDP("udp", &net.UDPAddr{IP: addr.AsSlice()})
+	if err != nil {
+		t.Skipf("no second loopback address: %v", err)
+	}
+	_ = l.Close()
+	return addr
 }
 
 func waitMembers(t *testing.T, ch <-chan []overlay.Node, want int) []overlay.Node {
