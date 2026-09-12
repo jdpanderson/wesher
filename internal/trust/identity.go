@@ -3,11 +3,8 @@
 package trust
 
 import (
-	"crypto/ecdh"
 	"crypto/ed25519"
-	"crypto/hkdf"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 )
@@ -50,22 +47,10 @@ func ParsePublicKey(s string) (PublicKey, error) {
 	return k, err
 }
 
-// DHKey is an X25519 public key.
-type DHKey [32]byte
-
-// MarshalText implements encoding.TextMarshaler.
-func (k DHKey) MarshalText() ([]byte, error) {
-	return []byte(base64.StdEncoding.EncodeToString(k[:])), nil
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (k *DHKey) UnmarshalText(text []byte) error { return decodeKey("dh key", text, k[:]) }
-
-// Identity is a node's long-lived key material, all derived from one seed.
+// Identity is a node's long-lived key material, derived from one seed.
 type Identity struct {
 	seed []byte
 	sign ed25519.PrivateKey
-	dh   *ecdh.PrivateKey
 }
 
 // NewIdentity generates a fresh random identity.
@@ -77,24 +62,12 @@ func NewIdentity() (*Identity, error) {
 	return IdentityFromSeed(seed)
 }
 
-// IdentityFromSeed derives the signing and DH keys from a persisted seed.
+// IdentityFromSeed derives the signing key from a persisted seed.
 func IdentityFromSeed(seed []byte) (*Identity, error) {
 	if len(seed) != SeedLen {
 		return nil, fmt.Errorf("identity seed must be %d bytes, got %d", SeedLen, len(seed))
 	}
-	dhSeed, err := hkdf.Key(sha256.New, seed, nil, "cheesecloth/dh/v1", 32)
-	if err != nil {
-		return nil, fmt.Errorf("deriving dh key: %w", err)
-	}
-	dh, err := ecdh.X25519().NewPrivateKey(dhSeed)
-	if err != nil {
-		return nil, fmt.Errorf("deriving dh key: %w", err)
-	}
-	return &Identity{
-		seed: append([]byte(nil), seed...),
-		sign: ed25519.NewKeyFromSeed(seed),
-		dh:   dh,
-	}, nil
+	return &Identity{seed: append([]byte(nil), seed...), sign: ed25519.NewKeyFromSeed(seed)}, nil
 }
 
 // Seed returns the seed to persist. Treat it as a secret.
@@ -107,33 +80,11 @@ func (i *Identity) Public() PublicKey {
 	return k
 }
 
-// DHPublic is the identity's X25519 public key.
-func (i *Identity) DHPublic() DHKey {
-	var k DHKey
-	copy(k[:], i.dh.PublicKey().Bytes())
-	return k
-}
-
 // Sign signs msg with the identity's signing key.
 func (i *Identity) Sign(msg []byte) []byte { return ed25519.Sign(i.sign, msg) }
 
 // Signer exposes the Ed25519 private key, for TLS certificates.
 func (i *Identity) Signer() ed25519.PrivateKey { return i.sign }
-
-// SharedSecret is the raw X25519 shared secret with peer. Callers must run it
-// through a KDF before use. crypto/ecdh rejects low-order peer keys, whose
-// shared secret would be all zero.
-func (i *Identity) SharedSecret(peer DHKey) ([]byte, error) {
-	pub, err := ecdh.X25519().NewPublicKey(peer[:])
-	if err != nil {
-		return nil, fmt.Errorf("peer dh key: %w", err)
-	}
-	ss, err := i.dh.ECDH(pub)
-	if err != nil {
-		return nil, fmt.Errorf("x25519: %w", err)
-	}
-	return ss, nil
-}
 
 // Verify checks an Ed25519 signature by identity over msg.
 func Verify(identity PublicKey, msg, sig []byte) bool {

@@ -23,8 +23,8 @@ func cluster(t *testing.T) (root, a, b, stranger *Identity, set *Set) {
 	set = NewSet(root.Public())
 	for _, adm := range []Admission{
 		SelfAdmit(root, "root", t0),
-		Admit(root, a.Public(), a.DHPublic(), "a", 2, t0.Add(time.Minute)),
-		Admit(a, b.Public(), b.DHPublic(), "b", 3, t0.Add(2*time.Minute)),
+		Admit(root, a.Public(), "a", 2, t0.Add(time.Minute)),
+		Admit(a, b.Public(), "b", 3, t0.Add(2*time.Minute)),
 	} {
 		ok, err := set.AddAdmission(adm)
 		require.NoError(t, err)

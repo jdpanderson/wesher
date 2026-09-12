@@ -14,7 +14,6 @@ import (
 // never 0). The root admits itself (Admitter == Identity) and takes slot 1.
 type Admission struct {
 	Identity  PublicKey `json:"identity"`
-	DHKey     DHKey     `json:"dhKey"`
 	Name      string    `json:"name"`
 	Host      uint64    `json:"host"`
 	Admitter  PublicKey `json:"admitter"`
@@ -34,7 +33,7 @@ type Revocation struct {
 }
 
 const (
-	admissionDomain  = "cheesecloth/admission/v1"
+	admissionDomain  = "cheesecloth/admission/v2"
 	revocationDomain = "cheesecloth/revocation/v1"
 	metaDomain       = "cheesecloth/meta/v1"
 )
@@ -44,24 +43,24 @@ func i64(v int64) []byte { return binary.BigEndian.AppendUint64(nil, uint64(v)) 
 func u64(v uint64) []byte { return binary.BigEndian.AppendUint64(nil, v) }
 
 func (a *Admission) signedBytes() []byte {
-	return wire.Canonical(admissionDomain, a.Identity[:], a.DHKey[:], []byte(a.Name), u64(a.Host), a.Admitter[:], i64(a.IssuedAt))
+	return wire.Canonical(admissionDomain, a.Identity[:], []byte(a.Name), u64(a.Host), a.Admitter[:], i64(a.IssuedAt))
 }
 
 func (r *Revocation) signedBytes() []byte {
 	return wire.Canonical(revocationDomain, r.Identity[:], r.Revoker[:], i64(r.IssuedAt))
 }
 
-// Admit creates an admission of (identity, dh, name) at overlay slot host,
-// signed by admitter.
-func Admit(admitter *Identity, identity PublicKey, dh DHKey, name string, host uint64, now time.Time) Admission {
-	a := Admission{Identity: identity, DHKey: dh, Name: name, Host: host, Admitter: admitter.Public(), IssuedAt: now.Unix()}
+// Admit creates an admission of (identity, name) at overlay slot host, signed
+// by admitter.
+func Admit(admitter *Identity, identity PublicKey, name string, host uint64, now time.Time) Admission {
+	a := Admission{Identity: identity, Name: name, Host: host, Admitter: admitter.Public(), IssuedAt: now.Unix()}
 	a.Signature = admitter.Sign(a.signedBytes())
 	return a
 }
 
 // SelfAdmit creates the root record for id.
 func SelfAdmit(id *Identity, name string, now time.Time) Admission {
-	return Admit(id, id.Public(), id.DHPublic(), name, RootHost, now)
+	return Admit(id, id.Public(), name, RootHost, now)
 }
 
 // Revoke creates a revocation of identity signed by revoker.

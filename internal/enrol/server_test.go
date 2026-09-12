@@ -36,15 +36,13 @@ func Test_handle_badProof(t *testing.T) {
 	setDeadline(conn)
 	tid := idOf(key)
 	nJ, _ := randomNonce()
-	require.NoError(t, writeFrame(conn, hello{Version: Version, TokenID: tid[:], Identity: joiner.Public(), DH: joiner.DHPublic(), Nonce: nJ, Name: "j"}))
+	require.NoError(t, writeFrame(conn, hello{Version: Version, TokenID: tid[:], Identity: joiner.Public(), Nonce: nJ, Name: "j"}))
 	var c challenge
 	require.NoError(t, readFrame(conn, &c), "a known token id gets a challenge")
 
 	// prove with the wrong key: knowing the id is not knowing the token
-	ss, err := joiner.SharedSecret(c.DH)
-	require.NoError(t, err)
-	k := deriveKey(ss, append([]byte{0}, key[1:]...), nJ, c.Nonce)
-	tr := transcript(joiner.Public(), joiner.DHPublic(), c.Identity, c.DH, nJ, c.Nonce, "j")
+	k := deriveKey(append([]byte{0}, key[1:]...), nJ, c.Nonce)
+	tr := transcript(joiner.Public(), c.Identity, nJ, c.Nonce, "j")
 	require.NoError(t, writeFrame(conn, proof{MAC: mac(k, labelJoiner, tr)}))
 	var sealed []byte
 	assert.Error(t, readFrame(conn, &sealed), "no welcome")
@@ -74,24 +72,9 @@ func Test_Join_errors(t *testing.T) {
 	_, _, err = Join(answers(challenge{Nonce: []byte{1}}), tok, id, "j")
 	assert.ErrorContains(t, err, "malformed challenge")
 
-	// a member whose DH key is a low-order point cannot be agreed a secret with
+	// a member that cannot prove it holds the token is refused
 	_, _, err = Join(answers(challenge{Identity: other.Public(), Nonce: make([]byte, nonceLen)}), tok, id, "j")
-	assert.ErrorContains(t, err, "low order")
-}
-
-// A joiner whose DH key is a low-order point is turned away before any challenge.
-func Test_handle_lowOrderDH(t *testing.T) {
-	srv, _ := member(t)
-	tok, err := srv.Tokens.Mint(time.Minute, 1)
-	require.NoError(t, err)
-	joiner := newID(t)
-	conn := pipeTo(t, srv, joiner.Public())
-	setDeadline(conn)
-	tid := idOf(mustKey(t, tok))
-	require.NoError(t, writeFrame(conn, hello{Version: Version, TokenID: tid[:], Identity: joiner.Public(), Nonce: make([]byte, nonceLen), Name: "j"}))
-	var c challenge
-	assert.Error(t, readFrame(conn, &c), "no challenge")
-	assert.Equal(t, 1, srv.Tokens.pending(), "the token is untouched")
+	assert.ErrorContains(t, err, "could not prove knowledge of the join key")
 }
 
 // Two joiners may both be challenged on a single-use token; only the first to
@@ -115,15 +98,13 @@ func Test_handle_singleUseTokenTwoJoiners(t *testing.T) {
 		j.nJ, err = randomNonce()
 		require.NoError(t, err)
 		tid := idOf(key)
-		require.NoError(t, writeFrame(j.conn, hello{Version: Version, TokenID: tid[:], Identity: j.id.Public(), DH: j.id.DHPublic(), Nonce: j.nJ, Name: name}))
+		require.NoError(t, writeFrame(j.conn, hello{Version: Version, TokenID: tid[:], Identity: j.id.Public(), Nonce: j.nJ, Name: name}))
 		require.NoError(t, readFrame(j.conn, &j.c), "%s is challenged", name)
 		return j
 	}
 	prove := func(j *joiner, name string) error {
-		ss, err := j.id.SharedSecret(j.c.DH)
-		require.NoError(t, err)
-		k := deriveKey(ss, key, j.nJ, j.c.Nonce)
-		tr := transcript(j.id.Public(), j.id.DHPublic(), j.c.Identity, j.c.DH, j.nJ, j.c.Nonce, name)
+		k := deriveKey(key, j.nJ, j.c.Nonce)
+		tr := transcript(j.id.Public(), j.c.Identity, j.nJ, j.c.Nonce, name)
 		require.NoError(t, writeFrame(j.conn, proof{MAC: mac(k, labelJoiner, tr)}))
 		var w Welcome
 		return readFrame(j.conn, &w)
@@ -146,7 +127,7 @@ func Test_identityBinding(t *testing.T) {
 	c1 := pipeTo(t, srv, other.Public())
 	setDeadline(c1)
 	tid := idOf(mustKey(t, tok))
-	require.NoError(t, writeFrame(c1, hello{Version: Version, TokenID: tid[:], Identity: joiner.Public(), DH: joiner.DHPublic(), Nonce: make([]byte, nonceLen), Name: "j"}))
+	require.NoError(t, writeFrame(c1, hello{Version: Version, TokenID: tid[:], Identity: joiner.Public(), Nonce: make([]byte, nonceLen), Name: "j"}))
 	var c challenge
 	assert.Error(t, readFrame(c1, &c), "server hangs up on a mismatch")
 	assert.Equal(t, 1, srv.Tokens.pending())
@@ -176,9 +157,9 @@ func Test_Join_rejectsForeignAdmission(t *testing.T) {
 	_, err := set.AddAdmission(trust.SelfAdmit(id, "root", time.Now()))
 	require.NoError(t, err)
 	srv := &Server{Identity: id, Tokens: NewTokenStore(nil), Root: id.Public(), GossipAddr: "x",
-		Admit: func(trust.PublicKey, trust.DHKey, string) (trust.Admission, trust.Records, error) {
+		Admit: func(trust.PublicKey, string) (trust.Admission, trust.Records, error) {
 			other := newID(t)
-			return trust.Admit(id, other.Public(), other.DHPublic(), "other", 2, time.Now()), set.Records(), nil
+			return trust.Admit(id, other.Public(), "other", 2, time.Now()), set.Records(), nil
 		}}
 	tok, err := srv.Tokens.Mint(time.Minute, 1)
 	require.NoError(t, err)
@@ -193,8 +174,8 @@ func Test_Join_rejectsForgedAdmission(t *testing.T) {
 	_, err := set.AddAdmission(trust.SelfAdmit(id, "root", time.Now()))
 	require.NoError(t, err)
 	srv := &Server{Identity: id, Tokens: NewTokenStore(nil), Root: id.Public(), GossipAddr: "x",
-		Admit: func(joiner trust.PublicKey, dh trust.DHKey, name string) (trust.Admission, trust.Records, error) {
-			a := trust.Admit(id, joiner, dh, name, 2, time.Now())
+		Admit: func(joiner trust.PublicKey, name string) (trust.Admission, trust.Records, error) {
+			a := trust.Admit(id, joiner, name, 2, time.Now())
 			a.Signature[0] ^= 1
 			return a, set.Records(), nil
 		}}
@@ -215,16 +196,16 @@ func Test_Join_refusedWhenRecordsOutgrowTheFrame(t *testing.T) {
 	for host := uint64(2); len(mustJSON(t, set.Records())) <= maxFrame; { // in batches: the set is marshalled to measure it
 		for range 500 {
 			other := newID(t)
-			_, aerr := set.AddAdmission(trust.Admit(id, other.Public(), other.DHPublic(), "n", host, time.Now()))
+			_, aerr := set.AddAdmission(trust.Admit(id, other.Public(), "n", host, time.Now()))
 			require.NoError(t, aerr)
 			host++
 		}
 	}
 	admitted := 0
 	srv := &Server{Identity: id, Tokens: NewTokenStore(nil), Root: id.Public(), GossipAddr: "x", Records: set.Records,
-		Admit: func(joiner trust.PublicKey, dh trust.DHKey, name string) (trust.Admission, trust.Records, error) {
+		Admit: func(joiner trust.PublicKey, name string) (trust.Admission, trust.Records, error) {
 			admitted++
-			a := trust.Admit(id, joiner, dh, name, 2, time.Now())
+			a := trust.Admit(id, joiner, name, 2, time.Now())
 			return a, set.Records(), nil
 		}}
 	tok, err := srv.Tokens.Mint(time.Minute, 1)
@@ -244,7 +225,7 @@ func Test_Join_refusalReachesTheJoiner(t *testing.T) {
 	_, err := set.AddAdmission(trust.SelfAdmit(id, "root", time.Now()))
 	require.NoError(t, err)
 	srv := &Server{Identity: id, Tokens: NewTokenStore(nil), Root: id.Public(), GossipAddr: "x",
-		Admit: func(trust.PublicKey, trust.DHKey, string) (trust.Admission, trust.Records, error) {
+		Admit: func(trust.PublicKey, string) (trust.Admission, trust.Records, error) {
 			return trust.Admission{}, trust.Records{}, errors.New(`a member named "j" is already in the cluster`)
 		}}
 	tok, err := srv.Tokens.Mint(time.Minute, 1)

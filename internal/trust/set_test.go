@@ -25,21 +25,21 @@ func Test_Set_validity(t *testing.T) {
 
 	// a stranger's admission of someone else is stored (signature is fine) but confers nothing
 	c := newID(t)
-	ok, err := set.AddAdmission(Admit(stranger, c.Public(), c.DHPublic(), "c", 4, t0))
+	ok, err := set.AddAdmission(Admit(stranger, c.Public(), "c", 4, t0))
 	require.NoError(t, err)
 	assert.True(t, ok)
 	assert.False(t, set.Valid(c.Public()), "chain does not reach the root")
 
 	// tampering breaks the signature
-	adm := Admit(root, c.Public(), c.DHPublic(), "c", 4, t0)
+	adm := Admit(root, c.Public(), "c", 4, t0)
 	adm.Name = "evil"
 	_, err = set.AddAdmission(adm)
 	assert.ErrorContains(t, err, "signature")
-	adm = Admit(root, c.Public(), c.DHPublic(), "c", 4, t0)
+	adm = Admit(root, c.Public(), "c", 4, t0)
 	adm.Host = 5
 	_, err = set.AddAdmission(adm)
 	assert.ErrorContains(t, err, "signature")
-	adm = Admit(root, c.Public(), c.DHPublic(), "c", 0, t0)
+	adm = Admit(root, c.Public(), "c", 0, t0)
 	_, err = set.AddAdmission(adm)
 	assert.ErrorContains(t, err, "overlay slot")
 }
@@ -70,7 +70,7 @@ func Test_Set_revocation(t *testing.T) {
 		assert.True(t, set.Valid(b.Public()), "b was admitted while a was still a member")
 
 		c := newID(t)
-		_, err = set.AddAdmission(Admit(a, c.Public(), c.DHPublic(), "c", 4, t0.Add(4*time.Minute)))
+		_, err = set.AddAdmission(Admit(a, c.Public(), "c", 4, t0.Add(4*time.Minute)))
 		require.NoError(t, err)
 		assert.False(t, set.Valid(c.Public()), "admitted by a after a's revocation")
 	})
@@ -113,10 +113,10 @@ func Test_Set_revocation(t *testing.T) {
 
 		// the cluster carries on: a admits c, and the departed root admits nobody
 		c, d := newID(t), newID(t)
-		_, err = set.AddAdmission(Admit(a, c.Public(), c.DHPublic(), "c", 4, t0.Add(10*time.Minute)))
+		_, err = set.AddAdmission(Admit(a, c.Public(), "c", 4, t0.Add(10*time.Minute)))
 		require.NoError(t, err)
 		assert.True(t, set.Valid(c.Public()), "a member admitted after the root left")
-		_, err = set.AddAdmission(Admit(root, d.Public(), d.DHPublic(), "d", 5, t0.Add(10*time.Minute)))
+		_, err = set.AddAdmission(Admit(root, d.Public(), "d", 5, t0.Add(10*time.Minute)))
 		require.NoError(t, err)
 		assert.False(t, set.Valid(d.Public()), "admitted by the root after its revocation")
 	})
@@ -153,8 +153,8 @@ func Test_Set_AddRevocation(t *testing.T) {
 func Test_Set_Merge_skipsBadRecords(t *testing.T) {
 	root, a, _, _, set := cluster(t)
 	c := newID(t)
-	good := Admit(root, c.Public(), c.DHPublic(), "c", 4, t0)
-	bad := Admit(root, c.Public(), c.DHPublic(), "c", 5, t0)
+	good := Admit(root, c.Public(), "c", 4, t0)
+	bad := Admit(root, c.Public(), "c", 5, t0)
 	bad.Name = "tampered"
 	badRev := Revoke(a, a.Public(), t0)
 	badRev.IssuedAt++ // the signature no longer covers the record
@@ -192,11 +192,11 @@ func Test_Set_mergeAndRoundTrip(t *testing.T) {
 
 func Test_Set_newerAdmissionReplaces(t *testing.T) {
 	root, a, _, _, set := cluster(t)
-	older := Admit(root, a.Public(), a.DHPublic(), "a-old", 2, t0)
+	older := Admit(root, a.Public(), "a-old", 2, t0)
 	ok, err := set.AddAdmission(older)
 	require.NoError(t, err)
 	assert.False(t, ok, "older record does not replace")
-	newer := Admit(root, a.Public(), a.DHPublic(), "a-new", 2, t0.Add(time.Hour))
+	newer := Admit(root, a.Public(), "a-new", 2, t0.Add(time.Hour))
 	ok, err = set.AddAdmission(newer)
 	require.NoError(t, err)
 	assert.True(t, ok)
@@ -217,7 +217,7 @@ func Test_Set_ByName(t *testing.T) {
 
 	// two valid members with one name: ambiguous
 	twin := newID(t)
-	_, err := set.AddAdmission(Admit(root, twin.Public(), twin.DHPublic(), "a", 9, t0))
+	_, err := set.AddAdmission(Admit(root, twin.Public(), "a", 9, t0))
 	require.NoError(t, err)
 	_, ok = set.ByName("a")
 	assert.False(t, ok)
@@ -250,7 +250,7 @@ func Test_Set_FreeHost(t *testing.T) {
 
 	// gaps are filled first
 	set2 := NewSet(root.Public())
-	set2.Merge(Records{Admissions: []Admission{SelfAdmit(root, "root", t0), Admit(root, b.Public(), b.DHPublic(), "b", 3, t0)}})
+	set2.Merge(Records{Admissions: []Admission{SelfAdmit(root, "root", t0), Admit(root, b.Public(), "b", 3, t0)}})
 	h, err = set2.FreeHost(10)
 	require.NoError(t, err)
 	assert.Equal(t, uint64(2), h)
@@ -277,8 +277,8 @@ func Test_Set_HostConflict(t *testing.T) {
 	// two admitters hand out slot 4 at once: the earlier admission wins
 	c, d := newID(t), newID(t)
 	set.Merge(Records{Admissions: []Admission{
-		Admit(root, c.Public(), c.DHPublic(), "c", 4, t0.Add(10*time.Minute)),
-		Admit(a, d.Public(), d.DHPublic(), "d", 4, t0.Add(11*time.Minute)),
+		Admit(root, c.Public(), "c", 4, t0.Add(10*time.Minute)),
+		Admit(a, d.Public(), "d", 4, t0.Add(11*time.Minute)),
 	}})
 	_, clash = set.HostConflict(c.Public())
 	assert.False(t, clash)
@@ -295,8 +295,8 @@ func Test_Set_HostConflict(t *testing.T) {
 	// same second: the smaller identity wins, and both sides agree
 	e, f := newID(t), newID(t)
 	set.Merge(Records{Admissions: []Admission{
-		Admit(root, e.Public(), e.DHPublic(), "e", 5, t0),
-		Admit(b, f.Public(), f.DHPublic(), "f", 5, t0),
+		Admit(root, e.Public(), "e", 5, t0),
+		Admit(b, f.Public(), "f", 5, t0),
 	}})
 	_, eLoses := set.HostConflict(e.Public())
 	_, fLoses := set.HostConflict(f.Public())
@@ -315,8 +315,8 @@ func Test_Set_validity_cycle(t *testing.T) {
 	_, _, _, _, set := cluster(t)
 	x, y := newID(t), newID(t)
 	assert.Equal(t, 2, set.Merge(Records{Admissions: []Admission{
-		Admit(x, y.Public(), y.DHPublic(), "y", 7, t0),
-		Admit(y, x.Public(), x.DHPublic(), "x", 8, t0),
+		Admit(x, y.Public(), "y", 7, t0),
+		Admit(y, x.Public(), "x", 8, t0),
 	}}), "the records are well signed and kept")
 	assert.False(t, set.Valid(x.Public()))
 	assert.False(t, set.Valid(y.Public()))
@@ -367,7 +367,7 @@ func Test_Set_Valid_cacheFollowsTheRecords(t *testing.T) {
 	// an identity admitted after it was first asked about becomes valid
 	c := newID(t)
 	assert.False(t, set.Valid(c.Public()))
-	_, err = set.AddAdmission(Admit(root, c.Public(), c.DHPublic(), "c", 5, t0))
+	_, err = set.AddAdmission(Admit(root, c.Public(), "c", 5, t0))
 	require.NoError(t, err)
 	assert.True(t, set.Valid(c.Public()))
 }
@@ -399,7 +399,7 @@ func Test_Set_Valid_concurrentWithChanges(t *testing.T) {
 	}
 	for i := range 20 {
 		other := newID(t)
-		_, err := set.AddAdmission(Admit(root, other.Public(), other.DHPublic(), fmt.Sprintf("n%d", i), uint64(i+10), t0))
+		_, err := set.AddAdmission(Admit(root, other.Public(), fmt.Sprintf("n%d", i), uint64(i+10), t0))
 		require.NoError(t, err)
 	}
 	wg.Wait()

@@ -56,8 +56,8 @@ func member(t *testing.T) (*Server, *trust.Set) {
 	srv := &Server{
 		Identity: id, Tokens: NewTokenStore(nil), Root: id.Public(), GossipAddr: "192.0.2.1:7946",
 		OverlayNet: netip.MustParsePrefix("10.42.0.0/16"),
-		Admit: func(joiner trust.PublicKey, dh trust.DHKey, name string) (trust.Admission, trust.Records, error) {
-			a := trust.Admit(id, joiner, dh, name, 2, time.Now())
+		Admit: func(joiner trust.PublicKey, name string) (trust.Admission, trust.Records, error) {
+			a := trust.Admit(id, joiner, name, 2, time.Now())
 			if _, aerr := set.AddAdmission(a); aerr != nil {
 				return trust.Admission{}, trust.Records{}, aerr
 			}
@@ -140,7 +140,7 @@ func Test_Join_memberMustProveToken(t *testing.T) {
 
 	// impostor: same token id (it saw the hello), different key
 	impostor := &Server{Identity: newID(t), Tokens: NewTokenStore(nil), Root: srv.Root, GossipAddr: "x",
-		Admit: func(trust.PublicKey, trust.DHKey, string) (trust.Admission, trust.Records, error) {
+		Admit: func(trust.PublicKey, string) (trust.Admission, trust.Records, error) {
 			return trust.Admission{}, trust.Records{}, nil
 		}}
 	wrong := make([]byte, len(key))
@@ -158,7 +158,7 @@ func Test_Join_welcomeMustBeConsistent(t *testing.T) {
 	id := newID(t)
 	otherRoot := newID(t)
 	srv := &Server{Identity: id, Tokens: NewTokenStore(nil), Root: otherRoot.Public(), GossipAddr: "x",
-		Admit: func(trust.PublicKey, trust.DHKey, string) (trust.Admission, trust.Records, error) {
+		Admit: func(trust.PublicKey, string) (trust.Admission, trust.Records, error) {
 			return trust.Admission{}, trust.Records{}, nil
 		}}
 	token, err := srv.Tokens.Mint(time.Minute, 1)
@@ -172,15 +172,14 @@ func Test_Join_welcomeMustBeConsistent(t *testing.T) {
 func Test_transcriptAndKeys(t *testing.T) {
 	a, b := newID(t), newID(t)
 	nJ, nM := []byte("nJ"), []byte("nM")
-	t1 := transcript(a.Public(), a.DHPublic(), b.Public(), b.DHPublic(), nJ, nM, "n")
-	t2 := transcript(a.Public(), a.DHPublic(), b.Public(), b.DHPublic(), nJ, nM, "m")
+	t1 := transcript(a.Public(), b.Public(), nJ, nM, "n")
+	t2 := transcript(a.Public(), b.Public(), nJ, nM, "m")
 	assert.NotEqual(t, t1, t2)
 	assert.True(t, bytes.HasPrefix(t1, []byte(transcriptDomain+"\x00")), "domain-separated from the signed records")
 	assert.NotEqual(t, mac([]byte("k"), labelMember, t1), mac([]byte("k"), labelJoiner, t1), "direction labels differ")
 
-	ss, _ := a.SharedSecret(b.DHPublic())
-	k1 := deriveKey(ss, []byte("token"), nJ, nM)
-	k2 := deriveKey(ss, []byte("other"), nJ, nM)
+	k1 := deriveKey([]byte("token"), nJ, nM)
+	k2 := deriveKey([]byte("other"), nJ, nM)
 	assert.NotEqual(t, k1, k2, "the token is mixed into the keys")
 	assert.Len(t, k1, 32)
 }

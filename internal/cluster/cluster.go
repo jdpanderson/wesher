@@ -215,7 +215,7 @@ func (c *Cluster) RevokeSelf() (int, error) {
 // Names identify nodes everywhere else, so one already held by another member
 // is refused. Serialised under stateMu so two joiners cannot be handed the
 // same slot.
-func (c *Cluster) admit(joiner trust.PublicKey, dh trust.DHKey, name string) (trust.Admission, trust.Records, error) {
+func (c *Cluster) admit(joiner trust.PublicKey, name string) (trust.Admission, trust.Records, error) {
 	c.stateMu.Lock()
 	defer c.stateMu.Unlock()
 	if c.set.NameTaken(name, joiner) {
@@ -230,7 +230,7 @@ func (c *Cluster) admit(joiner trust.PublicKey, dh trust.DHKey, name string) (tr
 			return trust.Admission{}, trust.Records{}, fmt.Errorf("%w in %s", err, c.overlay)
 		}
 	}
-	a := trust.Admit(c.id, joiner, dh, name, host, time.Now())
+	a := trust.Admit(c.id, joiner, name, host, time.Now())
 	if _, err := c.set.AddAdmission(a); err != nil {
 		return trust.Admission{}, trust.Records{}, err
 	}

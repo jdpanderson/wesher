@@ -39,7 +39,7 @@ func Test_Cluster_NotifyMsg(t *testing.T) {
 	a.NotifyMsg([]byte("{}"))      // neither record kind: ignored
 
 	j := testIdentity(t)
-	adm := trust.Admit(a.id, j.Public(), j.DHPublic(), "j", 2, time.Now())
+	adm := trust.Admit(a.id, j.Public(), "j", 2, time.Now())
 	tampered := adm
 	tampered.Name = "x"
 	a.NotifyMsg(recordJSON(t, recordMsg{Admission: &tampered}))
@@ -76,7 +76,7 @@ func Test_Cluster_state_pushPull(t *testing.T) {
 
 	a.MergeRemoteState([]byte("garbage"), false) // ignored
 	k := testIdentity(t)
-	adm := trust.Admit(a.id, k.Public(), k.DHPublic(), "k", 3, time.Now())
+	adm := trust.Admit(a.id, k.Public(), "k", 3, time.Now())
 	remote, err := json.Marshal(trust.Records{Admissions: []trust.Admission{adm}})
 	require.NoError(t, err)
 	a.MergeRemoteState(remote, false)
@@ -130,17 +130,17 @@ func Test_Cluster_admit_refusesTakenName(t *testing.T) {
 	defer a.Leave()
 
 	j := testIdentity(t)
-	_, _, err := a.admit(j.Public(), j.DHPublic(), "a")
+	_, _, err := a.admit(j.Public(), "a")
 	assert.ErrorContains(t, err, `named "a" already exists`)
-	adm, _, err := a.admit(j.Public(), j.DHPublic(), "j")
+	adm, _, err := a.admit(j.Public(), "j")
 	require.NoError(t, err)
 	assert.Equal(t, uint64(2), adm.Host)
 	// the same identity may enrol again under its name
-	again, _, err := a.admit(j.Public(), j.DHPublic(), "j")
+	again, _, err := a.admit(j.Public(), "j")
 	require.NoError(t, err)
 	assert.Equal(t, uint64(2), again.Host, "its slot is reused")
 	k := testIdentity(t)
-	_, _, err = a.admit(k.Public(), k.DHPublic(), "j")
+	_, _, err = a.admit(k.Public(), "j")
 	assert.ErrorContains(t, err, "already exists")
 }
 
@@ -167,10 +167,10 @@ func Test_Cluster_admit_overlayFull(t *testing.T) {
 	defer a.Leave()
 
 	j, k := testIdentity(t), testIdentity(t)
-	adm, _, err := a.admit(j.Public(), j.DHPublic(), "j")
+	adm, _, err := a.admit(j.Public(), "j")
 	require.NoError(t, err)
 	assert.Equal(t, uint64(2), adm.Host)
-	_, _, err = a.admit(k.Public(), k.DHPublic(), "k")
+	_, _, err = a.admit(k.Public(), "k")
 	require.ErrorIs(t, err, trust.ErrOverlayFull)
 	assert.ErrorContains(t, err, "10.0.0.0/30")
 }

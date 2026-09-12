@@ -44,7 +44,7 @@ func twoMembers(t *testing.T) (a, b *testNode) {
 	rootID, bID := testIdentity(t), testIdentity(t)
 	recs := trust.Records{Admissions: []trust.Admission{
 		trust.SelfAdmit(rootID, "a", time.Now()),
-		trust.Admit(rootID, bID.Public(), bID.DHPublic(), "b", 2, time.Now()),
+		trust.Admit(rootID, bID.Public(), "b", 2, time.Now()),
 	}}
 	setA, setB := trust.NewSet(rootID.Public()), trust.NewSet(rootID.Public())
 	setA.Merge(recs)
@@ -213,7 +213,7 @@ func Test_quicTransport_rejectsStrangers(t *testing.T) {
 	strangerSet := trust.NewSet(strangerID.Public())
 	strangerSet.Merge(trust.Records{Admissions: []trust.Admission{
 		trust.SelfAdmit(strangerID, "s", time.Now()),
-		trust.Admit(strangerID, rootID.Public(), rootID.DHPublic(), "a", 2, time.Now()),
+		trust.Admit(strangerID, rootID.Public(), "a", 2, time.Now()),
 	}})
 	stranger := newTestNode(t, strangerID, strangerSet)
 

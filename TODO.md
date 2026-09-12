@@ -296,12 +296,15 @@ before starting; none are committed yet.
       config file.
 - [ ] Fill `--version` from `debug.ReadBuildInfo` (commit and dirty flag) when
       no tag is stamped with `-X main.version`.
-- [ ] **DECISION** Drop the X25519 key from identities and admission records.
-      It fed the pairwise gossip keys, which QUIC replaced, and the enrolment
-      MAC key, where the identity-to-TLS-peer binding now does the same job:
-      an intermediary cannot pass the MAC check with its own identity and
-      cannot compute one without the token. Removing it shrinks the identity,
-      the admission record and the exchange messages. Breaking for state files.
+- [x] Drop the X25519 key from identities and admission records. Done
+      2026-09-12. It fed the pairwise gossip keys, which QUIC replaced, and the
+      enrolment MAC key, where the identity-to-TLS-peer binding does the same
+      job: an intermediary cannot pass the MAC check with its own identity and
+      cannot compute one without the token. An identity is now just the
+      Ed25519 seed, the admission record loses a field, and the exchange loses
+      two. The enrolment version goes to 4 and the admission domain to v2,
+      both of which fail closed against anything older; nothing to migrate, so
+      no fallback was written.
 - [x] Packaging: `debian/` (dh 13, native source, unit installed disabled,
       config as conffile, cross builds from `DEB_HOST_ARCH`) and
       `arch/PKGBUILD` (`cheesecloth-git`). 2026-09-11.

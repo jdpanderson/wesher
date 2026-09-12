@@ -24,16 +24,14 @@ and a signed admission list. There is no shared key.
 ## Identity
 
 Each node has a 32-byte random seed, generated on first start and persisted
-in its state file (mode 0600). Two keys derive from it:
+in its state file (mode 0600). One key derives from it: the Ed25519 signing
+key, `ed25519.NewKeyFromSeed(seed)`. It signs admission records and node
+metadata, and it is the key in the TLS certificate a node presents for gossip
+and enrolment.
 
-| Key | Derivation | Used for |
-|---|---|---|
-| signing key (Ed25519) | `ed25519.NewKeyFromSeed(seed)` | signing admission records and node metadata; TLS certificate for gossip and enrolment |
-| DH key (X25519) | `HKDF-SHA256(seed, info="cheesecloth/dh/v1")` | the enrolment exchange |
-
-A node's **identity** is its Ed25519 public key. The DH public key travels
-inside the node's admission record, so it is bound to the identity by the
-admitter's signature.
+A node's **identity** is that Ed25519 public key. Nothing else is derived from
+the seed: TLS supplies the session keys for every connection, so there is no
+long-lived key agreement key of our own.
 
 ## Admission records
 
@@ -41,12 +39,12 @@ Membership is a set of signed records that only grows. The records are not
 secret.
 
 ```
-Admission  { Identity, DHKey, Name, Host, Admitter, IssuedAt, Signature }
+Admission  { Identity, Name, Host, Admitter, IssuedAt, Signature }
 Revocation { Identity, Revoker, IssuedAt, Signature }
 ```
 
 `Signature` is Ed25519 over a fixed canonical encoding with a domain-separation
-prefix (`cheesecloth/admission/v1`, `cheesecloth/revocation/v1`).
+prefix (`cheesecloth/admission/v2`, `cheesecloth/revocation/v1`).
 
 - The founding node signs its own admission (`Admitter == Identity`). That
   record is the **root**. Every other node pins the root's identity in its
@@ -117,15 +115,14 @@ The exchange below then requires the identities named in the messages to match
 the certificates on the connection, and the token decides whether the joiner
 is admitted.
 
-Exchange, with `J`/`M` the joiner's and member's identities, `Jd`/`Md` their
-DH public keys, and `K` the token:
+Exchange, with `J`/`M` the joiner's and member's identities and `K` the token:
 
-1. Joiner -> Member: `Hello{Version, TokenID, J, Jd, nJ, Name}` where
+1. Joiner -> Member: `Hello{Version, TokenID, J, nJ, Name}` where
    `TokenID = SHA-256(K)[:8]` lets the member pick the pending token without
    revealing it.
-2. Both derive `ss = X25519(own DH private, other DH public)` and
-   `kMac = HKDF-SHA256(ss || K, salt = nJ || nM, info="cheesecloth/enrol/v3")`.
-   Member -> Joiner: `M, Md, nM, HMAC(kMac, "member" || transcript)`.
+2. Both derive
+   `kMac = HKDF-SHA256(K, salt = nJ || nM, info="cheesecloth/enrol/v4")`.
+   Member -> Joiner: `M, nM, HMAC(kMac, "member" || transcript)`.
 3. Joiner verifies; it now knows the member holds `K`. Joiner -> Member:
    `HMAC(kMac, "joiner" || transcript)`.
 4. Member verifies, consumes one token use, signs an admission for `J`,
@@ -139,18 +136,21 @@ DH public keys, and `K` the token:
 5. Joiner -> Member: an acknowledgement once it has checked the welcome, so
    the member knows it arrived and closes the connection.
 
-`transcript = "cheesecloth/enrol/transcript/v3" || 0 || J || Jd || M || Md || nJ || nM || Name`,
+`transcript = "cheesecloth/enrol/transcript/v4" || 0 || J || M || nJ || nM || Name`,
 each field length-prefixed: the canonical encoding the signed records use,
-under its own domain string. Because both identities and both DH keys are
-included in the MACs, the token can be discarded after
-step 4; from then on the identities are the trust anchors. The two different
-labels prevent a MAC from being reflected back to its sender. The nonces
-prevent replay. Including `ss` in the key derivation means that someone who
-learns `K` later still cannot forge the MACs. Confidentiality comes from the
-QUIC stream, whose TLS peers are the same `J` and `M`. A member that finds no
-pending token for `TokenID` closes the stream without a reply, so an attacker
-cannot use the server to test guesses. Tokens are 256-bit random values, so a
-PAKE is unnecessary.
+under its own domain string. Because both identities are included in the MACs,
+the token can be discarded after step 4; from then on the identities are the
+trust anchors. The two different labels prevent a MAC from being reflected back
+to its sender. The nonces prevent replay.
+
+Confidentiality and the binding of each identity to its side of the exchange
+come from the QUIC stream, whose TLS peers are the same `J` and `M`: the
+identities in the messages must match the certificates on the connection, so
+an intermediary cannot pass the MAC check under its own identity, and without
+`K` it cannot compute a MAC at all. A member that finds no pending token for
+`TokenID` closes the stream without a reply, so an attacker cannot use the
+server to test guesses. Tokens are 256-bit random values, so a PAKE is
+unnecessary.
 
 ## Gossip transport
 

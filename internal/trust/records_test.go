@@ -10,14 +10,13 @@ import (
 
 func Test_Admission_Validate(t *testing.T) {
 	root, a := newID(t), newID(t)
-	adm := Admit(root, a.Public(), a.DHPublic(), "a", 2, t0)
+	adm := Admit(root, a.Public(), "a", 2, t0)
 	require.NoError(t, adm.Validate())
 
 	for name, mutate := range map[string]func(*Admission){
 		"name":      func(x *Admission) { x.Name = "b" },
 		"host":      func(x *Admission) { x.Host = 3 },
 		"identity":  func(x *Admission) { x.Identity = root.Public() },
-		"dh":        func(x *Admission) { x.DHKey = root.DHPublic() },
 		"issued":    func(x *Admission) { x.IssuedAt++ },
 		"admitter":  func(x *Admission) { x.Admitter = a.Public() },
 		"signature": func(x *Admission) { x.Signature[0] ^= 1 },

@@ -19,14 +19,14 @@ import (
 )
 
 // Version identifies this exchange format; a mismatch fails closed.
-const Version = 3
+const Version = 4
 
 const (
 	nonceLen         = 32
 	maxFrame         = 1 << 20 // records for a large cluster fit comfortably
 	exchangeTime     = 15 * time.Second
-	kdfInfo          = "cheesecloth/enrol/v3"
-	transcriptDomain = "cheesecloth/enrol/transcript/v3"
+	kdfInfo          = "cheesecloth/enrol/v4"
+	transcriptDomain = "cheesecloth/enrol/transcript/v4"
 	labelMember      = "member"
 	labelJoiner      = "joiner"
 )
@@ -36,15 +36,13 @@ type hello struct {
 	Version  int             `json:"version"`
 	TokenID  []byte          `json:"tokenId"`
 	Identity trust.PublicKey `json:"identity"`
-	DH       trust.DHKey     `json:"dh"`
 	Nonce    []byte          `json:"nonce"`
 	Name     string          `json:"name"`
 }
 
-// challenge is the member's reply: its keys, nonce and proof of token knowledge.
+// challenge is the member's reply: its identity, nonce and proof of token knowledge.
 type challenge struct {
 	Identity trust.PublicKey `json:"identity"`
-	DH       trust.DHKey     `json:"dh"`
 	Nonce    []byte          `json:"nonce"`
 	MAC      []byte          `json:"mac"`
 }
@@ -59,9 +57,9 @@ type ack struct{}
 
 // Welcome is what an admitted joiner receives; the transport's TLS protects it.
 // The member asserts the overlay network, as it asserts the slot it assigned
-// and the records; a member too old to send one leaves it zero. Error instead
-// carries the reason a joiner that proved the token was not admitted after
-// all, so it is told rather than left with a closed connection.
+// and the records. It is zero only for a cluster that has not settled one.
+// Error instead carries the reason a joiner that proved the token was not
+// admitted after all, so it is told rather than left with a closed connection.
 type Welcome struct {
 	Root       trust.PublicKey `json:"root"`
 	Records    trust.Records   `json:"records"`
@@ -71,21 +69,23 @@ type Welcome struct {
 	Error      string          `json:"error,omitempty"`     // set instead of everything else when the joiner was refused
 }
 
-// deriveKey derives the exchange's MAC key, mixing the DH secret and the token
-// so that neither alone suffices.
-func deriveKey(ss, token, nJ, nM []byte) []byte {
+// deriveKey derives the exchange's MAC key from the token, bound to this
+// exchange by both nonces.
+func deriveKey(token, nJ, nM []byte) []byte {
 	salt := append(append([]byte(nil), nJ...), nM...)
-	k, err := hkdf.Key(sha256.New, append(append([]byte(nil), ss...), token...), salt, kdfInfo, 32)
+	k, err := hkdf.Key(sha256.New, token, salt, kdfInfo, 32)
 	if err != nil {
 		panic("hkdf: " + err.Error()) // only for absurd output lengths
 	}
 	return k
 }
 
-// transcript binds both identities, both DH keys, both nonces and the name,
-// under its own domain like every other signed or authenticated message.
-func transcript(j trust.PublicKey, jd trust.DHKey, m trust.PublicKey, md trust.DHKey, nJ, nM []byte, name string) []byte {
-	return wire.Canonical(transcriptDomain, j[:], jd[:], m[:], md[:], nJ, nM, []byte(name))
+// transcript binds both identities, both nonces and the name, under its own
+// domain like every other signed or authenticated message. The identities are
+// the ones the transport verified, so a relay cannot put itself in the middle
+// with its own.
+func transcript(j, m trust.PublicKey, nJ, nM []byte, name string) []byte {
+	return wire.Canonical(transcriptDomain, j[:], m[:], nJ, nM, []byte(name))
 }
 
 func mac(key []byte, label string, transcript []byte) []byte {

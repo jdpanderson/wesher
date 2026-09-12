@@ -139,7 +139,7 @@ func Test_Bootstrap_initAndEnrol(t *testing.T) {
 	other := testIdentity(t)
 	j, err := Load(dir, "joiner", true)
 	require.NoError(t, err)
-	adm := trust.Admit(other, j.Identity.Public(), j.Identity.DHPublic(), "joiner", 7, time.Now())
+	adm := trust.Admit(other, j.Identity.Public(), "joiner", 7, time.Now())
 	records := trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(other, "o", time.Now()), adm}}
 	j.Enrol(other.Public(), records, netip.MustParsePrefix("10.42.0.0/16"))
 	assert.True(t, j.Enrolled())

@@ -23,7 +23,7 @@ type Server struct {
 	Root     trust.PublicKey
 	// Admit signs and records an admission of the joiner (and distributes it);
 	// it must return the admission and the records the joiner should start with.
-	Admit func(joiner trust.PublicKey, dh trust.DHKey, name string) (trust.Admission, trust.Records, error)
+	Admit func(joiner trust.PublicKey, name string) (trust.Admission, trust.Records, error)
 	// GossipAddr is this node's memberlist ip:port, handed to the joiner.
 	GossipAddr string
 	// Records is the membership as it stands. The server checks that a welcome
@@ -118,18 +118,14 @@ func (s *Server) handle(conn Conn) error {
 		return errSilent
 	}
 
-	ss, err := s.Identity.SharedSecret(h.DH)
-	if err != nil {
-		return err
-	}
 	nM, err := randomNonce()
 	if err != nil {
 		return err
 	}
-	k := deriveKey(ss, key, h.Nonce, nM)
-	tr := transcript(h.Identity, h.DH, s.Identity.Public(), s.Identity.DHPublic(), h.Nonce, nM, h.Name)
+	k := deriveKey(key, h.Nonce, nM)
+	tr := transcript(h.Identity, s.Identity.Public(), h.Nonce, nM, h.Name)
 	if err = writeFrame(conn, challenge{
-		Identity: s.Identity.Public(), DH: s.Identity.DHPublic(), Nonce: nM, MAC: mac(k, labelMember, tr),
+		Identity: s.Identity.Public(), Nonce: nM, MAC: mac(k, labelMember, tr),
 	}); err != nil {
 		return err
 	}
@@ -150,7 +146,7 @@ func (s *Server) handle(conn Conn) error {
 	if size, ok := s.welcomeFits(h.Name); !ok {
 		return refuse(conn, fmt.Sprintf("this cluster's membership records no longer fit in an enrolment message (%d bytes of %d); no node can enrol until they are pruned", size, maxFrame))
 	}
-	adm, records, err := s.Admit(h.Identity, h.DH, h.Name)
+	adm, records, err := s.Admit(h.Identity, h.Name)
 	if err != nil {
 		return refuse(conn, err.Error())
 	}
@@ -185,7 +181,7 @@ func Join(conn Conn, token string, id *trust.Identity, name string) (*Welcome, t
 	}
 	tid := idOf(key)
 	if err = writeFrame(conn, hello{
-		Version: Version, TokenID: tid[:], Identity: id.Public(), DH: id.DHPublic(), Nonce: nJ, Name: name,
+		Version: Version, TokenID: tid[:], Identity: id.Public(), Nonce: nJ, Name: name,
 	}); err != nil {
 		return nil, trust.PublicKey{}, err
 	}
@@ -200,12 +196,8 @@ func Join(conn Conn, token string, id *trust.Identity, name string) (*Welcome, t
 	if err = bound(conn, c.Identity); err != nil {
 		return nil, trust.PublicKey{}, err
 	}
-	ss, err := id.SharedSecret(c.DH)
-	if err != nil {
-		return nil, trust.PublicKey{}, err
-	}
-	k := deriveKey(ss, key, nJ, c.Nonce)
-	tr := transcript(id.Public(), id.DHPublic(), c.Identity, c.DH, nJ, c.Nonce, name)
+	k := deriveKey(key, nJ, c.Nonce)
+	tr := transcript(id.Public(), c.Identity, nJ, c.Nonce, name)
 	if !hmac.Equal(c.MAC, mac(k, labelMember, tr)) {
 		return nil, trust.PublicKey{}, errors.New("member could not prove knowledge of the join key")
 	}
