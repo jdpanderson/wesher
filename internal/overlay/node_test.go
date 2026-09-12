@@ -33,7 +33,7 @@ func Test_Node_JSON(t *testing.T) {
 	node := Node{Name: "n", Addr: netip.MustParseAddr("192.0.2.1"), Meta: Meta{OverlayAddr: netip.MustParseAddr("10.0.0.1"), PubKey: "k", Identity: trust.PublicKey{1}}}
 	b, err := json.Marshal(node)
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"Name":"n","Addr":"192.0.2.1","overlay":"10.0.0.1","wg":"k","id":"`+trust.PublicKey{1}.String()+`","sig":null}`, string(b))
+	assert.JSONEq(t, `{"name":"n","addr":"192.0.2.1","overlay":"10.0.0.1","wg":"k","id":"`+trust.PublicKey{1}.String()+`","sig":null}`, string(b))
 	var back Node
 	require.NoError(t, json.Unmarshal(b, &back))
 	assert.Equal(t, node, back)

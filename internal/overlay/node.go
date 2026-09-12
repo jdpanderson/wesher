@@ -22,8 +22,8 @@ type Meta struct {
 
 // Node is a member as memberlist sees it, with its metadata decoded.
 type Node struct {
-	Name string
-	Addr netip.Addr // where memberlist reaches the node
+	Name string     `json:"name"`
+	Addr netip.Addr `json:"addr"` // where memberlist reaches the node
 	Meta
 }
 
