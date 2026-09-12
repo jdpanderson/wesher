@@ -46,7 +46,7 @@ func Test_handle_badProof(t *testing.T) {
 	require.NoError(t, writeFrame(conn, proof{MAC: mac(k, labelJoiner, tr)}))
 	var sealed []byte
 	assert.Error(t, readFrame(conn, &sealed), "no welcome")
-	assert.Equal(t, 1, srv.Tokens.Pending(), "a failed proof does not spend the token")
+	assert.Equal(t, 1, srv.Tokens.pending(), "a failed proof does not spend the token")
 }
 
 func Test_Join_errors(t *testing.T) {
@@ -83,7 +83,7 @@ func Test_identityBinding(t *testing.T) {
 	require.NoError(t, writeFrame(c1, hello{Version: Version, TokenID: tid[:], Identity: joiner.Public(), DH: joiner.DHPublic(), Nonce: make([]byte, nonceLen), Name: "j"}))
 	var c challenge
 	assert.Error(t, readFrame(c1, &c), "server hangs up on a mismatch")
-	assert.Equal(t, 1, srv.Tokens.Pending())
+	assert.Equal(t, 1, srv.Tokens.pending())
 
 	// joiner side: the challenge claims the member but the connection belongs to other
 	_, _, err = Join(identified{pipeTo(t, srv, joiner.Public()), other.Public()}, tok, joiner, "j")

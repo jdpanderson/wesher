@@ -80,7 +80,7 @@ func Test_Join_happyPath(t *testing.T) {
 	assert.Equal(t, "joiner", w.Admission.Name)
 	assert.True(t, set.Valid(joiner.Public()), "member's set now includes the joiner")
 	assert.Len(t, w.Records.Admissions, 2)
-	assert.Equal(t, 0, srv.Tokens.Pending(), "single-use token is consumed")
+	assert.Equal(t, 0, srv.Tokens.pending(), "single-use token is consumed")
 
 	// the token cannot be reused
 	_, _, err = join(t, srv, token, newID(t), "again")
@@ -94,10 +94,10 @@ func Test_Join_multiUseAndExpiry(t *testing.T) {
 	require.NoError(t, err)
 	_, _, err = join(t, srv, token, newID(t), "one")
 	require.NoError(t, err)
-	assert.Equal(t, 1, srv.Tokens.Pending())
+	assert.Equal(t, 1, srv.Tokens.pending())
 	_, _, err = join(t, srv, token, newID(t), "two")
 	require.NoError(t, err)
-	assert.Equal(t, 0, srv.Tokens.Pending())
+	assert.Equal(t, 0, srv.Tokens.pending())
 
 	// expiry
 	now := time.Now()
@@ -107,7 +107,7 @@ func Test_Join_multiUseAndExpiry(t *testing.T) {
 	now = now.Add(2 * time.Minute)
 	_, _, err = join(t, srv, token, newID(t), "late")
 	require.Error(t, err)
-	assert.Equal(t, 0, srv.Tokens.Pending())
+	assert.Equal(t, 0, srv.Tokens.pending())
 }
 
 func Test_Join_wrongToken(t *testing.T) {
@@ -121,7 +121,7 @@ func Test_Join_wrongToken(t *testing.T) {
 	_, _, err = join(t, srv, other, newID(t), "x")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "closed the connection")
-	assert.Equal(t, 1, srv.Tokens.Pending(), "a failed attempt does not consume the token")
+	assert.Equal(t, 1, srv.Tokens.pending(), "a failed attempt does not consume the token")
 
 	// malformed token
 	_, _, err = join(t, srv, "nope", newID(t), "x")

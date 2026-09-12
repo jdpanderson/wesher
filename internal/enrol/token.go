@@ -116,14 +116,6 @@ func (s *TokenStore) consume(id tokenID) bool {
 	return true
 }
 
-// Pending is the number of live tokens.
-func (s *TokenStore) Pending() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.gc()
-	return len(s.tokens)
-}
-
 // gc drops expired tokens; callers hold mu.
 func (s *TokenStore) gc() {
 	now := s.now()

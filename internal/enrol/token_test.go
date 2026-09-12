@@ -9,6 +9,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// pending is the number of live tokens.
+func (s *TokenStore) pending() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.gc()
+	return len(s.tokens)
+}
+
 func Test_token_codec(t *testing.T) {
 	key := make([]byte, tokenLen)
 	for i := range key {
@@ -49,7 +57,7 @@ func Test_TokenStore_expiry(t *testing.T) {
 	require.NoError(t, err)
 	key, err := DecodeToken(tok)
 	require.NoError(t, err)
-	assert.Equal(t, 1, s.Pending())
+	assert.Equal(t, 1, s.pending())
 
 	now = now.Add(59 * time.Second)
 	_, ok := s.lookup(idOf(key))
@@ -57,7 +65,7 @@ func Test_TokenStore_expiry(t *testing.T) {
 	now = now.Add(time.Second)
 	_, ok = s.lookup(idOf(key))
 	assert.False(t, ok, "expired at exactly ttl")
-	assert.Equal(t, 0, s.Pending())
+	assert.Equal(t, 0, s.pending())
 }
 
 func Test_TokenStore_uses(t *testing.T) {
