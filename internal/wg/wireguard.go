@@ -65,7 +65,7 @@ type Config struct {
 	Userspace bool
 }
 
-// State holds the configured state of a Cheesecloth Wireguard interface.
+// State holds the configured state of a cheesecloth WireGuard interface.
 type State struct {
 	iface       string
 	mtu         int
@@ -80,7 +80,7 @@ type State struct {
 	PubKey      wgtypes.Key // fresh on every start; gossiped to peers
 }
 
-// New creates a new Cheesecloth Wireguard state with a fresh key pair.
+// New creates a new cheesecloth WireGuard state with a fresh key pair.
 // The interface must later be set up using SetUpInterface.
 func New(cfg Config) (*State, error) {
 	dev, link, err := platform(cfg)

@@ -291,6 +291,11 @@ before starting; none are committed yet.
       replace the hand-written Makefile loop and the per-distribution
       container jobs; `debian/` and `arch/` could stay for local builds or go.
       Releases currently carry no signature or provenance.
+- [x] `internal/wg/platform_other.go` deleted: its build tag covered every
+      operating system but the three that are supported, and nothing there can
+      ever be compiled, because `internal/paths` has no file for those systems
+      and `wgctrl` does not build for them either. Done 2026-09-12. An
+      unsupported platform is refused by the build, not at startup.
 - [ ] Fuzz tests (native `go test -fuzz`) for the parsers: enrolment frames
       and messages, the token codec, node metadata JSON, records JSON and the
       config file.
