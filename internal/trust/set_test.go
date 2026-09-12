@@ -8,11 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_Set_Root(t *testing.T) {
-	root, _, _, _, set := cluster(t)
-	assert.Equal(t, root.Public(), set.Root())
-}
-
 func Test_Set_AddRevocation(t *testing.T) {
 	root, a, b, stranger, set := cluster(t)
 	_, err := set.AddRevocation(Revoke(a, root.Public(), t0))
@@ -49,11 +44,14 @@ func Test_Set_Merge_skipsBadRecords(t *testing.T) {
 	assert.True(t, set.Valid(c.Public()))
 }
 
-func Test_Set_ByName_and_Members(t *testing.T) {
+func Test_Set_ByName(t *testing.T) {
 	root, a, _, _, set := cluster(t)
 	got, ok := set.ByName("a")
 	require.True(t, ok)
 	assert.Equal(t, a.Public(), got.Identity)
+	got, ok = set.ByName("root")
+	require.True(t, ok, "the root's own record is not special")
+	assert.Equal(t, root.Public(), got.Identity)
 	_, ok = set.ByName("nobody")
 	assert.False(t, ok)
 
@@ -64,11 +62,12 @@ func Test_Set_ByName_and_Members(t *testing.T) {
 	_, ok = set.ByName("a")
 	assert.False(t, ok)
 
-	names := []string{}
-	for _, m := range set.Members() {
-		names = append(names, m.Name)
-	}
-	assert.Equal(t, []string{"a", "a", "b", "root"}, names, "sorted by name; the root's own record is not special")
+	// a revoked member's name no longer resolves
+	_, err = set.AddRevocation(Revoke(root, twin.Public(), t0.Add(time.Hour)))
+	require.NoError(t, err)
+	got, ok = set.ByName("a")
+	require.True(t, ok)
+	assert.Equal(t, a.Public(), got.Identity)
 }
 
 func Test_Set_NameTaken(t *testing.T) {

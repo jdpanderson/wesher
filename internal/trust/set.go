@@ -6,7 +6,6 @@ import (
 	"iter"
 	"math"
 	"slices"
-	"strings"
 	"sync"
 )
 
@@ -31,9 +30,6 @@ type Set struct {
 func NewSet(root PublicKey) *Set {
 	return &Set{root: root, admissions: map[PublicKey]Admission{}, revocations: map[PublicKey]Revocation{}}
 }
-
-// Root is the pinned root identity.
-func (s *Set) Root() PublicKey { return s.root }
 
 // ErrUntrustedRoot is returned for a self-signed admission of a non-root identity.
 var ErrUntrustedRoot = errors.New("self-signed admission is not the pinned root")
@@ -234,16 +230,4 @@ func (s *Set) NameTaken(name string, except PublicKey) bool {
 		}
 	}
 	return false
-}
-
-// Members lists the valid members' admissions, sorted by name.
-func (s *Set) Members() []Admission {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	var out []Admission
-	for a := range s.validAdmissions() {
-		out = append(out, a)
-	}
-	slices.SortFunc(out, func(a, b Admission) int { return strings.Compare(a.Name, b.Name) })
-	return out
 }

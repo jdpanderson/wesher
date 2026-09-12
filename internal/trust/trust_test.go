@@ -111,17 +111,6 @@ func Test_Set_validity(t *testing.T) {
 	adm = Admit(root, c.Public(), c.DHPublic(), "c", 0, t0)
 	_, err = set.AddAdmission(adm)
 	assert.ErrorContains(t, err, "overlay slot")
-
-	names := []string{}
-	for _, m := range set.Members() {
-		names = append(names, m.Name)
-	}
-	assert.Equal(t, []string{"a", "b", "root"}, names)
-	got, ok := set.ByName("b")
-	assert.True(t, ok)
-	assert.Equal(t, b.Public(), got.Identity)
-	_, ok = set.ByName("nobody")
-	assert.False(t, ok)
 }
 
 func Test_Set_revocation(t *testing.T) {
