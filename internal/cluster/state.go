@@ -64,7 +64,7 @@ func (s *state) save(statePath string) error {
 // empty state; a file that cannot be read or decoded is an error, so that a
 // damaged state is never mistaken for a node that has not started before.
 func loadState(statePath string) (*state, error) {
-	content, err := os.ReadFile(statePath)
+	content, err := readFile(statePath)
 	if os.IsNotExist(err) {
 		return &state{}, nil
 	}

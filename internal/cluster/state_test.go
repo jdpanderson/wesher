@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/netip"
 	"os"
@@ -184,26 +183,29 @@ func Test_state_save_atomic(t *testing.T) {
 	st := &state{Seed: id.Seed(), Root: &root, Records: trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(id, "root", time.Now())}}}
 	require.NoError(t, st.save(statePath(dir, "a")))
 
-	done := make(chan struct{})
+	// the writer reports through the channel: a test must not fail from another goroutine
+	saved := make(chan error, 1)
 	go func() {
-		defer close(done)
 		for i := 0; i < 200; i++ {
 			st.Peers = append(st.Peers, overlay.Node{Name: fmt.Sprintf("n%d", i), Addr: netip.MustParseAddr("10.0.0.2")})
-			require.NoError(t, st.save(statePath(dir, "a")))
+			if err := st.save(statePath(dir, "a")); err != nil {
+				saved <- err
+				return
+			}
 		}
+		saved <- nil
 	}()
 	for {
 		select {
-		case <-done:
+		case err := <-saved:
+			require.NoError(t, err)
 			entries, err := os.ReadDir(dir)
 			require.NoError(t, err)
 			assert.Len(t, entries, 1, "no temp files left behind")
 			return
 		default:
-			content, err := os.ReadFile(statePath(dir, "a"))
-			require.NoError(t, err)
-			var got state
-			require.NoError(t, json.Unmarshal(content, &got), "torn read")
+			got, err := loadState(statePath(dir, "a"))
+			require.NoError(t, err, "torn read")
 			assert.Equal(t, id.Seed(), got.Seed)
 		}
 	}
