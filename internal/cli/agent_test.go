@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"net/netip"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -119,4 +120,24 @@ func Test_AgentCmd_enrol_unreachable(t *testing.T) {
 	_, _, err = cmd.enrol(ctx, joiner, "j")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "enrolling with 127.0.0.1:2", "the last member tried is reported")
+}
+
+// The state file is deleted only when the agent stopped because it left the
+// cluster; an ordinary stop keeps everything for the next start.
+func Test_AgentCmd_forget(t *testing.T) {
+	dir := t.TempDir()
+	a := validCmd()
+	a.Interface, a.stateDir = "wg1", dir
+	_, err := cluster.Load(dir, "wg1", true)
+	require.NoError(t, err)
+	statePath := filepath.Join(dir, "wg1.json")
+	require.FileExists(t, statePath)
+
+	l := &leaving{done: make(chan struct{})}
+	require.NoError(t, a.forget(l))
+	assert.FileExists(t, statePath)
+
+	l.requested.Store(true)
+	require.NoError(t, a.forget(l))
+	assert.NoFileExists(t, statePath)
 }

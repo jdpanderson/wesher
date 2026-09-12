@@ -478,8 +478,11 @@ separate items, still to be designed.
       each member over the stream transport, rather than only queueing it for
       gossip, because the node is about to stop. `cluster.Forget` deletes the
       state file.
-- [ ] `control`: a `leave` operation, and `Server.Close` waits for in-flight
-      handlers so the reply outlives the agent's shutdown.
+- [x] `control`: a `leave` operation, and `Server.Close` waits for in-flight
+      handlers so the reply outlives the agent's shutdown. Done 2026-09-12:
+      the handler revokes this node, stops the agent as a signal would, waits
+      for the usual teardown and for the state file to be deleted, and only
+      then answers.
 - [ ] `wg.Remove`: delete an interface a stopped agent left behind. Only a
       kernel interface outlives its agent; elsewhere it is a no-op.
 - [ ] `cheesecloth leave`: the agent revokes this node, tears the interface

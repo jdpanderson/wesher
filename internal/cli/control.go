@@ -3,6 +3,8 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/jdpanderson/cheesecloth/internal/cluster"
@@ -35,17 +37,50 @@ func socketFor(iface, explicit string) string {
 type membership interface {
 	Invite(ttl time.Duration, uses int) (string, error)
 	Revoke(id trust.PublicKey) error
+	RevokeSelf() (int, error)
 	Trust() *trust.Set
 	Identity() trust.PublicKey
 }
 
 var _ membership = (*cluster.Cluster)(nil)
 
+// leaving carries a leave request from the control socket into the agent's
+// shutdown: the handler stops the agent and waits for it to have torn the
+// interface down and forgotten the cluster before the operator is told.
+type leaving struct {
+	stop      func()        // stops the agent, as a signal does
+	done      chan struct{} // closed once the agent has torn down and forgotten the cluster
+	requested atomic.Bool
+}
+
 // agentControl adapts a Cluster to the control.Handler interface.
-type agentControl struct{ cluster membership }
+type agentControl struct {
+	cluster membership
+	leaving *leaving
+}
 
 func (a agentControl) Invite(ttl time.Duration, uses int) (string, error) {
 	return a.cluster.Invite(ttl, uses)
+}
+
+// Leave revokes this node and stops the agent. Without force a node that
+// cannot revoke itself, the root, stays where it is rather than leaving a
+// member the cluster still trusts without saying so.
+func (a agentControl) Leave(force bool) (string, int, error) {
+	var identity string
+	notified, err := a.cluster.RevokeSelf()
+	if err != nil {
+		if !force {
+			return "", 0, err
+		}
+		slog.Warn("leaving the cluster without revoking this node", "err", err)
+	} else {
+		identity = a.cluster.Identity().String()
+	}
+	a.leaving.requested.Store(true)
+	a.leaving.stop()
+	<-a.leaving.done
+	return identity, notified, nil
 }
 
 func (a agentControl) Revoke(target string) (string, error) {

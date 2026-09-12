@@ -18,6 +18,7 @@ type fakeAgent struct {
 	ttl    time.Duration
 	uses   int
 	target string
+	force  bool
 	err    error
 }
 
@@ -29,6 +30,11 @@ func (f *fakeAgent) Invite(ttl time.Duration, uses int) (string, error) {
 func (f *fakeAgent) Revoke(target string) (string, error) {
 	f.target = target
 	return "IDENTITY", f.err
+}
+
+func (f *fakeAgent) Leave(force bool) (string, int, error) {
+	f.force = force
+	return "IDENTITY", 3, f.err
 }
 
 // socketDir is a short-lived directory for sockets. t.TempDir() names the

@@ -43,7 +43,16 @@ type AgentCmd struct {
 	Userspace           bool          `help:"run wireguard inside the agent instead of the kernel module; the default wherever the kernel has none"`
 	ControlSocket       string        `help:"unix socket for 'cheesecloth invite' and 'cheesecloth revoke' (default ${default_socket_dir}/<interface>.sock)"`
 
-	addrs func(skip string) []net.Addr // lists this host's candidate addresses; nil means the interfaces
+	addrs    func(skip string) []net.Addr // lists this host's candidate addresses; nil means the interfaces
+	stateDir string                       // where the cluster state is kept; empty means cluster.DefaultDir
+}
+
+// state is the directory this node's cluster state is kept in.
+func (a *AgentCmd) state() string {
+	if a.stateDir == "" {
+		return cluster.DefaultDir
+	}
+	return a.stateDir
 }
 
 func (a *AgentCmd) Validate() error {
@@ -84,8 +93,10 @@ func (a *AgentCmd) Run(ctx context.Context, n notify.Notifier) error {
 	}
 	ctx, cancelSignals := signal.NotifyContext(ctx, syscall.SIGTERM, os.Interrupt)
 	defer cancelSignals()
+	ctx, stop := context.WithCancel(ctx) // a leave request stops the agent the same way a signal does
+	defer stop()
 
-	boot, err := cluster.Load(cluster.DefaultDir, a.Interface, a.Init)
+	boot, err := cluster.Load(a.state(), a.Interface, a.Init)
 	if err != nil {
 		return err
 	}
@@ -123,19 +134,21 @@ func (a *AgentCmd) Run(ctx context.Context, n notify.Notifier) error {
 	localNode := &overlay.Node{Name: hostname, Meta: overlay.Meta{OverlayAddr: overlayAddr, PubKey: wgstate.PubKey.String(), AllowedIPs: masked(a.AllowedIPs)}}
 
 	cl, err := cluster.New(cluster.Config{
-		StateDir: cluster.DefaultDir, StateName: a.Interface, BindAddr: a.BindAddr, AdvertiseAddr: advertise, BindPort: a.ClusterPort,
+		StateDir: a.state(), StateName: a.Interface, BindAddr: a.BindAddr, AdvertiseAddr: advertise, BindPort: a.ClusterPort,
 		OverlayNet: a.OverlayNet, LocalNode: localNode, Boot: boot,
 	})
 	if err != nil {
 		return fmt.Errorf("creating cluster: %w", err)
 	}
 
-	ctl, err := control.Listen(socketFor(a.Interface, a.ControlSocket), agentControl{cl})
+	leave := &leaving{stop: stop, done: make(chan struct{})}
+	ctl, err := control.Listen(socketFor(a.Interface, a.ControlSocket), agentControl{cluster: cl, leaving: leave})
 	if err != nil {
 		cl.Leave()
 		return err
 	}
-	defer ctl.Close()
+	defer ctl.Close() // answers a leave request once it has been carried out
+	defer close(leave.done)
 
 	hostsFile := &etchosts.EtcHosts{
 		Banner: "# ! managed automatically by cheesecloth interface " + a.Interface,
@@ -155,12 +168,23 @@ func (a *AgentCmd) Run(ctx context.Context, n notify.Notifier) error {
 		cl.Leave()
 		if ctx.Err() != nil {
 			slog.Info("terminating")
-			return nil
+			return a.forget(leave)
 		}
 		return fmt.Errorf("joining cluster: %w", err) // not reached today: the retry gives up only when ctx does
 	}
 
-	return a.loop(ctx, peerc, cl, wgstate, hostsFile, n)
+	loopErr := a.loop(ctx, peerc, cl, wgstate, hostsFile, n)
+	return errors.Join(loopErr, a.forget(leave))
+}
+
+// forget deletes this node's state once a leave has torn everything down, so
+// nothing of the cluster it has left is kept.
+func (a *AgentCmd) forget(l *leaving) error {
+	if !l.requested.Load() {
+		return nil
+	}
+	slog.Info("forgetting the cluster", "interface", a.Interface)
+	return cluster.Forget(a.state(), a.Interface)
 }
 
 // bootstrap settles this node's membership before it joins: a node that is

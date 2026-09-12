@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -24,20 +25,33 @@ func DefaultSocket(iface string) string { return filepath.Join(DefaultDir, iface
 const (
 	OpInvite = "invite"
 	OpRevoke = "revoke"
+	OpLeave  = "leave"
 )
+
+// deadline is how long one request may take. A leave revokes this node, tells
+// the members, tears the interface down and stops the agent; the others are
+// answered immediately.
+func deadline(op string) time.Duration {
+	if op == OpLeave {
+		return time.Minute
+	}
+	return 10 * time.Second
+}
 
 // Request is an operator command.
 type Request struct {
-	Op     string `json:"op"`               // OpInvite or OpRevoke
+	Op     string `json:"op"`               // OpInvite, OpRevoke or OpLeave
 	TTL    string `json:"ttl,omitempty"`    // invite: token lifetime, a Go duration
 	Uses   int    `json:"uses,omitempty"`   // invite: how many nodes may enrol with it
 	Target string `json:"target,omitempty"` // revoke: node name or identity
+	Force  bool   `json:"force,omitempty"`  // leave: leave even if this node cannot revoke itself
 }
 
 // Response carries the result or an error message.
 type Response struct {
 	Token    string `json:"token,omitempty"`
-	Identity string `json:"identity,omitempty"` // revoke: the identity that was revoked
+	Identity string `json:"identity,omitempty"` // revoke and leave: the identity that was revoked
+	Notified int    `json:"notified,omitempty"` // leave: members handed the revocation
 	Error    string `json:"error,omitempty"`
 }
 
@@ -46,6 +60,11 @@ type Handler interface {
 	Invite(ttl time.Duration, uses int) (string, error)
 	// Revoke resolves target to an identity, revokes it and returns the identity.
 	Revoke(target string) (string, error)
+	// Leave revokes this node, stops the agent once it has torn the interface
+	// down and forgotten the cluster, and returns the revoked identity and the
+	// number of members handed the revocation. With force it leaves even when
+	// it cannot revoke itself, and the identity is then empty.
+	Leave(force bool) (string, int, error)
 }
 
 // Server answers requests on a unix socket.
@@ -53,6 +72,9 @@ type Server struct {
 	handler Handler
 	ln      net.Listener
 	path    string
+	mu      sync.Mutex
+	closed  bool
+	conns   sync.WaitGroup // requests being answered; Close waits for them
 }
 
 // maxSocketPath is the longest path a unix socket address can hold on this
@@ -98,10 +120,30 @@ func Listen(path string, h Handler) (*Server, error) {
 	return s, nil
 }
 
-// Close stops serving and removes the socket.
+// Close stops serving, waits for the requests in flight to be answered and
+// removes the socket. A leave is answered from the agent's own shutdown, so
+// the reply must outlive it.
 func (s *Server) Close() {
-	_ = s.ln.Close()
+	s.mu.Lock()
+	first := !s.closed
+	s.closed = true
+	s.mu.Unlock()
+	if first {
+		_ = s.ln.Close()
+	}
+	s.conns.Wait()
 	_ = os.Remove(s.path)
+}
+
+// track registers a request being answered, unless the server is closing.
+func (s *Server) track() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return false
+	}
+	s.conns.Add(1)
+	return true
 }
 
 func (s *Server) serve() {
@@ -110,14 +152,20 @@ func (s *Server) serve() {
 		if err != nil {
 			return
 		}
+		if !s.track() {
+			_ = conn.Close()
+			return
+		}
 		go func() {
+			defer s.conns.Done()
 			defer func() { _ = conn.Close() }()
-			_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+			_ = conn.SetDeadline(time.Now().Add(deadline("")))
 			var req Request
 			if err := json.NewDecoder(conn).Decode(&req); err != nil {
 				_ = json.NewEncoder(conn).Encode(Response{Error: "malformed request"})
 				return
 			}
+			_ = conn.SetDeadline(time.Now().Add(deadline(req.Op)))
 			_ = json.NewEncoder(conn).Encode(s.handle(req))
 		}()
 	}
@@ -141,6 +189,12 @@ func (s *Server) handle(req Request) Response {
 			return Response{Error: err.Error()}
 		}
 		return Response{Identity: id}
+	case OpLeave:
+		id, notified, err := s.handler.Leave(req.Force)
+		if err != nil {
+			return Response{Error: err.Error()}
+		}
+		return Response{Identity: id, Notified: notified}
 	default:
 		return Response{Error: "unknown operation " + req.Op}
 	}
@@ -153,7 +207,7 @@ func Call(path string, req Request) (Response, error) {
 		return Response{}, fmt.Errorf("connecting to the agent at %s (is it running, and are you root?): %w", path, err)
 	}
 	defer func() { _ = conn.Close() }()
-	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(deadline(req.Op)))
 	if err := json.NewEncoder(conn).Encode(req); err != nil {
 		return Response{}, err
 	}

@@ -16,8 +16,12 @@ import (
 )
 
 type fakeHandler struct {
-	ttl  time.Duration
-	uses int
+	ttl      time.Duration
+	uses     int
+	force    bool
+	leaveErr error
+	entered  chan struct{} // closed when Leave is called
+	block    chan struct{} // when set, Leave waits for it, as a real one waits for the agent
 }
 
 func (f *fakeHandler) Invite(ttl time.Duration, uses int) (string, error) {
@@ -26,6 +30,20 @@ func (f *fakeHandler) Invite(ttl time.Duration, uses int) (string, error) {
 		return "", errors.New("uses must be positive")
 	}
 	return "TOKEN", nil
+}
+
+func (f *fakeHandler) Leave(force bool) (string, int, error) {
+	f.force = force
+	if f.entered != nil {
+		close(f.entered)
+	}
+	if f.block != nil {
+		<-f.block
+	}
+	if f.leaveErr != nil {
+		return "", 0, f.leaveErr
+	}
+	return "IDENTITY", 2, nil
 }
 
 func (f *fakeHandler) Revoke(target string) (string, error) {
@@ -72,9 +90,57 @@ func Test_control_roundTrip(t *testing.T) {
 	_, err = Call(path, Request{Op: "dance"})
 	assert.ErrorContains(t, err, "unknown operation")
 
+	resp, err = Call(path, Request{Op: OpLeave, Force: true})
+	require.NoError(t, err)
+	assert.Equal(t, "IDENTITY", resp.Identity)
+	assert.Equal(t, 2, resp.Notified)
+	assert.True(t, h.force)
+	h.leaveErr = errors.New("the root cannot be revoked")
+	_, err = Call(path, Request{Op: OpLeave})
+	assert.ErrorContains(t, err, "root cannot be revoked")
+	assert.False(t, h.force)
+
 	srv.Close()
 	_, err = Call(path, Request{Op: "invite", TTL: "1m", Uses: 1})
 	assert.ErrorContains(t, err, "is it running")
+}
+
+// The agent closes the control server as it shuts down, which is what a leave
+// asked it to do: the reply must still reach the operator.
+func Test_Close_waitsForTheRequestInFlight(t *testing.T) {
+	path := filepath.Join(socketDir(t), "w.sock")
+	h := &fakeHandler{entered: make(chan struct{}), block: make(chan struct{})}
+	srv, err := Listen(path, h)
+	require.NoError(t, err)
+
+	type result struct {
+		resp Response
+		err  error
+	}
+	results := make(chan result, 1)
+	go func() {
+		resp, err := Call(path, Request{Op: OpLeave})
+		results <- result{resp, err}
+	}()
+	<-h.entered
+
+	closed := make(chan struct{})
+	go func() {
+		srv.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+		t.Fatal("Close returned while a request was still being answered")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(h.block)
+	got := <-results
+	require.NoError(t, got.err)
+	assert.Equal(t, "IDENTITY", got.resp.Identity)
+	<-closed
+	assert.NoFileExists(t, path)
 }
 
 func Test_Listen_replacesStaleSocket(t *testing.T) {

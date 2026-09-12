@@ -20,10 +20,12 @@ func Test_controlFlags_socket(t *testing.T) {
 
 // fakeMembership stands in for the cluster behind the control socket.
 type fakeMembership struct {
-	id        *trust.Identity
-	set       *trust.Set
-	revoked   []trust.PublicKey
-	revokeErr error
+	id            *trust.Identity
+	set           *trust.Set
+	revoked       []trust.PublicKey
+	revokeErr     error
+	revokedSelf   bool
+	revokeSelfErr error
 }
 
 func newFakeMembership(t *testing.T) (*fakeMembership, *trust.Identity) {
@@ -47,12 +49,19 @@ func (f *fakeMembership) Revoke(id trust.PublicKey) error {
 	f.revoked = append(f.revoked, id)
 	return f.revokeErr
 }
+func (f *fakeMembership) RevokeSelf() (int, error) {
+	if f.revokeSelfErr != nil {
+		return 0, f.revokeSelfErr
+	}
+	f.revokedSelf = true
+	return 3, nil
+}
 func (f *fakeMembership) Trust() *trust.Set         { return f.set }
 func (f *fakeMembership) Identity() trust.PublicKey { return f.id.Public() }
 
 func Test_agentControl(t *testing.T) {
 	m, member := newFakeMembership(t)
-	ctl := agentControl{m}
+	ctl := agentControl{cluster: m}
 
 	tok, err := ctl.Invite(5*time.Minute, 1)
 	require.NoError(t, err)
@@ -77,4 +86,52 @@ func Test_agentControl(t *testing.T) {
 	m.revokeErr = errors.New("boom")
 	_, err = ctl.Revoke("member")
 	assert.ErrorContains(t, err, "boom")
+}
+
+// leaveControl is an agentControl whose agent stops when it is told to and
+// reports that it has torn everything down.
+func leaveControl(m membership) (agentControl, *leaving, chan struct{}) {
+	stopped := make(chan struct{})
+	l := &leaving{done: make(chan struct{})}
+	l.stop = func() {
+		close(stopped)
+		close(l.done) // the agent has left the cluster, downed the interface and forgotten its state
+	}
+	return agentControl{cluster: m, leaving: l}, l, stopped
+}
+
+func Test_agentControl_Leave(t *testing.T) {
+	m, _ := newFakeMembership(t)
+	ctl, l, stopped := leaveControl(m)
+
+	id, notified, err := ctl.Leave(false)
+	require.NoError(t, err)
+	assert.Equal(t, m.Identity().String(), id)
+	assert.Equal(t, 3, notified)
+	assert.True(t, m.revokedSelf)
+	assert.True(t, l.requested.Load(), "the agent forgets its state on the way out")
+	<-stopped
+}
+
+// A node that cannot revoke itself stays where it is unless the operator insists.
+func Test_agentControl_Leave_cannotRevoke(t *testing.T) {
+	m, _ := newFakeMembership(t)
+	m.revokeSelfErr = errors.New("the root cannot be revoked")
+	ctl, l, stopped := leaveControl(m)
+
+	_, _, err := ctl.Leave(false)
+	assert.ErrorContains(t, err, "root cannot be revoked")
+	assert.False(t, l.requested.Load())
+	select {
+	case <-stopped:
+		t.Fatal("the agent was stopped by a leave it refused")
+	default:
+	}
+
+	id, notified, err := ctl.Leave(true)
+	require.NoError(t, err)
+	assert.Empty(t, id, "nothing was revoked")
+	assert.Zero(t, notified)
+	assert.True(t, l.requested.Load())
+	<-stopped
 }
