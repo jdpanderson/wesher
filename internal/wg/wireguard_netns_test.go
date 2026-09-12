@@ -153,3 +153,66 @@ func Test_State_SetUpInterface_badPeerKey(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "converting received node information")
 }
+
+// needTun skips where the tun device is missing (a container started without it).
+func needTun(t *testing.T) {
+	t.Helper()
+	if _, err := os.Stat("/dev/net/tun"); err != nil {
+		t.Skip("no /dev/net/tun")
+	}
+}
+
+func Test_State_userspace(t *testing.T) {
+	enterTestNetns(t)
+	needTun(t)
+	cfg := testConfig()
+	cfg.Interface, cfg.Userspace = "wgtest2", true
+	s, err := New(cfg)
+	require.NoError(t, err)
+	assert.Equal(t, "userspace", s.dev.Kind())
+
+	p1 := testPeer(t, "p1", "192.0.2.1", "10.99.0.1")
+	require.NoError(t, s.SetUpInterface([]overlay.Node{p1}))
+	link, err := netlink.LinkByName("wgtest2")
+	require.NoError(t, err)
+	assert.Equal(t, "tuntap", link.Type())
+	assert.Equal(t, 1400, link.Attrs().MTU)
+	assert.NotZero(t, link.Attrs().Flags&net.FlagUp)
+
+	// wgctrl reaches the device through its control socket like any other
+	dev, err := s.client.Device("wgtest2")
+	require.NoError(t, err)
+	assert.Equal(t, s.PubKey, dev.PublicKey)
+	assert.Equal(t, 51820, dev.ListenPort)
+	require.Len(t, dev.Peers, 1)
+	assert.Equal(t, "192.0.2.1:51820", dev.Peers[0].Endpoint.String())
+	report, err := Status("wgtest2")
+	require.NoError(t, err)
+	assert.Equal(t, s.PubKey.String(), report.PublicKey)
+	assert.Equal(t, []netip.Prefix{netip.PrefixFrom(s.overlayAddr, 32)}, report.Addrs)
+
+	require.NoError(t, s.SetUpInterface([]overlay.Node{p1}), "idempotent: the running device is kept")
+	require.NoError(t, s.DownInterface())
+	_, err = netlink.LinkByName("wgtest2")
+	assert.Error(t, err, "the tun interface went with the device")
+	_, err = os.Stat("/var/run/wireguard/wgtest2.sock")
+	assert.True(t, os.IsNotExist(err), "the control socket is gone")
+	require.NoError(t, s.DownInterface(), "down on a stopped device is a no-op")
+
+	require.NoError(t, s.SetUpInterface([]overlay.Node{p1}), "and it can come back")
+	require.NoError(t, s.DownInterface())
+}
+
+func Test_platform_kernelFirst(t *testing.T) {
+	enterTestNetns(t)
+	cfg := testConfig()
+	cfg.Interface = "wgtest3"
+	dev, _, err := platform(cfg)
+	if err != nil {
+		t.Skipf("no kernel wireguard here either: %v", err)
+	}
+	defer func() { _ = dev.Delete("wgtest3") }()
+	assert.Equal(t, "kernel", dev.Kind(), "the module is preferred whenever the kernel has it")
+	_, err = netlink.LinkByName("wgtest3")
+	assert.NoError(t, err, "the probe left the interface in place for SetUpInterface")
+}

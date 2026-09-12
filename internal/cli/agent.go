@@ -40,6 +40,7 @@ type AgentCmd struct {
 	// PersistentKeepalive is a time.Duration so kong accepts "25s"; 0 disables it.
 	PersistentKeepalive time.Duration `help:"interval at which peers send keepalives, to keep NAT mappings open (e.g. 25s); 0 disables" default:"0"`
 	NoEtcHosts          bool          `help:"disable writing of entries to /etc/hosts"`
+	Userspace           bool          `help:"run wireguard inside the agent instead of the kernel module; the default wherever the kernel has none"`
 	ControlSocket       string        `help:"unix socket for 'cheesecloth invite' and 'cheesecloth revoke' (default ${default_socket_dir}/<interface>.sock)"`
 
 	addrs func(skip string) []net.Addr // lists this host's candidate addresses; nil means the interfaces
@@ -111,6 +112,7 @@ func (a *AgentCmd) Run() error {
 		OverlayAddr:         overlayAddr,
 		MTU:                 a.MTU,
 		PersistentKeepalive: a.PersistentKeepalive,
+		Userspace:           a.Userspace,
 	})
 	if err != nil {
 		return fmt.Errorf("instantiating wireguard controller: %w", err)

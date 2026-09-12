@@ -4,16 +4,32 @@ package wg
 
 import (
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/netip"
 	"os"
+	"syscall"
 
 	"github.com/vishvananda/netlink"
 )
 
-// platform picks the kernel module: the interface is a kernel link and the
-// stack is driven over netlink.
-func platform(Config) (device, linker, error) {
-	return kernelDevice{}, netlinkLinker{}, nil
+// platform uses the kernel module whenever it is there: the probe is the
+// link creation itself, which the kernel refuses with EOPNOTSUPP when it has
+// no wireguard. Only then, or when asked, does the device run in this
+// process. Either way the stack is driven over netlink.
+func platform(cfg Config) (device, linker, error) {
+	if !cfg.Userspace {
+		_, err := kernelDevice{}.Create(cfg.Interface, cfg.MTU)
+		switch {
+		case err == nil:
+			return kernelDevice{}, netlinkLinker{}, nil
+		case errors.Is(err, syscall.EOPNOTSUPP):
+			slog.Info("the kernel has no wireguard support; running the device in this process", "iface", cfg.Interface)
+		default:
+			return nil, nil, fmt.Errorf("creating interface %s: %w", cfg.Interface, err)
+		}
+	}
+	return &userspaceDevice{}, netlinkLinker{}, nil
 }
 
 // lookup finds a running interface by the agent's name; the kernel keeps the

@@ -60,6 +60,9 @@ type Config struct {
 	// PersistentKeepalive, when non-zero, makes every peer send keepalives at this
 	// interval so NAT mappings stay open.
 	PersistentKeepalive time.Duration
+	// Userspace runs wireguard in this process even where the kernel could do
+	// it. Where it cannot (no module, macOS, Windows) that is the way regardless.
+	Userspace bool
 }
 
 // State holds the configured state of a Cheesecloth Wireguard interface.
