@@ -586,7 +586,7 @@ same value.
 Measured 2026-09-12 on an M1, with throwaway benchmarks. `Set.Valid` walks the
 admission chain to the root, so its cost follows the depth of that chain, not
 the number of records: a flat set of 10,000 answers in 118 ns, the same as one
-of 10 (101 ns), while a chain 1,000 deep takes 143 us. Depth only grows when
+of 10 (101 ns), while a chain 1,000 deep takes 158 us (216 ns at depth 1). Depth only grows when
 new nodes are admitted by recently admitted ones, so it is a pattern of use
 rather than a matter of time. The call is on the hot path: the transport
 checks it for every gossip datagram and every stream.
@@ -607,8 +607,14 @@ and memberlist's own push/pull cap is 20 MiB.
       name clash, a full overlay and a record set that has outgrown the frame
       all reach the operator running the join. Refusals before the token is
       proved stay silent. Done 2026-09-12.
-- [ ] `Set.Valid` caches its answer until the records change, so the walk is
-      not repeated for every packet.
+- [x] `Set.Valid` caches its answer until the records change, so the walk is
+      not repeated for every packet. Done 2026-09-12: a cached answer costs
+      about 15 ns whatever the depth, against 216 ns at depth 1, 22 us at
+      depth 100 and 158 us at depth 1,000. Only valid identities are cached, since anything that can
+      open a connection is asked about and an unknown identity is decided in
+      one lookup anyway. The map is taken before the answer is computed, so an
+      answer from before a record change can only land in the map that change
+      discarded.
 - [ ] **DECISION** pruning. Nothing removes a record, so the ceiling above is
       reached by any cluster that churns enough, and the only way out today is
       to rebuild the cluster. A revoked node's admission cannot simply be

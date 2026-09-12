@@ -7,6 +7,7 @@ import (
 	"math"
 	"slices"
 	"sync"
+	"sync/atomic"
 )
 
 // Records is the wire and file form of a Set's contents.
@@ -23,13 +24,26 @@ type Set struct {
 	root        PublicKey
 	admissions  map[PublicKey]Admission
 	revocations map[PublicKey]Revocation
+	// members caches the identities found valid, until a record changes: the
+	// gossip transport asks for every packet, and the walk to the root costs
+	// more the longer the chain of admitters. Only valid answers are cached;
+	// an unknown identity is decided in one lookup, and caching those would
+	// let anything that can open a connection grow the map.
+	members atomic.Pointer[sync.Map]
 }
 
 // NewSet creates a set trusting root. The root's own record is added like any
 // other, when it arrives.
 func NewSet(root PublicKey) *Set {
-	return &Set{root: root, admissions: map[PublicKey]Admission{}, revocations: map[PublicKey]Revocation{}}
+	s := &Set{root: root, admissions: map[PublicKey]Admission{}, revocations: map[PublicKey]Revocation{}}
+	s.members.Store(&sync.Map{})
+	return s
 }
+
+// forget drops the cached answers, because a record just changed them.
+// Callers hold the write lock, so no answer computed from the new records can
+// be stored in the map being replaced.
+func (s *Set) forget() { s.members.Store(&sync.Map{}) }
 
 // ErrUntrustedRoot is returned for a self-signed admission of a non-root identity.
 var ErrUntrustedRoot = errors.New("self-signed admission is not the pinned root")
@@ -49,6 +63,7 @@ func (s *Set) AddAdmission(a Admission) (bool, error) {
 		return false, nil
 	}
 	s.admissions[a.Identity] = a
+	s.forget()
 	return true, nil
 }
 
@@ -64,6 +79,7 @@ func (s *Set) AddRevocation(r Revocation) (bool, error) {
 		return false, nil
 	}
 	s.revocations[r.Identity] = r
+	s.forget()
 	return true, nil
 }
 
@@ -104,9 +120,19 @@ func (s *Set) Records() Records {
 // a member, and admitted by the root or by an identity that was a member at
 // the time it issued the admission. The root needs no admission of its own.
 func (s *Set) Valid(id PublicKey) bool {
+	// the map is taken before the answer is computed, so an answer from before
+	// a record change can only be stored in the map that change discarded
+	cached := s.members.Load()
+	if _, ok := cached.Load(id); ok {
+		return true
+	}
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.valid(id)
+	valid := s.valid(id)
+	s.mu.RUnlock()
+	if valid {
+		cached.Store(id, struct{}{})
+	}
+	return valid
 }
 
 // valid is Valid with the lock held.

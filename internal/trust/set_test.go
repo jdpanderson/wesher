@@ -3,6 +3,8 @@ package trust
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -346,4 +348,60 @@ func Test_Set_revocationsMergeAndRoundTrip(t *testing.T) {
 	fresh.Merge(rs)
 	assert.False(t, fresh.Valid(a.Public()))
 	assert.False(t, fresh.Valid(b.Public()))
+}
+
+// Validity is cached, so the answer must still change the moment a record does.
+func Test_Set_Valid_cacheFollowsTheRecords(t *testing.T) {
+	root, a, b, stranger, set := cluster(t)
+	for range 2 { // the second answer comes from the cache
+		assert.True(t, set.Valid(a.Public()))
+		assert.True(t, set.Valid(b.Public()))
+		assert.False(t, set.Valid(stranger.Public()))
+	}
+
+	_, err := set.AddRevocation(Revoke(root, b.Public(), t0.Add(time.Minute)))
+	require.NoError(t, err)
+	assert.False(t, set.Valid(b.Public()), "the revocation is not hidden by the cached answer")
+	assert.True(t, set.Valid(a.Public()))
+
+	// an identity admitted after it was first asked about becomes valid
+	c := newID(t)
+	assert.False(t, set.Valid(c.Public()))
+	_, err = set.AddAdmission(Admit(root, c.Public(), c.DHPublic(), "c", 5, t0))
+	require.NoError(t, err)
+	assert.True(t, set.Valid(c.Public()))
+}
+
+// Anything that can open a connection is asked about, so only members are
+// cached: an unknown identity is decided in one lookup anyway.
+func Test_Set_Valid_cachesMembersOnly(t *testing.T) {
+	_, a, _, stranger, set := cluster(t)
+	assert.True(t, set.Valid(a.Public()))
+	assert.False(t, set.Valid(stranger.Public()))
+
+	cached := 0
+	set.members.Load().Range(func(any, any) bool { cached++; return true })
+	assert.Equal(t, 1, cached, "only the member was kept")
+}
+
+// The cache is read without the lock; the race detector is the point of this.
+func Test_Set_Valid_concurrentWithChanges(t *testing.T) {
+	root, a, _, _, set := cluster(t)
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 200 {
+				set.Valid(a.Public())
+			}
+		}()
+	}
+	for i := range 20 {
+		other := newID(t)
+		_, err := set.AddAdmission(Admit(root, other.Public(), other.DHPublic(), fmt.Sprintf("n%d", i), uint64(i+10), t0))
+		require.NoError(t, err)
+	}
+	wg.Wait()
+	assert.True(t, set.Valid(a.Public()))
 }
