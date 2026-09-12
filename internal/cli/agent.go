@@ -74,13 +74,15 @@ func (a *AgentCmd) Validate() error {
 	return nil
 }
 
-// Run wires up cluster, wireguard and /etc/hosts, joins the cluster and runs the agent loop until SIGTERM/SIGINT.
-func (a *AgentCmd) Run() error {
+// Run wires up cluster, wireguard and the hosts file, joins the cluster and
+// runs the agent loop until SIGTERM/SIGINT or ctx is done, reporting to the
+// service manager through n.
+func (a *AgentCmd) Run(ctx context.Context, n notify.Notifier) error {
 	hostname, err := os.Hostname()
 	if err != nil {
 		return fmt.Errorf("getting hostname: %w", err)
 	}
-	ctx, cancelSignals := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	ctx, cancelSignals := signal.NotifyContext(ctx, syscall.SIGTERM, os.Interrupt)
 	defer cancelSignals()
 
 	boot, err := cluster.Load(cluster.DefaultDir, a.Interface, a.Init)
@@ -158,7 +160,7 @@ func (a *AgentCmd) Run() error {
 		return fmt.Errorf("joining cluster: %w", err) // not reached today: the retry gives up only when ctx does
 	}
 
-	return a.loop(ctx, peerc, cl, wgstate, hostsFile, notify.Default())
+	return a.loop(ctx, peerc, cl, wgstate, hostsFile, n)
 }
 
 // bootstrap settles this node's membership before it joins: a node that is

@@ -21,5 +21,5 @@ func main() {
 	}
 	ktx, err := k.Parse(os.Args[1:])
 	k.FatalIfErrorf(err)
-	k.FatalIfErrorf(ktx.Run())
+	k.FatalIfErrorf(cli.Execute(c, ktx))
 }

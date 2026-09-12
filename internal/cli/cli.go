@@ -18,6 +18,8 @@ type CLI struct {
 	Status StatusCmd `cmd:"" help:"show the wireguard interface and its peers"`
 	Invite InviteCmd `cmd:"" help:"mint an enrolment token for a new node (talks to the running agent)"`
 	Revoke RevokeCmd `cmd:"" help:"revoke a node's membership (talks to the running agent)"`
+
+	Service ServiceCmd `cmd:"" help:"register or remove the agent as a Windows service"`
 }
 
 // Parser builds the command-line parser; configPath is the file read when present
