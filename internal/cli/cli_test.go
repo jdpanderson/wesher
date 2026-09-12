@@ -33,7 +33,7 @@ func Test_Parser_commands(t *testing.T) {
 	cmd, err := parse()
 	require.NoError(t, err)
 	assert.Equal(t, "agent", cmd, "the agent is the default command")
-	assert.Equal(t, "wgoverlay", c.Agent.Interface)
+	assert.Equal(t, DefaultInterface, c.Agent.Interface)
 	assert.Equal(t, LogLevelFlag("warn"), c.LogLevel)
 
 	cmd, err = parse("--overlay-net", "fd00:10::/64", "--allowed-ips", "192.168.7.0/24,192.168.8.0/24")

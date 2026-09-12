@@ -55,7 +55,7 @@ persisted cluster state. Add `--json` for machine-readable output and
 
 ```
 # cheesecloth status
-interface: wgoverlay
+interface: wgcloth
 address:   10.0.0.1/32
 port:      51820
 pubkey:    gm/3EV7bl46Z2QPUa5CppLUjwoL45BwHO1nrEgIFsFA=
@@ -84,7 +84,7 @@ nothing of the cluster.
 ```
 # cheesecloth leave
 left the cluster: revoked KE9rn7ryXPCL+A1uHT1Or7tnBG/eheIihMPaYcN9EME=, 2 member(s) told
-the agent has stopped and its state for wgoverlay is gone
+the agent has stopped and its state for wgcloth is gone
 ```
 
 The agent exits, so a service that starts it at boot should be disabled as
@@ -104,7 +104,7 @@ member revokes it:
 
 ```
 # cheesecloth leave --force
-removed this node's state for wgoverlay
+removed this node's state for wgcloth
 the cluster still trusts this node: run 'cheesecloth revoke KE9r...' on a member
 ```
 
@@ -164,7 +164,7 @@ When the interface comes up the agent logs one line saying so, at level
 `info`:
 
 ```
-wireguard interface iface=wgoverlay os=wgoverlay device=kernel
+wireguard interface iface=wgcloth os=wgcloth device=kernel
 ```
 
 `device=kernel` is the Linux kernel module. `device=userspace` is WireGuard

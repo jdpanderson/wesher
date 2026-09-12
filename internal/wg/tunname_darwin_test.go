@@ -19,7 +19,7 @@ func useTempNameDir(t *testing.T) {
 }
 
 func Test_tunName_darwin(t *testing.T) {
-	assert.Equal(t, "utun", tunName("wgoverlay"), "macOS picks the number itself")
+	assert.Equal(t, "utun", tunName("wgcloth"), "macOS picks the number itself")
 }
 
 func Test_published_darwin(t *testing.T) {

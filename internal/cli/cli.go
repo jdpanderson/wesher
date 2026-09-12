@@ -8,7 +8,7 @@ import (
 )
 
 // DefaultInterface is the wireguard interface the commands act on unless told otherwise.
-const DefaultInterface = "wgoverlay"
+const DefaultInterface = "wgcloth"
 
 // DefaultOverlayNet is where a new cluster allocates its addresses; a node
 // joining an existing one takes that cluster's network instead.

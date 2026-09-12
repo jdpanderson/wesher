@@ -6,7 +6,7 @@ The file is keyed by interface name; under each interface are that interface's
 settings, keyed by the flag names without the leading dashes:
 
 ```yaml
-wgoverlay:
+wgcloth:
   bind-addr: "::"
   overlay-net: 10.42.0.0/24
 ```
@@ -34,7 +34,7 @@ the wrong interface. `cheesecloth config` is the exception: with no
 | `--wireguard-port PORT` | `wireguard-port` | port used for wireguard traffic (UDP); must be the same across cluster | `51820` |
 | `--overlay-net ADDR/MASK` | `overlay-net` | the network in which to allocate addresses for the overlay mesh network (CIDR format), see [Overlay addresses](#overlay-addresses); the same on every node of a cluster | the cluster's, learned at enrolment and kept; `10.0.0.0/8` for a new cluster |
 | `--allowed-ips NET/MASK,...` | `allowed-ips` | extra networks reachable through this node, see [Routing networks through a node](#routing-networks-through-a-node); must not overlap `--overlay-net` |  |
-| `--interface DEV` | the section name | name of the wireguard interface to create and manage, and the section of the config file this command acts under | `wgoverlay` |
+| `--interface DEV` | the section name | name of the wireguard interface to create and manage, and the section of the config file this command acts under | `wgcloth` |
 | `--mtu MTU` | `mtu` | MTU of the wireguard interface | `1420` |
 | `--persistent-keepalive DURATION` | `persistent-keepalive` | interval at which peers send keepalives, to keep NAT mappings open (e.g. `25s`); `0` disables | `0` |
 | `--no-etc-hosts` | `no-etc-hosts` | whether to skip writing hosts entries for each node in mesh | `false` |

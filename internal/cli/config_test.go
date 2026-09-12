@@ -172,7 +172,7 @@ func Test_config_selectsSectionByInterface(t *testing.T) {
 
 func Test_config_emptyFile(t *testing.T) {
 	// what a fresh install ships: every setting commented out
-	for _, body := range []string{"", "# wgoverlay:\n#   mtu: 1380\n"} {
+	for _, body := range []string{"", "# wgcloth:\n#   mtu: 1380\n"} {
 		c, err := parse(t, writeConfig(t, body), "agent")
 		require.NoError(t, err)
 		assert.Equal(t, 1420, c.Agent.MTU)
@@ -202,5 +202,5 @@ func Test_noEnvironmentVariables(t *testing.T) {
 	c, err := parse(t, filepath.Join(t.TempDir(), "absent.yaml"), "agent")
 	require.NoError(t, err)
 	assert.Equal(t, 1420, c.Agent.MTU, "environment variables are not consulted")
-	assert.Equal(t, "wgoverlay", c.Agent.Interface)
+	assert.Equal(t, DefaultInterface, c.Agent.Interface)
 }

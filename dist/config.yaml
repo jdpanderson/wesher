@@ -13,7 +13,7 @@
 # Install as /etc/cheesecloth/config.yaml.
 
 # the section name is the wireguard interface this node manages
-#wgoverlay:
+#wgcloth:
   # members to contact on start; leave out to resume from saved state
   #join:
   #  - node1.example.net

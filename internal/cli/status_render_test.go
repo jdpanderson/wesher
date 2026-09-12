@@ -20,7 +20,7 @@ var identityB = trust.PublicKey{7, 7, 7}
 func statusFixture() (*wg.Report, map[string]peerInfo, time.Time) {
 	now := time.Date(2026, 9, 7, 12, 0, 0, 0, time.UTC)
 	r := &wg.Report{
-		Interface: "wgoverlay", PublicKey: "LOCALKEY", ListenPort: 51820,
+		Interface: "wgcloth", PublicKey: "LOCALKEY", ListenPort: 51820,
 		Addrs: []netip.Prefix{netip.MustParsePrefix("10.0.0.1/32")},
 		Peers: []wg.PeerReport{
 			{PublicKey: "KEYB", Endpoint: "192.0.2.2:51820", AllowedIPs: []netip.Prefix{netip.MustParsePrefix("10.0.0.2/32"), netip.MustParsePrefix("192.168.7.0/24")},
@@ -38,7 +38,7 @@ func Test_renderStatus(t *testing.T) {
 	out := buf.String()
 	assert.Contains(t, out, "identity:  -\n")
 
-	assert.Contains(t, out, "interface: wgoverlay\n")
+	assert.Contains(t, out, "interface: wgcloth\n")
 	assert.Contains(t, out, "address:   10.0.0.1/32\n")
 	assert.Contains(t, out, "peers:     2\n")
 	assert.Regexp(t, `KEYUNKNOWN12\.\.\.\s+-\s+-\s+-\s+never\s+0 B\s+0 B\s+10\.0\.0\.3/32`, out, "unknown peer: short key, no identity, no known overlay address, no endpoint, never; every allowed IP shown as a route")
@@ -74,7 +74,7 @@ func Test_renderStatusJSON(t *testing.T) {
 		} `json:"peers"`
 	}
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &got))
-	assert.Equal(t, "wgoverlay", got.Interface)
+	assert.Equal(t, "wgcloth", got.Interface)
 	assert.Equal(t, local.String(), got.Identity)
 	require.Len(t, got.Peers, 2)
 	assert.Equal(t, "b", got.Peers[0].Name)

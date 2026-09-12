@@ -12,7 +12,7 @@ import (
 func useTempNameDir(*testing.T) {}
 
 func Test_tunName_other(t *testing.T) {
-	assert.Equal(t, "wgoverlay", tunName("wgoverlay"), "the interface carries the agent's name")
-	assert.NoError(t, published("wgoverlay", "wgoverlay"))
-	assert.NoError(t, unpublished("wgoverlay"))
+	assert.Equal(t, "wgcloth", tunName("wgcloth"), "the interface carries the agent's name")
+	assert.NoError(t, published("wgcloth", "wgcloth"))
+	assert.NoError(t, unpublished("wgcloth"))
 }

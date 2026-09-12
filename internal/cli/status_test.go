@@ -18,17 +18,17 @@ import (
 func Test_StatusCmd_Run(t *testing.T) {
 	report, _, _ := statusFixture()
 	status := func(iface string) (*wg.Report, error) {
-		if iface != "wgoverlay" {
+		if iface != "wgcloth" {
 			return nil, errors.New("no such device")
 		}
 		return report, nil
 	}
 
 	// no cluster state for this interface: peers are shown by key
-	cmd := &StatusCmd{interfaceFlag: interfaceFlag{Interface: "wgoverlay"}, status: status, stateDir: t.TempDir()}
+	cmd := &StatusCmd{interfaceFlag: interfaceFlag{Interface: "wgcloth"}, status: status, stateDir: t.TempDir()}
 	stdout, _, err := captureOutput(t, cmd.Run)
 	require.NoError(t, err)
-	assert.Contains(t, stdout, "interface: wgoverlay\n")
+	assert.Contains(t, stdout, "interface: wgcloth\n")
 	assert.Contains(t, stdout, "peers:     2\n")
 	assert.Contains(t, stdout, "KEYB")
 
@@ -42,7 +42,7 @@ func Test_StatusCmd_Run(t *testing.T) {
 		} `json:"peers"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(stdout), &got))
-	assert.Equal(t, "wgoverlay", got.Interface)
+	assert.Equal(t, "wgcloth", got.Interface)
 	assert.Len(t, got.Peers, 2)
 
 	_, _, err = captureOutput(t, (&StatusCmd{interfaceFlag: interfaceFlag{Interface: "absent0"}, status: status, stateDir: t.TempDir()}).Run)
@@ -53,11 +53,11 @@ func Test_StatusCmd_Run(t *testing.T) {
 func Test_StatusCmd_Run_namesPeersFromState(t *testing.T) {
 	report, _, _ := statusFixture()
 	dir := t.TempDir()
-	boot, err := cluster.Load(dir, "wgoverlay") // writes the identity
+	boot, err := cluster.Load(dir, "wgcloth") // writes the identity
 	require.NoError(t, err)
 
 	// add the peer the agent would have remembered, under the state file's "peers" key
-	path := filepath.Join(dir, "wgoverlay.json")
+	path := filepath.Join(dir, "wgcloth.json")
 	content, err := os.ReadFile(path)
 	require.NoError(t, err)
 	var st map[string]any
@@ -69,7 +69,7 @@ func Test_StatusCmd_Run_namesPeersFromState(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(path, content, 0o600))
 
-	cmd := &StatusCmd{interfaceFlag: interfaceFlag{Interface: "wgoverlay"}, status: func(string) (*wg.Report, error) { return report, nil }, stateDir: dir}
+	cmd := &StatusCmd{interfaceFlag: interfaceFlag{Interface: "wgcloth"}, status: func(string) (*wg.Report, error) { return report, nil }, stateDir: dir}
 	stdout, _, err := captureOutput(t, cmd.Run)
 	require.NoError(t, err)
 	assert.Contains(t, stdout, "identity:  "+boot.Identity.Public().String()+"\n")

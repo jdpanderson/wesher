@@ -197,7 +197,7 @@ func Test_Listen_refusesLongPath(t *testing.T) {
 }
 
 func Test_DefaultSocket(t *testing.T) {
-	assert.Equal(t, filepath.Join(DefaultDir, "wgoverlay.sock"), DefaultSocket("wgoverlay"))
+	assert.Equal(t, filepath.Join(DefaultDir, "wgcloth.sock"), DefaultSocket("wgcloth"))
 	assert.True(t, filepath.IsAbs(DefaultDir))
 }
 

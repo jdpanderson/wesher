@@ -98,8 +98,8 @@ test_3_node_up() {
     ping_ok test1-orig test2 test2-orig
     ping_ok test1-orig test3 test3-orig
     # addresses are allocated from the bottom of the overlay net: the root takes .1
-    docker exec test1-orig ip -4 addr show wgoverlay | grep -q "inet 10.0.0.1/32" || { docker exec test1-orig ip addr; false; }
-    docker exec test2-orig ip -4 addr show wgoverlay | grep -qE "inet 10.0.0.[23]/32" || { docker exec test2-orig ip addr; false; }
+    docker exec test1-orig ip -4 addr show wgcloth | grep -q "inet 10.0.0.1/32" || { docker exec test1-orig ip addr; false; }
+    docker exec test2-orig ip -4 addr show wgcloth | grep -qE "inet 10.0.0.[23]/32" || { docker exec test2-orig ip addr; false; }
     # the token is spent: a fourth node cannot use it
     run_test_container test4-orig test4 --join test1-orig --join-key "$token"
     if [ "$(docker wait test4-orig)" = 0 ]; then echo "spent token was accepted"; docker logs test4-orig; false; fi
@@ -157,12 +157,12 @@ test_idle_until_configured() {
     [ "$(docker inspect -f '{{.State.Running}}' test1-orig)" = "true" ] || {
         echo "the agent did not wait to be configured"; dump_logs test1-orig; false
     }
-    if docker exec test1-orig ip link show wgoverlay >/dev/null 2>&1; then
+    if docker exec test1-orig ip link show wgcloth >/dev/null 2>&1; then
         echo "the waiting agent brought up an interface"; dump_logs test1-orig; false
     fi
     # the identity is generated on the first start, so the node keeps the one it
     # waited with when it is finally configured
-    docker exec test1-orig test -f /var/lib/cheesecloth/wgoverlay.json || {
+    docker exec test1-orig test -f /var/lib/cheesecloth/wgcloth.json || {
         echo "the waiting agent kept no identity"; dump_logs test1-orig; false
     }
 
@@ -217,7 +217,7 @@ test_mixed_cluster_ports() {
         docker exec -d test2-orig bash -c "echo \$\$ > /run/mesh.pid; exec /entrypoint.sh --cluster-port 7947 $* >> /var/log/cheesecloth-mesh.log 2>&1"
     }
 
-    run_test_container test1-orig test1 --overlay-net 10.0.0.0/8 # the defaults: wgoverlay, cluster port 7946
+    run_test_container test1-orig test1 --overlay-net 10.0.0.0/8 # the defaults: wgcloth, cluster port 7946
     token=$(invite test1-orig 1)
     run_test_container test2-orig test2 $idle
     mesh_agent --join test1-orig:7946 --join-key "$token" # test1 is not on test2's port
@@ -427,7 +427,7 @@ test_leave_command() {
     [ "$(docker inspect -f '{{.State.Running}}' test3-orig)" = "false" ] || {
         echo "the agent kept running after it left"; dump_logs test3-orig; false
     }
-    docker cp test3-orig:/var/lib/cheesecloth/wgoverlay.json - >/dev/null 2>&1 && {
+    docker cp test3-orig:/var/lib/cheesecloth/wgcloth.json - >/dev/null 2>&1 && {
         echo "the state file survived the leave"; false
     }
 
@@ -460,8 +460,8 @@ test_allowed_ips() {
     sleep 3
 
     ping_ok test2-orig test1 test1-orig
-    docker exec test2-orig ip route show dev wgoverlay | grep -q "^192.168.77.0/24" || { docker exec test2-orig ip route; docker logs test2-orig; false; }
-    docker exec test2-orig wg show wgoverlay allowed-ips | grep -q "192.168.77.0/24" || { docker exec test2-orig wg show wgoverlay; false; }
+    docker exec test2-orig ip route show dev wgcloth | grep -q "^192.168.77.0/24" || { docker exec test2-orig ip route; docker logs test2-orig; false; }
+    docker exec test2-orig wg show wgcloth allowed-ips | grep -q "192.168.77.0/24" || { docker exec test2-orig wg show wgcloth; false; }
     docker exec test2-orig /app/cheesecloth status | grep test1 | grep -q "192.168.77.0/24" || { docker exec test2-orig /app/cheesecloth status; false; }
     # a host "behind" test1 answers through the mesh
     docker exec test1-orig ip addr add 192.168.77.1/32 dev lo

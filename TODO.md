@@ -779,6 +779,12 @@ joins it.
       has no effective settings at all, which is what makes the waiting case
       the default: the package can be installed and the unit enabled before
       anyone has decided what the node joins.
+- [x] Default interface renamed from `wgoverlay` to `wgcloth`, reversing the
+      Phase 7 decision to keep the name inherited from wesher. Done 2026-09-12.
+      It now names the project rather than the topology, and a host still
+      running wesher no longer has the two defaults collide. The custom names
+      in the documentation and the e2e tests are untouched: they illustrate
+      calling an interface something else, which is the point of them.
 - [ ] Changing settings on a running agent, still to be designed. `cheesecloth
       config` reads the state and the file but cannot ask the agent what it is
       actually running with, and nothing rereads the file without a restart.
