@@ -53,6 +53,17 @@ jobs:
       - name: One node, live
         run: sudo -E "$(command -v go)" test -count=1 -v -run Live ./internal/wg
 
+  windows:
+    name: windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.27.x
+      - run: go build ./... && go test -count=1 ./...
+        shell: bash
+
   deb:
     name: deb/${{ matrix.arch }}
     runs-on: ubuntu-latest

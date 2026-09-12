@@ -415,7 +415,11 @@ is a fallback, never a replacement.
       interface name is the control socket name and `status` shows both. A
       launchd plist under `dist/`. GitHub's macOS runners allow sudo: unit
       tests and a one-node smoke test run there.
-- [ ] Windows. Link implementation over the IP helper API (the
+- [x] Windows. Done 2026-09-11: `winipcfg` linker, `notify.SCM`, the agent
+      runs under the Service Control Manager when started by it and logs to
+      `%ProgramData%\\cheesecloth\\agent.log`; `cheesecloth service install|uninstall`;
+      a `windows` CI job runs the suite. Not yet verified on a real Windows
+      machine: the CI job is the first run. Link implementation over the IP helper API (the
       wireguard-windows module wraps it in pure Go). `wintun.dll` ships next
       to the binary. The notifier reports to the Service Control Manager and a
       `service install` subcommand registers the agent. Paths move under
@@ -424,3 +428,7 @@ is a fallback, never a replacement.
       runner. Packaging (zip or MSI) is a later item.
 - [ ] Docs for each platform once it runs: install, privileges (root or
       Administrator), which device is in use and how to tell.
+- [ ] Windows follow-ups: the control socket relies on file permissions the
+      hosts file directory does not give (an ACL on the socket, or a named
+      pipe, would); wintun.dll is not shipped with the binary yet; service
+      logs go to a file, not the event log.
