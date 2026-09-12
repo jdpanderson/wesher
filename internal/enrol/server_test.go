@@ -1,6 +1,8 @@
 package enrol
 
 import (
+	"encoding/json"
+	"errors"
 	"net"
 	"testing"
 	"time"
@@ -200,4 +202,61 @@ func Test_Join_rejectsForgedAdmission(t *testing.T) {
 	require.NoError(t, err)
 	_, _, err = join(t, srv, tok, newID(t), "j")
 	assert.ErrorContains(t, err, "signature")
+}
+
+// A cluster whose records no longer fit in a frame stops admitting nodes, and
+// says so, rather than signing an admission it cannot deliver: every such
+// attempt would add another record and make the overflow worse.
+func Test_Join_refusedWhenRecordsOutgrowTheFrame(t *testing.T) {
+	id := newID(t)
+	set := trust.NewSet(id.Public())
+	_, err := set.AddAdmission(trust.SelfAdmit(id, "root", time.Now()))
+	require.NoError(t, err)
+	for host := uint64(2); len(mustJSON(t, set.Records())) <= maxFrame; { // in batches: the set is marshalled to measure it
+		for range 500 {
+			other := newID(t)
+			_, aerr := set.AddAdmission(trust.Admit(id, other.Public(), other.DHPublic(), "n", host, time.Now()))
+			require.NoError(t, aerr)
+			host++
+		}
+	}
+	admitted := 0
+	srv := &Server{Identity: id, Tokens: NewTokenStore(nil), Root: id.Public(), GossipAddr: "x", Records: set.Records,
+		Admit: func(joiner trust.PublicKey, dh trust.DHKey, name string) (trust.Admission, trust.Records, error) {
+			admitted++
+			a := trust.Admit(id, joiner, dh, name, 2, time.Now())
+			return a, set.Records(), nil
+		}}
+	tok, err := srv.Tokens.Mint(time.Minute, 1)
+	require.NoError(t, err)
+
+	_, _, err = join(t, srv, tok, newID(t), "j")
+	assert.ErrorContains(t, err, "the member refused to admit this node")
+	assert.ErrorContains(t, err, "no longer fit in an enrolment message")
+	assert.Zero(t, admitted, "nothing was signed, so the records did not grow")
+}
+
+// A joiner refused for any reason it could not otherwise know is told why,
+// once it has proved the token.
+func Test_Join_refusalReachesTheJoiner(t *testing.T) {
+	id := newID(t)
+	set := trust.NewSet(id.Public())
+	_, err := set.AddAdmission(trust.SelfAdmit(id, "root", time.Now()))
+	require.NoError(t, err)
+	srv := &Server{Identity: id, Tokens: NewTokenStore(nil), Root: id.Public(), GossipAddr: "x",
+		Admit: func(trust.PublicKey, trust.DHKey, string) (trust.Admission, trust.Records, error) {
+			return trust.Admission{}, trust.Records{}, errors.New(`a member named "j" is already in the cluster`)
+		}}
+	tok, err := srv.Tokens.Mint(time.Minute, 1)
+	require.NoError(t, err)
+
+	_, _, err = join(t, srv, tok, newID(t), "j")
+	assert.ErrorContains(t, err, `already in the cluster`)
+}
+
+func mustJSON(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	require.NoError(t, err)
+	return b
 }

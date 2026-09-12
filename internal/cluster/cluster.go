@@ -119,7 +119,7 @@ func New(cfg Config) (*Cluster, error) {
 	}
 	c.port = transport.port()
 	c.enrolSrv = &enrol.Server{
-		Identity: id, Tokens: c.tokens, Root: cfg.Boot.Root, Admit: c.admit, OverlayNet: cfg.OverlayNet,
+		Identity: id, Tokens: c.tokens, Root: cfg.Boot.Root, Admit: c.admit, OverlayNet: cfg.OverlayNet, Records: set.Records,
 		GossipAddr: net.JoinHostPort(cfg.AdvertiseAddr.String(), strconv.Itoa(c.port)),
 	}
 	transport.start()

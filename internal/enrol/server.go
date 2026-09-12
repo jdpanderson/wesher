@@ -1,12 +1,17 @@
 package enrol
 
 import (
+	"crypto/ed25519"
 	"crypto/hmac"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net"
 	"net/netip"
+	"slices"
+	"time"
 
 	"github.com/jdpanderson/cheesecloth/internal/trust"
 )
@@ -21,6 +26,9 @@ type Server struct {
 	Admit func(joiner trust.PublicKey, dh trust.DHKey, name string) (trust.Admission, trust.Records, error)
 	// GossipAddr is this node's memberlist ip:port, handed to the joiner.
 	GossipAddr string
+	// Records is the membership as it stands. The server checks that a welcome
+	// carrying it will fit before it admits anyone; nil skips the check.
+	Records func() trust.Records
 	// OverlayNet is the network the cluster allocates overlay addresses in,
 	// so a joiner needs no setting of its own.
 	OverlayNet netip.Prefix
@@ -52,6 +60,43 @@ func (s *Server) Handle(conn Conn) {
 // errSilent marks failures that must not be reported to the peer, so the
 // server is not an oracle for token guessing.
 var errSilent = errors.New("silent")
+
+// refuse tells a joiner why it was not admitted and reports the same reason
+// for the member's log. Only a joiner that has proved the token gets one.
+func refuse(conn Conn, reason string) error {
+	if err := writeFrame(conn, Welcome{Error: reason}); err != nil {
+		return fmt.Errorf("%s (the refusal could not be sent: %w)", reason, err)
+	}
+	return errors.New(reason)
+}
+
+// welcomeFits reports whether a welcome for a joiner named name still fits in
+// a frame, and how large it would be. The membership only grows, so a cluster
+// that has outgrown the frame must stop admitting nodes rather than sign and
+// distribute an admission it cannot deliver, which would grow the records
+// further with every attempt.
+func (s *Server) welcomeFits(name string) (int, bool) {
+	if s.Records == nil {
+		return 0, true
+	}
+	records := s.Records()
+	// the joiner's own admission is added before the welcome is sent, so the
+	// check leaves room for one of the largest shape
+	probe := trust.Admission{
+		Name: name, Host: math.MaxUint64, IssuedAt: time.Now().Unix(), Signature: make([]byte, ed25519.SignatureSize),
+	}
+	body, err := json.Marshal(Welcome{
+		Root:       s.Root,
+		Records:    trust.Records{Admissions: append(slices.Clone(records.Admissions), probe), Revocations: records.Revocations},
+		Admission:  probe,
+		GossipAddr: s.GossipAddr,
+		OverlayNet: s.OverlayNet,
+	})
+	if err != nil {
+		return 0, true // let the write report it
+	}
+	return len(body), len(body) <= maxFrame
+}
 
 func (s *Server) handle(conn Conn) error {
 	setDeadline(conn)
@@ -100,9 +145,14 @@ func (s *Server) handle(conn Conn) error {
 		return errors.New("token was spent or expired during the exchange")
 	}
 
+	// From here the joiner has proved the token, so a refusal is told to it
+	// rather than left as a closed connection to interpret.
+	if size, ok := s.welcomeFits(h.Name); !ok {
+		return refuse(conn, fmt.Sprintf("this cluster's membership records no longer fit in an enrolment message (%d bytes of %d); no node can enrol until they are pruned", size, maxFrame))
+	}
 	adm, records, err := s.Admit(h.Identity, h.DH, h.Name)
 	if err != nil {
-		return err
+		return refuse(conn, err.Error())
 	}
 	welcome := Welcome{Root: s.Root, Records: records, Admission: adm, GossipAddr: s.GossipAddr, OverlayNet: s.OverlayNet}
 	if err = writeFrame(conn, welcome); err != nil {
@@ -166,6 +216,9 @@ func Join(conn Conn, token string, id *trust.Identity, name string) (*Welcome, t
 	var w Welcome
 	if err = readFrame(conn, &w); err != nil {
 		return nil, trust.PublicKey{}, err
+	}
+	if w.Error != "" {
+		return nil, trust.PublicKey{}, fmt.Errorf("the member refused to admit this node: %s", w.Error)
 	}
 
 	// Trust nothing in the welcome that the records do not prove.

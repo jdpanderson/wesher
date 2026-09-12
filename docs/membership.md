@@ -71,7 +71,11 @@ prefix (`cheesecloth/admission/v1`, `cheesecloth/revocation/v1`).
   nobody: records it signs afterwards are judged at their own time, when it was
   no longer a member.
 - Records are distributed by memberlist's push/pull state sync (whole set,
-  union merge) and by broadcast when a record is created. Nodes persist the
+  union merge) and by broadcast when a record is created. The set only grows,
+  so it has a ceiling: a welcome carries the whole set in one 1 MiB message,
+  which is about 3,500 records at roughly 300 bytes each. A cluster that
+  reaches it can still run, but admits nobody until the records are pruned,
+  which nothing does yet. Nodes persist the
   set, so a restarted node has it before contacting anyone.
 
 ### Overlay addresses
@@ -127,7 +131,11 @@ DH public keys, and `K` the token:
 4. Member verifies, consumes one token use, signs an admission for `J`,
    broadcasts it, and sends the joiner the root record, the full record set,
    its own gossip address and the cluster's overlay network. Both sides
-   discard `K`.
+   discard `K`. A joiner that has got this far but cannot be admitted — its
+   name is taken, the overlay is full, or the record set no longer fits in a
+   message — is told why instead of having the connection closed on it, and
+   nothing is signed for it. Before that point a refusal is silent, so the
+   member is not an oracle for token guessing.
 5. Joiner -> Member: an acknowledgement once it has checked the welcome, so
    the member knows it arrived and closes the connection.
 

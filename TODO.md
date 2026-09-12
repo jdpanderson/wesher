@@ -580,3 +580,39 @@ same value.
       and on every later start. The flag lost its kong default, so an
       `--allowed-ips` overlap with the default network is now reported when
       the agent starts rather than when the flags are parsed.
+
+## Phase 12: what a long-lived cluster costs
+
+Measured 2026-09-12 on an M1, with throwaway benchmarks. `Set.Valid` walks the
+admission chain to the root, so its cost follows the depth of that chain, not
+the number of records: a flat set of 10,000 answers in 118 ns, the same as one
+of 10 (101 ns), while a chain 1,000 deep takes 143 us. Depth only grows when
+new nodes are admitted by recently admitted ones, so it is a pattern of use
+rather than a matter of time. The call is on the hot path: the transport
+checks it for every gossip datagram and every stream.
+
+What does grow with time is the record set, at about 300 bytes per record,
+which nothing prunes. The binding limit is the 1 MiB enrolment frame: 1,000
+lifetime identities with half of them revoked make a 447 KB welcome, 2,000
+make 896 KB, and at roughly 2,300 the welcome no longer fits. Verified: the
+member logs `frame too large`, the joiner sees `EOF` with no explanation, and
+the admission was signed and broadcast before the welcome was attempted, so
+every failed attempt adds another record and makes the overflow worse. Other
+costs are tolerable: rewriting the state file on each membership change is
+850 us at 1,000 records and 9.4 ms at 10,000, `FreeHost` is 1.8 ms at 10,000,
+and memberlist's own push/pull cap is 20 MiB.
+
+- [x] A joiner that cannot be admitted is told why, and nothing is signed for
+      it. The welcome carries a refusal instead of the cluster's state, so a
+      name clash, a full overlay and a record set that has outgrown the frame
+      all reach the operator running the join. Refusals before the token is
+      proved stay silent. Done 2026-09-12.
+- [ ] `Set.Valid` caches its answer until the records change, so the walk is
+      not repeated for every packet.
+- [ ] **DECISION** pruning. Nothing removes a record, so the ceiling above is
+      reached by any cluster that churns enough, and the only way out today is
+      to rebuild the cluster. A revoked node's admission cannot simply be
+      dropped, because other nodes' chains run through it. The candidates are
+      a root-signed checkpoint that re-anchors the current membership, or
+      dropping revoked leaves that admitted nobody. Needs a call before any
+      work.
