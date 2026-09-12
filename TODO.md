@@ -452,3 +452,33 @@ is a fallback, never a replacement.
 - [ ] **DECISION** whether to add a second layer of design documentation
       covering the code itself: package responsibilities, the main types and
       how a change moves through them.
+
+## Phase 10: operator commands
+
+Proposed 2026-09-12. The CLI has no way to take a node out of a cluster: a
+member can `revoke` another node, but a node cannot remove itself, and nothing
+deletes its state file, so a decommissioned node stays trusted and its
+identity lingers in every peer's record set. `cheesecloth leave` fills that
+gap. `--init` as an agent flag and changing settings on a running agent are
+separate items, still to be designed.
+
+- [x] A member may revoke itself. Done 2026-09-12. `Set.validAt` only honoured a revocation
+      whose revoker was valid, and the cycle guard made a self-revocation a
+      no-op: the record was accepted and had no effect. Only the holder of
+      that key can sign it and it removes nobody else, so it is honoured
+      unconditionally. The root still cannot be revoked.
+- [ ] `cluster.RevokeSelf`: revoke this node's identity and push the record to
+      each member over the stream transport, rather than only queueing it for
+      gossip, because the node is about to stop. `cluster.Forget` deletes the
+      state file.
+- [ ] `control`: a `leave` operation, and `Server.Close` waits for in-flight
+      handlers so the reply outlives the agent's shutdown.
+- [ ] `wg.Remove`: delete an interface a stopped agent left behind. Only a
+      kernel interface outlives its agent; elsewhere it is a no-op.
+- [ ] `cheesecloth leave`: the agent revokes this node, tears the interface
+      down and forgets the cluster. `--force` leaves without revoking, for the
+      root (which cannot be revoked) and for a node whose agent is not
+      running; it says the cluster keeps trusting the identity until a member
+      revokes it.
+- [ ] Docs: decommissioning a node in `docs/operations.md`, the command list
+      in `docs/membership.md`, README.

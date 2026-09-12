@@ -54,11 +54,12 @@ prefix (`cheesecloth/admission/v1`, `cheesecloth/revocation/v1`).
 - An admission is valid if its signature verifies and its admitter is the
   root or itself holds a valid admission. Validity is evaluated recursively
   with a cycle guard.
-- A revocation is valid if signed by a valid identity. A revoked identity is
-  no longer a member. Admissions it issued earlier stay valid, because those
-  nodes proved knowledge of a token at the time. Revoking them automatically
-  would remove nodes the operator did not ask to remove; revoke them
-  explicitly if that is wanted.
+- A revocation is valid if signed by a valid identity, or by the identity it
+  revokes: a member may always revoke itself, which is how a node leaves the
+  cluster for good. A revoked identity is no longer a member. Admissions it
+  issued earlier stay valid, because those nodes proved knowledge of a token
+  at the time. Revoking them automatically would remove nodes the operator did
+  not ask to remove; revoke them explicitly if that is wanted.
 - Records are distributed by memberlist's push/pull state sync (whole set,
   union merge) and by broadcast when a record is created. Nodes persist the
   set, so a restarted node has it before contacting anyone.

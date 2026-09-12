@@ -73,6 +73,23 @@ func Test_Set_revocation(t *testing.T) {
 		assert.False(t, set.Valid(c.Public()), "admitted by a after a's revocation")
 	})
 
+	t.Run("by itself removes the leaving member", func(t *testing.T) {
+		_, a, b, _, set := cluster(t)
+		ok, err := set.AddRevocation(Revoke(a, a.Public(), t0.Add(3*time.Minute)))
+		require.NoError(t, err)
+		assert.True(t, ok)
+		assert.False(t, set.Valid(a.Public()), "a member may revoke itself")
+		assert.True(t, set.Valid(b.Public()), "admitted by a while a was still a member")
+	})
+
+	t.Run("by a non-member on itself has no effect on anyone else", func(t *testing.T) {
+		_, a, _, stranger, set := cluster(t)
+		_, err := set.AddRevocation(Revoke(stranger, stranger.Public(), t0))
+		require.NoError(t, err)
+		assert.False(t, set.Valid(stranger.Public()))
+		assert.True(t, set.Valid(a.Public()))
+	})
+
 	t.Run("root cannot be revoked", func(t *testing.T) {
 		root, a, _, _, set := cluster(t)
 		_, err := set.AddRevocation(Revoke(a, root.Public(), t0))

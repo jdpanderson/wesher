@@ -102,9 +102,9 @@ func (s *Set) Records() Records {
 	return rs
 }
 
-// Valid reports whether id is currently a member: not revoked by a member, and
-// admitted by the root or by an identity that was a member at the time it
-// issued the admission. The root is always valid.
+// Valid reports whether id is currently a member: not revoked by itself or by
+// a member, and admitted by the root or by an identity that was a member at
+// the time it issued the admission. The root is always valid.
 func (s *Set) Valid(id PublicKey) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -129,7 +129,9 @@ func (s *Set) validAdmissions() iter.Seq[Admission] {
 
 // validAt evaluates membership as of unix time at: revocations issued later
 // are ignored, so an admission stays valid if its admitter was a member when
-// it signed, even if the admitter was revoked afterwards.
+// it signed, even if the admitter was revoked afterwards. A member may always
+// revoke itself: only the holder of that key can sign such a record, and it
+// takes nobody else out.
 func (s *Set) validAt(id PublicKey, at int64, visiting map[PublicKey]bool) bool {
 	if id == s.root {
 		return true
@@ -140,7 +142,7 @@ func (s *Set) validAt(id PublicKey, at int64, visiting map[PublicKey]bool) bool 
 	visiting[id] = true
 	defer delete(visiting, id)
 
-	if rev, ok := s.revocations[id]; ok && rev.IssuedAt <= at && s.validAt(rev.Revoker, rev.IssuedAt, visiting) {
+	if rev, ok := s.revocations[id]; ok && rev.IssuedAt <= at && (rev.Revoker == id || s.validAt(rev.Revoker, rev.IssuedAt, visiting)) {
 		return false
 	}
 	a, ok := s.admissions[id]
