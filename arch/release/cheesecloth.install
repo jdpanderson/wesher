@@ -1,7 +1,1 @@
-post_install() {
-  cat <<'MSG'
-cheesecloth is installed but not enabled. Initialise or enrol this node once
-by hand (see /usr/share/doc/cheesecloth/README.md), put its settings in
-/etc/cheesecloth/config.yaml, then: systemctl enable --now cheesecloth
-MSG
-}
+../cheesecloth.install

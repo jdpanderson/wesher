@@ -8,7 +8,8 @@ on Debian trixie, whose golang-go is older, use a toolchain from go.dev or the
 golang:1.27-trixie container image and pass `-d` to skip the build-dependency
 check. The resulting package installs on either, since the binary is static.
 CI builds the release packages this way (see .github/workflows/main.yaml) and
-stamps debian/changelog with the version from dist/version.sh.
+stamps debian/changelog with the version from dist/version.sh. The entry in
+the repository is a placeholder, so a package built here is version 0.0.0.
 
 The build needs network access to download the Go modules, or a vendor/
 directory made with `go mod vendor`. `DEB_BUILD_OPTIONS=nocheck` skips the

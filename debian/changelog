@@ -1,5 +1,6 @@
-cheesecloth (0.1.0) resolute; urgency=medium
+cheesecloth (0.0.0) unstable; urgency=medium
 
-  * Initial packaging.
+  * Placeholder entry for local builds. CI replaces this file with the
+    version from dist/version.sh before it builds the release packages.
 
  -- Jonathan Anderson <janderson@vectorface.com>  Thu, 11 Sep 2026 12:00:00 +0000

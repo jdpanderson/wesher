@@ -301,6 +301,12 @@ before starting; none are committed yet.
       `etchosts`, and `RootHost`, `SeedLen` and `ErrUntrustedRoot` in `trust`.
       Done 2026-09-12. The `hello` struct's `Version` field stays exported,
       since `encoding/json` only marshals exported fields.
+- [x] Packaging tidy. Done 2026-09-12: `arch/release/cheesecloth.install` was
+      a byte-identical copy of `arch/cheesecloth.install` and is now a symlink
+      to it, verified by building the release package in an Arch container:
+      makepkg reads it through the link and the package carries `.INSTALL`.
+      `debian/changelog` claimed version 0.1.0, which matched no tag; it is now
+      an honest 0.0.0 placeholder that says CI stamps the real version.
 - [ ] Fuzz tests (native `go test -fuzz`) for the parsers: enrolment frames
       and messages, the token codec, node metadata JSON, records JSON and the
       config file.
