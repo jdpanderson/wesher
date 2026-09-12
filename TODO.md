@@ -634,13 +634,25 @@ host:
   written for a privileged host. Compiling is not the problem there; what the
   code does is. Neither platform lets a process create its own tunnel, write
   `/etc/hosts` or keep state in `/var/lib`.
-- `GOOS=freebsd` and `GOOS=openbsd` do not build, for two reasons.
-  `internal/paths` has one file per operating system and no fallback, so
-  `stateDir`, `configFile`, `runDir` and `hostsFile` are undefined. And
-  wgctrl's FreeBSD kernel client is cgo (`import "C"` in
-  `internal/wgfreebsd/client_freebsd.go`), so with `CGO_ENABLED=0` the file is
-  ignored and `wgfreebsd.New` is undefined. Releases are built with cgo off so
-  that every target cross-compiles (phase 8), which FreeBSD would break.
+- `GOOS=freebsd` and `GOOS=openbsd` do not build, because `internal/paths` has
+  one file per operating system and no fallback, so `stateDir`, `configFile`,
+  `runDir` and `hostsFile` are undefined.
+- The in-process device would run on both. Verified with `CGO_ENABLED=0`:
+  `golang.zx2c4.com/wireguard/device`, `tun` and `ipc` all build for freebsd
+  and openbsd. wireguard-go has `tun_freebsd.go` and `tun_openbsd.go`, and its
+  `ipc` package is tagged `darwin || freebsd || openbsd`.
+- OpenBSD needs no cgo anywhere: wgctrl builds for it with cgo off. Its kernel
+  client's cgo file is `//go:build ignore`, a `cgo -godefs` input, with
+  generated definitions checked in for 386, amd64, arm and arm64. Both the
+  kernel and the userspace path are available in a cross-compiled release.
+- FreeBSD is blocked by a compile-time import rather than by a runtime choice.
+  wgctrl's `os_freebsd.go` calls `wgfreebsd.New` unconditionally, and that
+  client really is cgo (`import "C"` in `client_freebsd.go`), so with cgo off
+  the file is dropped, the symbol is undefined and the package fails to build.
+  `internal/wg` imports wgctrl in `wireguard.go` and `status.go`, so
+  `--userspace` cannot get around it: the binary would not link. Its kernel
+  definitions also exist only for 386 and amd64, so freebsd/arm64 has no
+  kernel client even with cgo, and userspace is the only path there.
 - `GOOS=netbsd` cannot run the in-process device at all: wireguard-go has
   `tun_` implementations for darwin, freebsd, openbsd, linux and windows, and
   its `ipc` package covers darwin, freebsd and openbsd. wgctrl has kernel
@@ -651,21 +663,37 @@ host:
 
 - [ ] `internal/paths` for the BSDs: `/var/db/cheesecloth`,
       `/usr/local/etc/cheesecloth/config.yaml`, `/var/run/cheesecloth`,
-      `/etc/hosts`. The tree then builds for freebsd and openbsd apart from
-      wgctrl, and `GOOS=freebsd go vet ./...` joins the cross-compile gate.
+      `/etc/hosts`. That is the whole of what stops openbsd building, so
+      `GOOS=openbsd go vet ./...` joins the cross-compile gate with it;
+      freebsd joins once the UAPI client below removes the wgctrl import.
+- [ ] A UAPI client of our own, behind the existing `wgClient` interface
+      (`Device`, `ConfigureDevice`). The in-process device already publishes
+      the socket wgctrl and `wg(8)` look for (`uapi_unix.go`), and the
+      protocol is a short text exchange: `get=1`, or `set=1` and key=value
+      lines, terminated by a blank line. Roughly 150 lines and its own tests.
+      It is what makes FreeBSD buildable with cgo off, since nothing then has
+      to import wgctrl where the device runs in this process, and it keeps
+      `cheesecloth status` working from a separate process, which configuring
+      the device in-process with `device.IpcSet` would not. It is also most of
+      what iOS and Android need, where the same client talks to the device
+      directly instead of over a socket. Which client a platform uses belongs
+      in the `platform` file next to the device and the linker.
 - [ ] FreeBSD and OpenBSD device and link. Both have kernel WireGuard
       (`wg(4)`) and a wgctrl client for it, so the shape is the Linux one:
       create the interface, fall back to the in-process device when the kernel
-      refuses. Widen `bsdLinker` past `//go:build darwin` and check the ioctl
-      struct layouts per operating system rather than assuming Darwin's. The
-      interface is named by the agent on the BSDs, not by the system as on
-      macOS, so `tunname` becomes a no-op there.
-- [ ] **DECISION** cgo on FreeBSD. The kernel client cannot be reached without
-      it, and it is linked in whether or not `--userspace` is given, so
-      FreeBSD binaries are either built natively with a C toolchain, or with a
-      wgctrl that does not need cgo, or FreeBSD ships without kernel support.
-      This is the only platform so far that cannot be cross-compiled from the
-      release job.
+      refuses. On FreeBSD that fallback is the only path until the cgo
+      question below is settled, and the only path on arm64 regardless. Widen
+      `bsdLinker` past `//go:build darwin` and check the ioctl struct layouts
+      per operating system rather than assuming Darwin's. The interface is
+      named by the agent on the BSDs, not by the system as on macOS, so
+      `tunname` becomes a no-op there.
+- [ ] **DECISION** kernel WireGuard on FreeBSD, which is the only thing cgo is
+      needed for once the UAPI client exists. Reaching it means either
+      building FreeBSD binaries natively with a C toolchain, and giving up the
+      cross-compiled release for that one target, or a wgctrl that does not
+      need cgo. Shipping FreeBSD with the in-process device only is a
+      supportable answer: it is what macOS and Windows already do, and what
+      freebsd/arm64 has to do in any case.
 - [ ] NetBSD is out of reach until wireguard-go grows a tun and uapi
       implementation for it. Record it as unsupported rather than pretending.
 - [ ] Verification. GitHub-hosted runners have no BSD, so the gate is
@@ -678,10 +706,10 @@ host:
       through the platform API rather than a linker, and has no hosts file, no
       service manager, no root and no `/var`. The device would also be
       configured in process (`device.IpcSet`) instead of through the UAPI
-      socket wgctrl talks to, which an app sandbox cannot open. Membership,
-      trust, enrolment and the agent loop are already portable; what changes
-      is the device and linker seam, the paths, and the operator interface,
-      which becomes a Go API the app calls rather than a command and a unix
-      socket. The call to make is whether cheesecloth ships a library target
+      socket wgctrl talks to, which an app sandbox cannot open, though the
+      UAPI client above is the same seam. Membership, trust, enrolment and the
+      agent loop are already portable; what changes is the device and linker
+      seam, the paths, and the operator interface, which becomes a Go API the
+      app calls rather than a command and a unix socket. The call to make is whether cheesecloth ships a library target
       (gomobile AAR, c-archive framework) at all, since that is a second
       product surface to keep working, not a port.
