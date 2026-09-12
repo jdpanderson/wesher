@@ -98,11 +98,7 @@ func (eh *EtcHosts) writeEntries(orig io.Reader, dest io.Writer, ipsToNames map[
 			_, _ = fmt.Fprintln(w, line) // unmanaged line, keep as is; w keeps the error for Flush
 			continue
 		}
-		tokens := strings.Fields(line)
-		if len(tokens) == 0 {
-			continue
-		}
-		ip := tokens[0]
+		ip := strings.Fields(line)[0] // the line ends with the banner, so it has fields
 		if names, ok := ipsToNames[ip]; ok && !written[ip] {
 			eh.writeEntryWithBanner(w, banner, ip, names)
 			written[ip] = true
