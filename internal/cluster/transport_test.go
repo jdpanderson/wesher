@@ -28,6 +28,7 @@ func newTestNode(t *testing.T, id *trust.Identity, set *trust.Set) *testNode {
 	t.Helper()
 	tr, err := newQUICTransport(netip.MustParseAddr("127.0.0.1"), 0, id, set, nil)
 	require.NoError(t, err)
+	tr.start()
 	t.Cleanup(func() { _ = tr.Shutdown() })
 	return &testNode{id: id, tr: tr, addr: tr.udp.LocalAddr().String()}
 }
@@ -183,6 +184,7 @@ func Test_quicTransport_advertiseAddr(t *testing.T) {
 
 	wild, err := newQUICTransport(netip.IPv4Unspecified(), 0, a.id, a.tr.set, nil)
 	require.NoError(t, err)
+	wild.start()
 	defer func() { _ = wild.Shutdown() }()
 	_, _, err = wild.FinalAdvertiseAddr("", 0)
 	assert.ErrorContains(t, err, "advertise address is required")
@@ -314,6 +316,7 @@ func Test_quicTransport_enrolmentCap(t *testing.T) {
 		_ = c.Close()
 	})
 	require.NoError(t, err)
+	tr.start()
 	defer func() { _ = tr.Shutdown() }()
 	addr := tr.udp.LocalAddr().String()
 
@@ -368,8 +371,9 @@ func Test_quicTransport_enrolmentStreamTimeout(t *testing.T) {
 	handled := make(chan struct{}, 1)
 	tr, err := newQUICTransport(netip.MustParseAddr("127.0.0.1"), 0, rootID, set, func(c enrol.Conn) { handled <- struct{}{}; _ = c.Close() })
 	require.NoError(t, err)
-	defer func() { _ = tr.Shutdown() }()
 	tr.enrolWait = 200 * time.Millisecond
+	tr.start()
+	defer func() { _ = tr.Shutdown() }()
 
 	conn := dialEnrol(t, tr.udp.LocalAddr().String(), testIdentity(t))
 	select {

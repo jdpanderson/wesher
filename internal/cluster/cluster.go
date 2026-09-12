@@ -29,7 +29,7 @@ type Config struct {
 	StateName     string       // the state file is named after it; the wireguard interface in practice
 	BindAddr      netip.Addr   // may be a wildcard
 	AdvertiseAddr netip.Addr   // what other nodes are told to reach us at
-	BindPort      int          // gossip and enrolment, UDP (QUIC)
+	BindPort      int          // gossip and enrolment, UDP (QUIC); 0 picks a free port
 	OverlayNet    netip.Prefix // overlay addresses are admission slots inside it
 	LocalNode     *overlay.Node
 	Boot          *Bootstrap // identity, trust and last known peers; owned by the cluster from here on
@@ -95,7 +95,6 @@ func New(cfg Config) (*Cluster, error) {
 		id:        id,
 		set:       set,
 		overlay:   cfg.OverlayNet,
-		port:      cfg.BindPort,
 		tokens:    enrol.NewTokenStore(nil),
 		events:    make(chan memberlist.NodeEvent, 16),
 		changed:   make(chan struct{}, 1),
@@ -109,16 +108,19 @@ func New(cfg Config) (*Cluster, error) {
 		return 1
 	}}
 
-	// enrolment shares the gossip listener under its own ALPN
-	c.enrolSrv = &enrol.Server{
-		Identity: id, Tokens: c.tokens, Root: cfg.Boot.Root, Admit: c.admit,
-		GossipAddr: net.JoinHostPort(cfg.AdvertiseAddr.String(), strconv.Itoa(cfg.BindPort)),
-	}
-	logger := slog.NewLogLogger(slog.Default().Handler(), slog.LevelDebug)
-	transport, err := newQUICTransport(cfg.BindAddr, cfg.BindPort, id, set, c.enrolSrv.Handle)
+	// enrolment shares the gossip listener under its own ALPN; the server is
+	// complete, with the bound port in its gossip address, before accepting starts
+	transport, err := newQUICTransport(cfg.BindAddr, cfg.BindPort, id, set, func(conn enrol.Conn) { c.enrolSrv.Handle(conn) })
 	if err != nil {
 		return nil, err
 	}
+	c.port = transport.port()
+	c.enrolSrv = &enrol.Server{
+		Identity: id, Tokens: c.tokens, Root: cfg.Boot.Root, Admit: c.admit,
+		GossipAddr: net.JoinHostPort(cfg.AdvertiseAddr.String(), strconv.Itoa(c.port)),
+	}
+	transport.start()
+	logger := slog.NewLogLogger(slog.Default().Handler(), slog.LevelDebug)
 
 	newConfig := cfg.Memberlist
 	if newConfig == nil {
@@ -129,8 +131,8 @@ func New(cfg Config) (*Cluster, error) {
 	mlConfig.Logger = logger
 	mlConfig.Transport = transport
 	mlConfig.AdvertiseAddr = cfg.AdvertiseAddr.String()
-	mlConfig.AdvertisePort = cfg.BindPort
-	mlConfig.BindPort = cfg.BindPort // the transport binds; memberlist assumes this port for a peer that advertised none
+	mlConfig.AdvertisePort = c.port
+	mlConfig.BindPort = c.port // the transport binds; memberlist assumes this port for a peer that advertised none
 	mlConfig.UDPBufferSize = maxDatagram
 	mlConfig.Delegate = c
 	mlConfig.Conflict = c

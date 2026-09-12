@@ -13,16 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// freePort returns a TCP port that was free at call time; memberlist needs
-// the same port for TCP and UDP, so this is best effort.
-func freePort(t *testing.T) int {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	defer func() { _ = l.Close() }()
-	return l.Addr().(*net.TCPAddr).Port
-}
-
 var testOverlay = netip.MustParsePrefix("10.0.0.0/8")
 
 // testNodeFor builds the local node for b at the overlay address its admission assigns.
@@ -38,7 +28,7 @@ func testNodeFor(t *testing.T, name string, b *Bootstrap) *overlay.Node {
 	return node
 }
 
-// loopback is where every test node binds, each on its own port.
+// loopback is where every test node binds, each on a port of its own (BindPort 0).
 var loopback = netip.MustParseAddr("127.0.0.1")
 
 // fastMemberlist is the local-network memberlist profile, for quick failure detection in tests.
@@ -51,7 +41,7 @@ func rootCluster(t *testing.T, dir, name string, opts ...func(*Config)) *Cluster
 	require.NoError(t, err)
 	b.InitRoot(name)
 	cfg := Config{
-		StateDir: dir, StateName: name, BindAddr: loopback, AdvertiseAddr: loopback, BindPort: freePort(t), OverlayNet: testOverlay,
+		StateDir: dir, StateName: name, BindAddr: loopback, AdvertiseAddr: loopback, OverlayNet: testOverlay,
 		LocalNode: testNodeFor(t, name, b), Boot: b,
 	}
 	for _, opt := range opts {
@@ -77,7 +67,7 @@ func enrolCluster(t *testing.T, dir string, member *Cluster, name string, opts .
 	require.Equal(t, member.Identity(), memberID)
 	b.Enrol(w.Root, w.Records)
 	cfg := Config{
-		StateDir: dir, StateName: name, BindAddr: loopback, AdvertiseAddr: loopback, BindPort: freePort(t), OverlayNet: testOverlay,
+		StateDir: dir, StateName: name, BindAddr: loopback, AdvertiseAddr: loopback, OverlayNet: testOverlay,
 		LocalNode: testNodeFor(t, name, b), Boot: b,
 	}
 	for _, opt := range opts {

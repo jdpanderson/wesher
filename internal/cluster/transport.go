@@ -93,8 +93,8 @@ type dialCall struct {
 
 var _ memberlist.NodeAwareTransport = (*quicTransport)(nil)
 
-// newQUICTransport binds bind:port for QUIC and starts accepting member
-// connections; enrolment streams go to handler.
+// newQUICTransport binds bind:port for QUIC; port 0 picks a free one, see
+// port. Enrolment streams go to handler once start is called.
 func newQUICTransport(bind netip.Addr, port int, id *trust.Identity, set *trust.Set, handler func(enrol.Conn)) (*quicTransport, error) {
 	cert, err := identityCertificate(id)
 	if err != nil {
@@ -168,9 +168,16 @@ func newQUICTransport(bind netip.Addr, port int, id *trust.Identity, set *trust.
 		_ = udp.Close()
 		return nil, fmt.Errorf("listening for gossip: %w", err)
 	}
+	return t, nil
+}
+
+// port is the UDP port the transport is bound to.
+func (t *quicTransport) port() int { return t.udp.LocalAddr().(*net.UDPAddr).Port }
+
+// start begins accepting member and enrolment connections.
+func (t *quicTransport) start() {
 	t.wg.Add(1)
 	go t.accept()
-	return t, nil
 }
 
 // enrolTLSConfig accepts any identity certificate: enrolment authenticates by
@@ -521,7 +528,7 @@ func (t *quicTransport) FinalAdvertiseAddr(ip string, port int) (net.IP, int, er
 		return nil, 0, fmt.Errorf("invalid advertise address %q", ip)
 	}
 	if port == 0 {
-		port = t.udp.LocalAddr().(*net.UDPAddr).Port
+		port = t.port()
 	}
 	return parsed, port, nil
 }
