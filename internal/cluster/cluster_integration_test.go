@@ -134,12 +134,14 @@ func Test_Cluster_persistsOverlayNet(t *testing.T) {
 
 // A member listening on its own port is remembered with it, so a restart
 // reaches it there rather than on the port this node happens to use.
+// The local profile is for the same reason as in the test above: a node that
+// left has to outlive its own dead record when the refute goes astray.
 func Test_Cluster_Join_rememberedPeers_ownPort(t *testing.T) {
 	dir := useTempStatePaths(t)
-	a := rootCluster(t, dir, "a") // BindPort 0: a and b end up on different ports
+	a := rootCluster(t, dir, "a", fastMemberlist) // BindPort 0: a and b end up on different ports
 	defer a.Leave()
 	chA := a.Members()
-	b := enrolCluster(t, dir, a, "b")
+	b := enrolCluster(t, dir, a, "b", fastMemberlist)
 	require.NotEqual(t, a.port, b.port, "the test needs two ports")
 	waitMembers(t, b.Members(), 1)
 	waitMembers(t, chA, 1)
@@ -153,7 +155,8 @@ func Test_Cluster_Join_rememberedPeers_ownPort(t *testing.T) {
 
 	// b restarts from its state alone, on a port of its own again
 	b, err = New(Config{StateDir: dir, StateName: "b", BindAddr: loopback, AdvertiseAddr: loopback,
-		OverlayNet: testOverlay, LocalNode: testNodeFor(t, "b", boot), Boot: boot})
+		OverlayNet: testOverlay, LocalNode: testNodeFor(t, "b", boot), Boot: boot,
+		Memberlist: memberlist.DefaultLocalConfig})
 	require.NoError(t, err)
 	defer b.Leave()
 	drain(b.Members())
