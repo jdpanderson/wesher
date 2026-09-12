@@ -351,6 +351,16 @@ before starting; none are committed yet.
       treating the flag as an override that logs a renumbering would remove
       the failure, and pairs with the invitation item above: the joiner could
       learn the network at enrolment and never be told it again.
+- [ ] **DECISION** a forced leave on the root tells the operator to do
+      something that cannot be done. `leave --force` prints "the cluster still
+      trusts this node: run 'cheesecloth revoke <id>' on a member", and
+      `docs/operations.md` repeats it, but revoking the root fails with "the
+      root cannot be revoked": verified 2026-09-12 on a two-node cluster. The
+      cluster itself is fine without its root, also verified: the remaining
+      member kept running, admitted a third node and meshed with it. What is
+      left is a trusted identity that nothing can retire, and its overlay slot.
+      The message and the documentation need to say what the operator should
+      actually do, which depends on whether the root stays unrevocable.
 - [ ] A node that runs with no peers erases the addresses it needs to rejoin.
       The state file's peer list is written from the live membership, so a node
       left alone persists an empty list: verified 2026-09-12, a two-node
