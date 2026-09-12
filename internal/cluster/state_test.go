@@ -43,6 +43,20 @@ func Test_state_save_load(t *testing.T) {
 	assert.Equal(t, s, got)
 }
 
+func Test_Forget(t *testing.T) {
+	dir := useTempStatePaths(t)
+	_, err := Load(dir, "test", true)
+	require.NoError(t, err)
+	require.FileExists(t, statePath(dir, "test"))
+	require.NoError(t, Forget(dir, "test"))
+	assert.NoFileExists(t, statePath(dir, "test"))
+	assert.NoError(t, Forget(dir, "test"), "nothing to forget is not an error")
+
+	require.NoError(t, os.Mkdir(statePath(dir, "dir"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(statePath(dir, "dir"), "f"), nil, 0o600))
+	assert.ErrorContains(t, Forget(dir, "dir"), "removing state")
+}
+
 func Test_state_save_unwritableDir(t *testing.T) {
 	dir := useTempStatePaths(t)
 	blocker := filepath.Join(dir, "blocker")

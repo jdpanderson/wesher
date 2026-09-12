@@ -213,6 +213,36 @@ func Test_Cluster_revocation(t *testing.T) {
 	waitMembers(t, chB, 0)
 }
 
+// A leaving node revokes itself and hands the record to the members directly,
+// so the cluster stops trusting it even though it stops straight afterwards.
+func Test_Cluster_RevokeSelf(t *testing.T) {
+	dir := useTempStatePaths(t)
+	a := rootCluster(t, dir, "a", fastMemberlist)
+	defer a.Leave()
+	chA := a.Members()
+	b := enrolCluster(t, dir, a, "b", fastMemberlist)
+	defer b.Leave()
+	waitMembers(t, chA, 1)
+	waitMembers(t, b.Members(), 1)
+
+	told, err := b.RevokeSelf()
+	require.NoError(t, err)
+	assert.Equal(t, 1, told)
+	assert.False(t, b.Trust().Valid(b.Identity()))
+	waitMembers(t, chA, 0)
+	assert.False(t, a.Trust().Valid(b.Identity()), "a was handed the revocation")
+}
+
+// The root anchors every admission, so it cannot revoke itself.
+func Test_Cluster_RevokeSelf_root(t *testing.T) {
+	dir := useTempStatePaths(t)
+	a := rootCluster(t, dir, "a")
+	defer a.Leave()
+	_, err := a.RevokeSelf()
+	assert.ErrorContains(t, err, "root cannot be revoked")
+	assert.True(t, a.Trust().Valid(a.Identity()))
+}
+
 func Test_Cluster_recordsSpreadTransitively(t *testing.T) {
 	dir := useTempStatePaths(t)
 	a := rootCluster(t, dir, "a", fastMemberlist)

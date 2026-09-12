@@ -102,6 +102,16 @@ func LocalIdentity(dir, name string) (trust.PublicKey, bool) {
 	return id.Public(), true
 }
 
+// Forget deletes the state kept under dir for name, so the node keeps nothing
+// of the cluster it has left. A missing file is not an error.
+func Forget(dir, name string) error {
+	path := statePath(dir, name)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("removing state %s: %w", path, err)
+	}
+	return nil
+}
+
 // Bootstrap is the persisted knowledge a node starts from. Load fills it; the
 // agent then either makes the node a root, enrols it, or finds it already
 // enrolled, and hands it to New, which keeps it up to date and saves it.

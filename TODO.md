@@ -474,7 +474,7 @@ separate items, still to be designed.
       no-op: the record was accepted and had no effect. Only the holder of
       that key can sign it and it removes nobody else, so it is honoured
       unconditionally. The root still cannot be revoked.
-- [ ] `cluster.RevokeSelf`: revoke this node's identity and push the record to
+- [x] `cluster.RevokeSelf`: done 2026-09-12. Revoke this node's identity and push the record to
       each member over the stream transport, rather than only queueing it for
       gossip, because the node is about to stop. `cluster.Forget` deletes the
       state file.

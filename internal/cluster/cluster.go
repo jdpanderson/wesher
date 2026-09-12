@@ -177,6 +177,37 @@ func (c *Cluster) Revoke(id trust.PublicKey) error {
 	return nil
 }
 
+// RevokeSelf revokes this node's own identity, so the cluster stops trusting
+// it when it leaves for good, and hands the record to each member over a
+// stream before returning: the node is about to stop, so the retransmit queue
+// alone would likely lose it. It returns how many members took the record; a
+// member that already has it refuses the connection, which is not an error.
+func (c *Cluster) RevokeSelf() (int, error) {
+	rev := trust.Revoke(c.id, c.id.Public(), time.Now())
+	if _, err := c.set.AddRevocation(rev); err != nil {
+		return 0, err
+	}
+	msg, err := json.Marshal(recordMsg{Revocation: &rev})
+	if err != nil {
+		return 0, err
+	}
+	ml := c.ml.Load()
+	told := 0
+	for _, m := range ml.Members() {
+		if m.Name == c.local.Name {
+			continue
+		}
+		if err := ml.SendReliable(m, msg); err != nil {
+			slog.Debug("could not hand the revocation to a member", "member", m.Name, "err", err)
+			continue
+		}
+		told++
+	}
+	c.broadcast(recordMsg{Revocation: &rev}) // for members that were not reachable
+	c.persist()                              // a leave that fails from here on must not lose the revocation
+	return told, nil
+}
+
 // admit is called by the enrolment server once a joiner has proven the token:
 // it gives the joiner the lowest free overlay slot and signs its admission.
 // Names identify nodes everywhere else, so one already held by another member
