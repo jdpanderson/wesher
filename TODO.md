@@ -483,8 +483,9 @@ separate items, still to be designed.
       the handler revokes this node, stops the agent as a signal would, waits
       for the usual teardown and for the state file to be deleted, and only
       then answers.
-- [ ] `wg.Remove`: delete an interface a stopped agent left behind. Only a
-      kernel interface outlives its agent; elsewhere it is a no-op.
+- [x] `wg.Remove`: delete an interface a stopped agent left behind. Only a
+      kernel interface outlives its agent; elsewhere it is a no-op. Done
+      2026-09-12.
 - [ ] `cheesecloth leave`: the agent revokes this node, tears the interface
       down and forgets the cluster. `--force` leaves without revoking, for the
       root (which cannot be revoked) and for a node whose agent is not

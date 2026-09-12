@@ -113,6 +113,17 @@ func newState(cfg Config, client wgClient, dev device, link linker) (*State, err
 	}, nil
 }
 
+// Remove deletes an interface that an agent which is no longer running left
+// behind; a missing interface is not an error. Only a kernel interface
+// outlives its agent: everywhere else the device runs inside the agent and
+// goes with it.
+func Remove(iface string) error {
+	if err := remove(iface); err != nil {
+		return fmt.Errorf("removing interface %s: %w", iface, err)
+	}
+	return nil
+}
+
 // DownInterface deletes the associated network interface; a missing interface is not an error.
 func (s *State) DownInterface() error {
 	if err := s.dev.Delete(s.iface); err != nil {

@@ -203,6 +203,17 @@ func Test_State_userspace(t *testing.T) {
 	require.NoError(t, s.DownInterface())
 }
 
+// An interface a stopped agent left behind is removed by name alone.
+func Test_Remove_kernelInterface(t *testing.T) {
+	enterTestNetns(t)
+	if _, err := (kernelDevice{}).Create("wgtest4", 1420); err != nil {
+		t.Skipf("no kernel wireguard here: %v", err)
+	}
+	require.NoError(t, Remove("wgtest4"))
+	_, err := netlink.LinkByName("wgtest4")
+	assert.Error(t, err, "the interface is gone")
+}
+
 func Test_platform_kernelFirst(t *testing.T) {
 	enterTestNetns(t)
 	cfg := testConfig()

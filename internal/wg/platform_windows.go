@@ -11,6 +11,10 @@ func platform(Config) (device, linker, error) {
 	return &userspaceDevice{}, winLinker{}, nil
 }
 
+// remove has nothing to do: the Wintun adapter belongs to the agent process
+// and goes with it.
+func remove(string) error { return nil }
+
 // lookup finds a running interface by the agent's name; the adapter carries it.
 func lookup(iface string) (string, linker, error) {
 	if _, err := net.InterfaceByName(iface); err != nil {

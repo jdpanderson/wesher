@@ -14,6 +14,10 @@ func platform(Config) (device, linker, error) {
 	return &userspaceDevice{}, bsdLinker{}, nil
 }
 
+// remove has nothing to do: the utun belongs to the agent process and goes
+// with it.
+func remove(string) error { return nil }
+
 // lookup finds the utun behind the agent's name from the record the agent
 // published when it created the interface.
 func lookup(iface string) (string, linker, error) {

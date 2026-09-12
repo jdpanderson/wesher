@@ -32,6 +32,10 @@ func platform(cfg Config) (device, linker, error) {
 	return &userspaceDevice{}, netlinkLinker{}, nil
 }
 
+// remove deletes an interface left behind by an agent that is no longer
+// running. Only a kernel interface outlives its agent.
+func remove(iface string) error { return kernelDevice{}.Delete(iface) }
+
 // lookup finds a running interface by the agent's name; the kernel keeps the
 // name, so the operating system's is the same.
 func lookup(iface string) (string, linker, error) {
