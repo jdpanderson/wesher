@@ -260,3 +260,34 @@ func Test_Set_HostConflict(t *testing.T) {
 	_, clash = set.HostConflict(newID(t).Public())
 	assert.False(t, clash)
 }
+
+// Two identities that admit each other, with no path to the root, are both
+// invalid, and deciding so terminates.
+func Test_Set_validity_cycle(t *testing.T) {
+	_, _, _, _, set := cluster(t)
+	x, y := newID(t), newID(t)
+	assert.Equal(t, 2, set.Merge(Records{Admissions: []Admission{
+		Admit(x, y.Public(), y.DHPublic(), "y", 7, t0),
+		Admit(y, x.Public(), x.DHPublic(), "x", 8, t0),
+	}}), "the records are well signed and kept")
+	assert.False(t, set.Valid(x.Public()))
+	assert.False(t, set.Valid(y.Public()))
+}
+
+func Test_Set_revocationsMergeAndRoundTrip(t *testing.T) {
+	root, a, b, _, set := cluster(t)
+	revB := Revoke(root, b.Public(), t0.Add(time.Hour))
+	assert.Equal(t, 1, set.Merge(Records{Revocations: []Revocation{revB}}))
+	assert.Equal(t, 0, set.Merge(Records{Revocations: []Revocation{revB}}), "idempotent")
+	revA := Revoke(root, a.Public(), t0.Add(2*time.Hour))
+	assert.Equal(t, 1, set.Merge(Records{Revocations: []Revocation{revA}}))
+
+	rs := set.Records()
+	require.Len(t, rs.Revocations, 2)
+	assert.Less(t, bytes.Compare(rs.Revocations[0].Identity[:], rs.Revocations[1].Identity[:]), 0, "sorted by identity")
+	assert.ElementsMatch(t, []Revocation{revA, revB}, rs.Revocations)
+	fresh := NewSet(root.Public())
+	fresh.Merge(rs)
+	assert.False(t, fresh.Valid(a.Public()))
+	assert.False(t, fresh.Valid(b.Public()))
+}
