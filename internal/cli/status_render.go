@@ -68,9 +68,9 @@ func renderStatus(w io.Writer, r *wg.Report, local trust.PublicKey, names map[st
 		if endpoint == "" {
 			endpoint = "-"
 		}
-		identity := "-"
+		peerIdentity := "-"
 		if info.Identity != nil {
-			identity = info.Identity.Short()
+			peerIdentity = info.Identity.Short()
 		}
 		// the cluster state says which allowed IP is the peer's own address; the rest are routes
 		overlay := "-"
@@ -88,7 +88,7 @@ func renderStatus(w io.Writer, r *wg.Report, local trust.PublicKey, names map[st
 			routes = strings.Join(strs, ",")
 		}
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			peerName(p, names), identity, overlay, endpoint, handshakeAge(p.LastHandshake, now),
+			peerName(p, names), peerIdentity, overlay, endpoint, handshakeAge(p.LastHandshake, now),
 			humanBytes(p.ReceiveBytes), humanBytes(p.TransmitBytes), routes)
 	}
 	return tw.Flush()
