@@ -25,7 +25,7 @@ func Test_StatusCmd_Run(t *testing.T) {
 	}
 
 	// no cluster state for this interface: peers are shown by key
-	cmd := &StatusCmd{Interface: "wgoverlay", status: status, stateDir: t.TempDir()}
+	cmd := &StatusCmd{interfaceFlag: interfaceFlag{Interface: "wgoverlay"}, status: status, stateDir: t.TempDir()}
 	stdout, _, err := captureOutput(t, cmd.Run)
 	require.NoError(t, err)
 	assert.Contains(t, stdout, "interface: wgoverlay\n")
@@ -45,7 +45,7 @@ func Test_StatusCmd_Run(t *testing.T) {
 	assert.Equal(t, "wgoverlay", got.Interface)
 	assert.Len(t, got.Peers, 2)
 
-	_, _, err = captureOutput(t, (&StatusCmd{Interface: "absent0", status: status, stateDir: t.TempDir()}).Run)
+	_, _, err = captureOutput(t, (&StatusCmd{interfaceFlag: interfaceFlag{Interface: "absent0"}, status: status, stateDir: t.TempDir()}).Run)
 	assert.ErrorContains(t, err, "no such device")
 }
 
@@ -69,7 +69,7 @@ func Test_StatusCmd_Run_namesPeersFromState(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(path, content, 0o600))
 
-	cmd := &StatusCmd{Interface: "wgoverlay", status: func(string) (*wg.Report, error) { return report, nil }, stateDir: dir}
+	cmd := &StatusCmd{interfaceFlag: interfaceFlag{Interface: "wgoverlay"}, status: func(string) (*wg.Report, error) { return report, nil }, stateDir: dir}
 	stdout, _, err := captureOutput(t, cmd.Run)
 	require.NoError(t, err)
 	assert.Contains(t, stdout, "identity:  "+boot.Identity.Public().String()+"\n")

@@ -13,8 +13,8 @@ import (
 // StatusCmd shows the live wireguard state of a cheesecloth interface, naming peers
 // from the persisted cluster state. Needs the same privileges as the agent.
 type StatusCmd struct {
-	Interface string `help:"wireguard interface to report on" default:"${default_interface}"`
-	JSON      bool   `help:"print the report as JSON"`
+	interfaceFlag
+	JSON bool `help:"print the report as JSON"`
 
 	status   func(iface string) (*wg.Report, error) // reports on the interface; nil means wg.Status
 	stateDir string                                 // where the agent keeps its state; empty means cluster.DefaultDir

@@ -11,7 +11,7 @@ import (
 )
 
 func Test_controlFlags_socket(t *testing.T) {
-	f := controlFlags{Interface: "wg1"}
+	f := controlFlags{interfaceFlag: interfaceFlag{Interface: "wg1"}}
 	assert.Equal(t, "/run/cheesecloth/wg1.sock", f.socket())
 	f.ControlSocket = "/tmp/x.sock"
 	assert.Equal(t, "/tmp/x.sock", f.socket())

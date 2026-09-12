@@ -10,9 +10,14 @@ import (
 	"github.com/jdpanderson/cheesecloth/internal/trust"
 )
 
+// interfaceFlag names the agent a command addresses, by its wireguard interface.
+type interfaceFlag struct {
+	Interface string `help:"wireguard interface of the agent" default:"${default_interface}"`
+}
+
 // controlFlags are shared by the commands that talk to a running agent.
 type controlFlags struct {
-	Interface     string `help:"wireguard interface of the agent to talk to" default:"${default_interface}"`
+	interfaceFlag
 	ControlSocket string `help:"agent control socket (default /run/cheesecloth/<interface>.sock)"`
 }
 
