@@ -229,3 +229,19 @@ func TestEtcHosts_WriteEntries_renameFallback(t *testing.T) {
 		assert.Equal(t, "127.0.0.1 localhost\n", string(got), "copy fallback must truncate")
 	}
 }
+
+// errWriter fails every write.
+type errWriter struct{}
+
+func (errWriter) Write([]byte) (int, error) { return 0, errors.New("disk full") }
+
+func TestEtcHosts_writeEntries_ioErrors(t *testing.T) {
+	eh := &EtcHosts{}
+	err := eh.writeEntries(strings.NewReader(""), errWriter{}, map[string][]string{"10.0.0.1": {"a"}})
+	assert.ErrorContains(t, err, "error writing hosts file")
+
+	// the scanner's line limit is the one limit on the hosts file
+	long := strings.Repeat("x", bufio.MaxScanTokenSize+1) + "\n"
+	err = eh.writeEntries(strings.NewReader(long), &bytes.Buffer{}, map[string][]string{})
+	assert.ErrorContains(t, err, "error reading hosts file")
+}
