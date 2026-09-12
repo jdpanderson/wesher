@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 
 	"github.com/jdpanderson/cheesecloth/internal/trust"
 )
@@ -20,6 +21,9 @@ type Server struct {
 	Admit func(joiner trust.PublicKey, dh trust.DHKey, name string) (trust.Admission, trust.Records, error)
 	// GossipAddr is this node's memberlist ip:port, handed to the joiner.
 	GossipAddr string
+	// OverlayNet is the network the cluster allocates overlay addresses in,
+	// so a joiner needs no setting of its own.
+	OverlayNet netip.Prefix
 }
 
 // Conn is a connection whose peer identity the transport has verified (a QUIC
@@ -100,7 +104,8 @@ func (s *Server) handle(conn Conn) error {
 	if err != nil {
 		return err
 	}
-	if err = writeFrame(conn, Welcome{Root: s.Root, Records: records, Admission: adm, GossipAddr: s.GossipAddr}); err != nil {
+	welcome := Welcome{Root: s.Root, Records: records, Admission: adm, GossipAddr: s.GossipAddr, OverlayNet: s.OverlayNet}
+	if err = writeFrame(conn, welcome); err != nil {
 		return err
 	}
 	// the ack says the welcome arrived, so the connection can be closed

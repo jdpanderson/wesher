@@ -3,6 +3,7 @@ package enrol
 import (
 	"bytes"
 	"net"
+	"net/netip"
 	"testing"
 	"time"
 
@@ -54,6 +55,7 @@ func member(t *testing.T) (*Server, *trust.Set) {
 	require.NoError(t, err)
 	srv := &Server{
 		Identity: id, Tokens: NewTokenStore(nil), Root: id.Public(), GossipAddr: "192.0.2.1:7946",
+		OverlayNet: netip.MustParsePrefix("10.42.0.0/16"),
 		Admit: func(joiner trust.PublicKey, dh trust.DHKey, name string) (trust.Admission, trust.Records, error) {
 			a := trust.Admit(id, joiner, dh, name, 2, time.Now())
 			if _, aerr := set.AddAdmission(a); aerr != nil {
@@ -76,6 +78,7 @@ func Test_Join_happyPath(t *testing.T) {
 	assert.Equal(t, srv.Identity.Public(), member)
 	assert.Equal(t, srv.Root, w.Root)
 	assert.Equal(t, "192.0.2.1:7946", w.GossipAddr)
+	assert.Equal(t, netip.MustParsePrefix("10.42.0.0/16"), w.OverlayNet, "the joiner needs no overlay net of its own")
 	assert.Equal(t, joiner.Public(), w.Admission.Identity)
 	assert.Equal(t, "joiner", w.Admission.Name)
 	assert.True(t, set.Valid(joiner.Public()), "member's set now includes the joiner")

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"time"
 
 	"github.com/jdpanderson/cheesecloth/internal/trust"
@@ -57,11 +58,14 @@ type proof struct {
 type ack struct{}
 
 // Welcome is what an admitted joiner receives; the transport's TLS protects it.
+// The member asserts the overlay network, as it asserts the slot it assigned
+// and the records; a member too old to send one leaves it zero.
 type Welcome struct {
 	Root       trust.PublicKey `json:"root"`
 	Records    trust.Records   `json:"records"`
-	Admission  trust.Admission `json:"admission"`  // the joiner's own
-	GossipAddr string          `json:"gossipAddr"` // member's ip:port for memberlist
+	Admission  trust.Admission `json:"admission"`           // the joiner's own
+	GossipAddr string          `json:"gossipAddr"`          // member's ip:port for memberlist
+	OverlayNet netip.Prefix    `json:"overlayNet,omitzero"` // the network the cluster allocates addresses in
 }
 
 // deriveKey derives the exchange's MAC key, mixing the DH secret and the token

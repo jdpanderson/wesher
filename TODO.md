@@ -537,3 +537,32 @@ separate items, still to be designed.
 - [x] Docs: decommissioning a node in `docs/operations.md`, the command list
       in `docs/membership.md`, the operator interface in `docs/design.md`,
       README. Done 2026-09-12.
+
+## Phase 11: the overlay network comes from the cluster
+
+Proposed 2026-09-12. `--overlay-net` is a cluster-wide value that only exists
+on each node's command line, and nothing checks it against the cluster. A
+joiner given a different one enrols, joins the gossip ring and is then ignored
+by every peer, and ignores them, because each side derives a different address
+from the same admission slot: two nodes, no peers, a warning in each log. Only
+a prefix too small for the assigned slot is caught, at startup. The cluster
+knows the answer, so it should say it.
+
+Resolution order for the value the agent runs with: the command line, then the
+config file (kong merges these two), then the welcome for a node being
+enrolled, then the state file, then `10.0.0.0/8` for a brand new cluster. An
+explicit value that differs from what the cluster uses wins and is stored, so
+renumbering a whole cluster still works, but it is logged as the plain warning
+that it is: this node will see no peers until every other node is given the
+same value.
+
+- [x] `enrol`: the welcome carries the cluster's overlay network, asserted by
+      the admitting member alongside the slot it assigns and the record set.
+      An old member sends none, which reads as "not known". Done 2026-09-12.
+- [ ] `cluster`: the overlay network is persisted with the rest of the
+      bootstrap, so a restart needs no flag; the cluster stores the value it
+      was created with.
+- [ ] `cli`: resolve the overlay network in that order, re-check it against
+      `--allowed-ips` once resolved, and warn when an explicit value differs
+      from the cluster's. Docs: `--overlay-net` is no longer needed to enrol
+      or restart a node, in configuration, README and membership.
