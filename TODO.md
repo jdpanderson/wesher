@@ -335,12 +335,14 @@ before starting; none are committed yet.
       and fixed on the way: stale-route pruning removed the kernel's route to
       our own IPv6 /128 address.
 - [ ] **DECISION** the invitation output prints `cheesecloth --join <host>
-      --join-key TOKEN`, which is the wrong command on a cluster that does not
-      use the default interface and overlay network: a joiner who pastes it
-      enrols onto `wgoverlay` and `10.0.0.0/8`. The agent knows its own
-      settings, so it could print them, or the token could carry the cluster's
-      overlay network and the joiner adopt it. The README works around this by
-      telling the operator to add the flags.
+      --join-key TOKEN`, which enrols the joiner onto the default overlay
+      network. On a cluster that set `--overlay-net`, the joiner computes
+      every address from the wrong network and the mesh does not work. The
+      interface name is not a problem, being local to each node. Options: the
+      agent prints its own `--overlay-net` in the invitation, or the welcome
+      carries the cluster's overlay network and the joiner adopts it, which
+      would also remove a setting an operator can get wrong. The README works
+      around it by telling the operator to add the flag.
 - [ ] Rate limiting sensitive incoming requests; We don't want to allow brute-forcing joins or denial of service. We should have a mechanism of shutting down incoming requests if the rate is too high. This feels like something that must already exist as a package (or combination of packages). We could also just support dectection or logging such that an external piece of software would watch the logs and block hosts. This needs thought and design before we implement
 
 ## Phase 7: identity-based membership

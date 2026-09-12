@@ -32,7 +32,7 @@ for Linux; the other platforms are described in [operations](docs/operations.md#
    ```
    # ./cheesecloth --init
 
-   # most clusters set at least these two: a name for the interface, and an
+   # most setups set at least these two: a name for the interface, and an
    # overlay network smaller than the 10.0.0.0/8 default
    # ./cheesecloth --init --interface wgmesh --overlay-net 10.42.0.0/24
    ```
@@ -51,8 +51,8 @@ for Linux; the other platforms are described in [operations](docs/operations.md#
    ```
    # ./cheesecloth --join first.example.net --join-key 7xk3...
 
-   # the interface and overlay network are per-node settings, so a node that
-   # uses them has to be given them every time, enrolment included
+   # --overlay-net has to match the cluster; --interface is this node's own
+   # choice and need not match anything
    # ./cheesecloth --join first.example.net --join-key 7xk3... --interface wgmesh --overlay-net 10.42.0.0/24
    ```
 
@@ -62,9 +62,10 @@ from what it saved. `cheesecloth status` lists the peers. `cheesecloth revoke NA
 `cheesecloth leave` removes the node it runs on. Running
 cheesecloth as a system service is described in [operations](docs/operations.md).
 
-A node does still need the settings it runs with. `--overlay-net` must be the same on every node, and `--interface`
-is needed by `invite`, `revoke` and `status` as well as by the agent. Rather than repeat them, most setups put them
-in `/etc/cheesecloth/config.yaml` once, after which every command runs with no arguments:
+A node does still need the settings it runs with, on every start. `--overlay-net` and the two ports must be the same
+across the cluster. `--interface` is local: each node names its interface what it likes, but that name has to be
+given to `invite`, `revoke` and `status` on that node, since they find the agent by it. Rather than repeat them, most
+setups put them in `/etc/cheesecloth/config.yaml` once, after which every command runs with no arguments:
 
 ```yaml
 interface: wgmesh
