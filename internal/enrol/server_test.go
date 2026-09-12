@@ -51,22 +51,86 @@ func Test_handle_badProof(t *testing.T) {
 
 func Test_Join_errors(t *testing.T) {
 	id, other := newID(t), newID(t)
-	c1, c2 := net.Pipe()
-	defer func() { _ = c1.Close(); _ = c2.Close() }()
-	_, _, err := Join(identified{c1, other.Public()}, "not base64!", id, "j")
-	assert.ErrorContains(t, err, "join key")
-
 	tok, _ := NewTokenStore(nil).Mint(time.Minute, 1)
 
-	// a member that answers with a malformed challenge
-	go func() {
-		var h hello
-		_ = readFrame(c2, &h)
-		_ = writeFrame(c2, challenge{Nonce: []byte{1}})
-		_ = c2.Close()
-	}()
-	_, _, err = Join(identified{c1, other.Public()}, tok, id, "j")
+	// answers runs a member that replies to the hello with c, and returns the joiner's end
+	answers := func(c challenge) Conn {
+		c1, c2 := net.Pipe()
+		t.Cleanup(func() { _ = c1.Close() })
+		go func() {
+			var h hello
+			_ = readFrame(c2, &h)
+			_ = writeFrame(c2, c)
+			_ = c2.Close()
+		}()
+		return identified{c1, other.Public()}
+	}
+
+	_, _, err := Join(answers(challenge{}), "not base64!", id, "j")
+	assert.ErrorContains(t, err, "join key")
+
+	_, _, err = Join(answers(challenge{Nonce: []byte{1}}), tok, id, "j")
 	assert.ErrorContains(t, err, "malformed challenge")
+
+	// a member whose DH key is a low-order point cannot be agreed a secret with
+	_, _, err = Join(answers(challenge{Identity: other.Public(), Nonce: make([]byte, nonceLen)}), tok, id, "j")
+	assert.ErrorContains(t, err, "low order")
+}
+
+// A joiner whose DH key is a low-order point is turned away before any challenge.
+func Test_handle_lowOrderDH(t *testing.T) {
+	srv, _ := member(t)
+	tok, err := srv.Tokens.Mint(time.Minute, 1)
+	require.NoError(t, err)
+	joiner := newID(t)
+	conn := pipeTo(t, srv, joiner.Public())
+	setDeadline(conn)
+	tid := idOf(mustKey(t, tok))
+	require.NoError(t, writeFrame(conn, hello{Version: Version, TokenID: tid[:], Identity: joiner.Public(), Nonce: make([]byte, nonceLen), Name: "j"}))
+	var c challenge
+	assert.Error(t, readFrame(conn, &c), "no challenge")
+	assert.Equal(t, 1, srv.Tokens.pending(), "the token is untouched")
+}
+
+// Two joiners may both be challenged on a single-use token; only the first to
+// prove it is admitted.
+func Test_handle_singleUseTokenTwoJoiners(t *testing.T) {
+	srv, _ := member(t)
+	tok, err := srv.Tokens.Mint(time.Minute, 1)
+	require.NoError(t, err)
+	key := mustKey(t, tok)
+
+	type joiner struct {
+		conn Conn
+		id   *trust.Identity
+		nJ   []byte
+		c    challenge
+	}
+	start := func(name string) *joiner {
+		j := &joiner{id: newID(t)}
+		j.conn = pipeTo(t, srv, j.id.Public())
+		setDeadline(j.conn)
+		j.nJ, err = randomNonce()
+		require.NoError(t, err)
+		tid := idOf(key)
+		require.NoError(t, writeFrame(j.conn, hello{Version: Version, TokenID: tid[:], Identity: j.id.Public(), DH: j.id.DHPublic(), Nonce: j.nJ, Name: name}))
+		require.NoError(t, readFrame(j.conn, &j.c), "%s is challenged", name)
+		return j
+	}
+	prove := func(j *joiner, name string) error {
+		ss, err := j.id.SharedSecret(j.c.DH)
+		require.NoError(t, err)
+		k := deriveKey(ss, key, j.nJ, j.c.Nonce)
+		tr := transcript(j.id.Public(), j.id.DHPublic(), j.c.Identity, j.c.DH, j.nJ, j.c.Nonce, name)
+		require.NoError(t, writeFrame(j.conn, proof{MAC: mac(k, labelJoiner, tr)}))
+		var w Welcome
+		return readFrame(j.conn, &w)
+	}
+
+	one, two := start("one"), start("two")
+	require.NoError(t, prove(one, "one"), "the first proof is admitted")
+	assert.Error(t, prove(two, "two"), "the second finds the token spent")
+	assert.Equal(t, 0, srv.Tokens.pending())
 }
 
 // On an authenticated connection the identities in the messages must be the peer's.
@@ -118,4 +182,22 @@ func Test_Join_rejectsForeignAdmission(t *testing.T) {
 	require.NoError(t, err)
 	_, _, err = join(t, srv, tok, newID(t), "j")
 	assert.ErrorContains(t, err, "someone else")
+}
+
+// The joiner checks the admission it is handed, not just who it is for.
+func Test_Join_rejectsForgedAdmission(t *testing.T) {
+	id := newID(t)
+	set := trust.NewSet(id.Public())
+	_, err := set.AddAdmission(trust.SelfAdmit(id, "root", time.Now()))
+	require.NoError(t, err)
+	srv := &Server{Identity: id, Tokens: NewTokenStore(nil), Root: id.Public(), GossipAddr: "x",
+		Admit: func(joiner trust.PublicKey, dh trust.DHKey, name string) (trust.Admission, trust.Records, error) {
+			a := trust.Admit(id, joiner, dh, name, 2, time.Now())
+			a.Signature[0] ^= 1
+			return a, set.Records(), nil
+		}}
+	tok, err := srv.Tokens.Mint(time.Minute, 1)
+	require.NoError(t, err)
+	_, _, err = join(t, srv, tok, newID(t), "j")
+	assert.ErrorContains(t, err, "signature")
 }
