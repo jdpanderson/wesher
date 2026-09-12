@@ -84,4 +84,6 @@ func Test_prefixFromIPNet(t *testing.T) {
 
 	_, ok = prefixFromIPNet(nil)
 	assert.False(t, ok)
+	_, ok = prefixFromIPNet(&net.IPNet{IP: net.IP{1, 2, 3}, Mask: net.CIDRMask(8, 32)})
+	assert.False(t, ok, "malformed address")
 }
