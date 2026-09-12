@@ -16,7 +16,8 @@ type StatusCmd struct {
 	Interface string `help:"wireguard interface to report on" default:"${default_interface}"`
 	JSON      bool   `help:"print the report as JSON"`
 
-	status func(iface string) (*wg.Report, error) // reports on the interface; nil means wg.Status
+	status   func(iface string) (*wg.Report, error) // reports on the interface; nil means wg.Status
+	stateDir string                                 // where the agent keeps its state; empty means cluster.DefaultDir
 }
 
 func (c *StatusCmd) Run() error {
@@ -24,16 +25,20 @@ func (c *StatusCmd) Run() error {
 	if status == nil {
 		status = wg.Status
 	}
+	dir := c.stateDir
+	if dir == "" {
+		dir = cluster.DefaultDir
+	}
 	report, err := status(c.Interface)
 	if err != nil {
 		return err
 	}
 	names := make(map[string]peerInfo) // wireguard public key -> node
-	for _, n := range cluster.KnownNodes(cluster.DefaultDir, c.Interface) {
+	for _, n := range cluster.KnownNodes(dir, c.Interface) {
 		id := n.Identity
 		names[n.PubKey] = peerInfo{Name: n.Name, Identity: &id, Overlay: n.OverlayAddr}
 	}
-	local, _ := cluster.LocalIdentity(cluster.DefaultDir, c.Interface)
+	local, _ := cluster.LocalIdentity(dir, c.Interface)
 	if c.JSON {
 		return renderStatusJSON(os.Stdout, report, local, names)
 	}
