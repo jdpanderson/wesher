@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -98,7 +99,9 @@ func Test_Listen_ownerOnly(t *testing.T) {
 	fi, err := os.Lstat(path)
 	require.NoError(t, err)
 	assert.NotZero(t, fi.Mode()&os.ModeSocket)
-	assert.Equal(t, os.FileMode(0o600), fi.Mode().Perm())
+	if runtime.GOOS != "windows" { // Windows has no file modes; access there is by ACL
+		assert.Equal(t, os.FileMode(0o600), fi.Mode().Perm())
+	}
 	entries, err := os.ReadDir(dir)
 	require.NoError(t, err)
 	assert.Len(t, entries, 1, "no staging directory left behind")

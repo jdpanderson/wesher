@@ -57,7 +57,7 @@ func (s *state) save(statePath string) error {
 	if err = tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), statePath) // CreateTemp made it 0600
+	return replace(tmp.Name(), statePath) // CreateTemp made it 0600
 }
 
 // loadState reads the persisted state at statePath. A missing file is an
