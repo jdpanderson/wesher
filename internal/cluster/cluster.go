@@ -38,7 +38,8 @@ type Config struct {
 	Memberlist func() *memberlist.Config
 }
 
-// Cluster represents a running cluster configuration
+// Cluster is this node's membership of a running cluster: the gossip ring, the
+// trusted record set, enrolment of new nodes and the persisted state.
 type Cluster struct {
 	statePath string
 	ml        atomic.Pointer[memberlist.Memberlist]

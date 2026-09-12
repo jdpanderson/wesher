@@ -14,7 +14,7 @@ Quality of the code and the interfaces exposed externally by this software must 
 
 ## Task Tracking
 
-Work is tracked in `todo.md`. Take items in order, one at a time, check them off when done.
+Work is tracked in `TODO.md`. Take items in order, one at a time, check them off when done.
 
 ## Commits
 - One notable change per commit; each must stand alone.
