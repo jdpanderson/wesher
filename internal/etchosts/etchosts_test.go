@@ -101,6 +101,13 @@ func TestEtcHosts_writeEntries(t *testing.T) {
 			"1.2.3.4\tfoo bar\t# somebanner\n",
 			false,
 		},
+		{
+			"a managed ip listed twice is written once, in place of its first line",
+			fields{},
+			args{strings.NewReader("1.2.3.4 old # ! MANAGED AUTOMATICALLY !\n# between\n1.2.3.4 older # ! MANAGED AUTOMATICALLY !\n"), map[string][]string{"1.2.3.4": {"foo"}}},
+			"1.2.3.4\tfoo\t# ! MANAGED AUTOMATICALLY !\n# between\n",
+			false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
