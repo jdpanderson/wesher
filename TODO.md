@@ -296,6 +296,11 @@ before starting; none are committed yet.
       ever be compiled, because `internal/paths` has no file for those systems
       and `wgctrl` does not build for them either. Done 2026-09-12. An
       unsupported platform is refused by the build, not at startup.
+- [x] Unexport what never leaves its package: the token codec and the
+      enrolment version in `enrol`, the banner and path defaults in
+      `etchosts`, and `RootHost`, `SeedLen` and `ErrUntrustedRoot` in `trust`.
+      Done 2026-09-12. The `hello` struct's `Version` field stays exported,
+      since `encoding/json` only marshals exported fields.
 - [ ] Fuzz tests (native `go test -fuzz`) for the parsers: enrolment frames
       and messages, the token codec, node metadata JSON, records JSON and the
       config file.

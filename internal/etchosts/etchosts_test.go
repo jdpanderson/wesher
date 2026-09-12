@@ -30,9 +30,9 @@ func TestEtcHosts_writeEntryWithBanner(t *testing.T) {
 		args    args
 		wantTmp string
 	}{
-		{"do not write empty ip", args{DefaultBanner, "", []string{"somename", "someothername"}}, ""},
-		{"do not write empty names", args{DefaultBanner, "1.2.3.4", []string{}}, ""},
-		{"complete entry", args{DefaultBanner, "1.2.3.4", []string{"somename", "someothername"}}, fmt.Sprintf("1.2.3.4\tsomename someothername\t%s\n", DefaultBanner)},
+		{"do not write empty ip", args{defaultBanner, "", []string{"somename", "someothername"}}, ""},
+		{"do not write empty names", args{defaultBanner, "1.2.3.4", []string{}}, ""},
+		{"complete entry", args{defaultBanner, "1.2.3.4", []string{"somename", "someothername"}}, fmt.Sprintf("1.2.3.4\tsomename someothername\t%s\n", defaultBanner)},
 		{"custom banner", args{"# somebanner", "1.2.3.4", []string{"somename", "someothername"}}, fmt.Sprintf("1.2.3.4\tsomename someothername\t%s\n", "# somebanner")},
 	}
 	for _, tt := range tests {
@@ -189,7 +189,7 @@ func TestEtcHosts_WriteEntries_noLeftoverTempFile(t *testing.T) {
 
 func TestEtcHosts_WriteEntries_renameFallback(t *testing.T) {
 	for _, logger := range []*slog.Logger{nil, slog.Default()} {
-		orig := "127.0.0.1 localhost\n10.0.0.1\told\t" + DefaultBanner + "\n"
+		orig := "127.0.0.1 localhost\n10.0.0.1\told\t" + defaultBanner + "\n"
 		p := writeTempHosts(t, orig, 0o600)
 		eh := &EtcHosts{Path: p, Logger: logger, rename: func(_, _ string) error {
 			return errors.New("cross-device link")

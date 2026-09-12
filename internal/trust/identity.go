@@ -9,8 +9,8 @@ import (
 	"fmt"
 )
 
-// SeedLen is the length of an identity seed in bytes.
-const SeedLen = 32
+// seedLen is the length of an identity seed in bytes.
+const seedLen = 32
 
 // PublicKey is a node identity: its Ed25519 public key.
 type PublicKey [ed25519.PublicKeySize]byte
@@ -55,7 +55,7 @@ type Identity struct {
 
 // NewIdentity generates a fresh random identity.
 func NewIdentity() (*Identity, error) {
-	seed := make([]byte, SeedLen)
+	seed := make([]byte, seedLen)
 	if _, err := rand.Read(seed); err != nil {
 		return nil, fmt.Errorf("reading random source: %w", err)
 	}
@@ -64,8 +64,8 @@ func NewIdentity() (*Identity, error) {
 
 // IdentityFromSeed derives the signing key from a persisted seed.
 func IdentityFromSeed(seed []byte) (*Identity, error) {
-	if len(seed) != SeedLen {
-		return nil, fmt.Errorf("identity seed must be %d bytes, got %d", SeedLen, len(seed))
+	if len(seed) != seedLen {
+		return nil, fmt.Errorf("identity seed must be %d bytes, got %d", seedLen, len(seed))
 	}
 	return &Identity{seed: append([]byte(nil), seed...), sign: ed25519.NewKeyFromSeed(seed)}, nil
 }

@@ -104,7 +104,7 @@ func (s *Server) handle(conn Conn) error {
 	if err := readFrame(conn, &h); err != nil {
 		return err
 	}
-	if h.Version != Version || len(h.TokenID) != tokenIDLen || len(h.Nonce) != nonceLen || h.Name == "" {
+	if h.Version != protocolVersion || len(h.TokenID) != tokenIDLen || len(h.Nonce) != nonceLen || h.Name == "" {
 		return errors.New("malformed hello")
 	}
 	if err := bound(conn, h.Identity); err != nil {
@@ -169,7 +169,7 @@ func (s *Server) handle(conn Conn) error {
 // identity of the member that ran the exchange, which is the connection's
 // peer. The caller owns conn.
 func Join(conn Conn, token string, id *trust.Identity, name string) (*Welcome, trust.PublicKey, error) {
-	key, err := DecodeToken(token)
+	key, err := decodeToken(token)
 	if err != nil {
 		return nil, trust.PublicKey{}, err
 	}
@@ -181,7 +181,7 @@ func Join(conn Conn, token string, id *trust.Identity, name string) (*Welcome, t
 	}
 	tid := idOf(key)
 	if err = writeFrame(conn, hello{
-		Version: Version, TokenID: tid[:], Identity: id.Public(), Nonce: nJ, Name: name,
+		Version: protocolVersion, TokenID: tid[:], Identity: id.Public(), Nonce: nJ, Name: name,
 	}); err != nil {
 		return nil, trust.PublicKey{}, err
 	}

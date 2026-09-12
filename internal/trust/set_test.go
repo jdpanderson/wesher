@@ -21,7 +21,7 @@ func Test_Set_validity(t *testing.T) {
 
 	// a stranger admitting itself is not a root
 	_, err := set.AddAdmission(SelfAdmit(stranger, "x", t0))
-	assert.ErrorIs(t, err, ErrUntrustedRoot)
+	assert.ErrorIs(t, err, errUntrustedRoot)
 
 	// a stranger's admission of someone else is stored (signature is fine) but confers nothing
 	c := newID(t)

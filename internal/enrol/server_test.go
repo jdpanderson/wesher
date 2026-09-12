@@ -19,7 +19,7 @@ func Test_handle_malformedHello(t *testing.T) {
 	joiner := newID(t)
 	conn := pipeTo(t, srv, joiner.Public())
 	setDeadline(conn)
-	require.NoError(t, writeFrame(conn, hello{Version: Version + 1, TokenID: make([]byte, tokenIDLen), Identity: joiner.Public(), Nonce: make([]byte, nonceLen), Name: "j"}))
+	require.NoError(t, writeFrame(conn, hello{Version: protocolVersion + 1, TokenID: make([]byte, tokenIDLen), Identity: joiner.Public(), Nonce: make([]byte, nonceLen), Name: "j"}))
 	var c challenge
 	assert.Error(t, readFrame(conn, &c), "the member hangs up without a challenge")
 }
@@ -28,7 +28,7 @@ func Test_handle_badProof(t *testing.T) {
 	srv, _ := member(t)
 	tok, err := srv.Tokens.Mint(time.Minute, 1)
 	require.NoError(t, err)
-	key, err := DecodeToken(tok)
+	key, err := decodeToken(tok)
 	require.NoError(t, err)
 	joiner := newID(t)
 
@@ -36,7 +36,7 @@ func Test_handle_badProof(t *testing.T) {
 	setDeadline(conn)
 	tid := idOf(key)
 	nJ, _ := randomNonce()
-	require.NoError(t, writeFrame(conn, hello{Version: Version, TokenID: tid[:], Identity: joiner.Public(), Nonce: nJ, Name: "j"}))
+	require.NoError(t, writeFrame(conn, hello{Version: protocolVersion, TokenID: tid[:], Identity: joiner.Public(), Nonce: nJ, Name: "j"}))
 	var c challenge
 	require.NoError(t, readFrame(conn, &c), "a known token id gets a challenge")
 
@@ -98,7 +98,7 @@ func Test_handle_singleUseTokenTwoJoiners(t *testing.T) {
 		j.nJ, err = randomNonce()
 		require.NoError(t, err)
 		tid := idOf(key)
-		require.NoError(t, writeFrame(j.conn, hello{Version: Version, TokenID: tid[:], Identity: j.id.Public(), Nonce: j.nJ, Name: name}))
+		require.NoError(t, writeFrame(j.conn, hello{Version: protocolVersion, TokenID: tid[:], Identity: j.id.Public(), Nonce: j.nJ, Name: name}))
 		require.NoError(t, readFrame(j.conn, &j.c), "%s is challenged", name)
 		return j
 	}
@@ -127,7 +127,7 @@ func Test_identityBinding(t *testing.T) {
 	c1 := pipeTo(t, srv, other.Public())
 	setDeadline(c1)
 	tid := idOf(mustKey(t, tok))
-	require.NoError(t, writeFrame(c1, hello{Version: Version, TokenID: tid[:], Identity: joiner.Public(), Nonce: make([]byte, nonceLen), Name: "j"}))
+	require.NoError(t, writeFrame(c1, hello{Version: protocolVersion, TokenID: tid[:], Identity: joiner.Public(), Nonce: make([]byte, nonceLen), Name: "j"}))
 	var c challenge
 	assert.Error(t, readFrame(c1, &c), "server hangs up on a mismatch")
 	assert.Equal(t, 1, srv.Tokens.pending())
@@ -145,7 +145,7 @@ func Test_identityBinding(t *testing.T) {
 
 func mustKey(t *testing.T, tok string) []byte {
 	t.Helper()
-	key, err := DecodeToken(tok)
+	key, err := decodeToken(tok)
 	require.NoError(t, err)
 	return key
 }

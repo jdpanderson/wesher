@@ -22,18 +22,18 @@ func Test_token_codec(t *testing.T) {
 	for i := range key {
 		key[i] = byte(i)
 	}
-	got, err := DecodeToken(EncodeToken(key))
+	got, err := decodeToken(encodeToken(key))
 	require.NoError(t, err)
 	assert.Equal(t, key, got)
 
-	_, err = DecodeToken("not a token!")
+	_, err = decodeToken("not a token!")
 	assert.ErrorContains(t, err, "join key")
-	upper, err := DecodeToken(strings.ToUpper(EncodeToken(key)))
+	upper, err := decodeToken(strings.ToUpper(encodeToken(key)))
 	require.NoError(t, err)
 	assert.Equal(t, key, upper, "case and surrounding whitespace do not matter")
-	_, err = DecodeToken(" " + EncodeToken(key) + "\n")
+	_, err = decodeToken(" " + encodeToken(key) + "\n")
 	require.NoError(t, err)
-	_, err = DecodeToken(EncodeToken(key[:5]))
+	_, err = decodeToken(encodeToken(key[:5]))
 	assert.ErrorContains(t, err, "want 32 bytes")
 
 	assert.NotEqual(t, idOf(key), idOf(append([]byte{1}, key[1:]...)), "the public id depends on the whole key")
@@ -55,7 +55,7 @@ func Test_TokenStore_expiry(t *testing.T) {
 
 	tok, err := s.Mint(time.Minute, 2)
 	require.NoError(t, err)
-	key, err := DecodeToken(tok)
+	key, err := decodeToken(tok)
 	require.NoError(t, err)
 	assert.Equal(t, 1, s.pending())
 
@@ -76,7 +76,7 @@ func Test_TokenStore_uses(t *testing.T) {
 	assert.Error(t, err, "and be usable")
 	tok, err := s.Mint(time.Minute, 2)
 	require.NoError(t, err)
-	key, _ := DecodeToken(tok)
+	key, _ := decodeToken(tok)
 	id := idOf(key)
 
 	assert.False(t, s.consume(tokenID{9}), "unknown token")
@@ -95,7 +95,7 @@ func Test_TokenStore_concurrentJoiners(t *testing.T) {
 	s := NewTokenStore(nil)
 	tok, err := s.Mint(time.Minute, 1)
 	require.NoError(t, err)
-	key, _ := DecodeToken(tok)
+	key, _ := decodeToken(tok)
 	id := idOf(key)
 
 	_, ok := s.lookup(id)
@@ -109,7 +109,7 @@ func Test_TokenStore_concurrentJoiners(t *testing.T) {
 	s = NewTokenStore(func() time.Time { return now })
 	tok, err = s.Mint(time.Minute, 1)
 	require.NoError(t, err)
-	key, _ = DecodeToken(tok)
+	key, _ = decodeToken(tok)
 	now = now.Add(2 * time.Minute)
 	assert.False(t, s.consume(idOf(key)), "a token that expired mid-exchange is not spent")
 }

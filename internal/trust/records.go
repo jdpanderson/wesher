@@ -21,8 +21,8 @@ type Admission struct {
 	Signature []byte    `json:"signature"`
 }
 
-// RootHost is the overlay slot the root assigns itself.
-const RootHost = 1
+// rootHost is the overlay slot the root assigns itself.
+const rootHost = 1
 
 // Revocation says that Revoker withdraws Identity's membership.
 type Revocation struct {
@@ -60,7 +60,7 @@ func Admit(admitter *Identity, identity PublicKey, name string, host uint64, now
 
 // SelfAdmit creates the root record for id.
 func SelfAdmit(id *Identity, name string, now time.Time) Admission {
-	return Admit(id, id.Public(), name, RootHost, now)
+	return Admit(id, id.Public(), name, rootHost, now)
 }
 
 // Revoke creates a revocation of identity signed by revoker.

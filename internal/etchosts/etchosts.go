@@ -15,19 +15,19 @@ import (
 	"github.com/jdpanderson/cheesecloth/internal/paths"
 )
 
-// DefaultBanner is the comment that marks a line as managed by this package.
-const DefaultBanner = "# ! MANAGED AUTOMATICALLY !"
+// defaultBanner is the comment that marks a line as managed by this package.
+const defaultBanner = "# ! MANAGED AUTOMATICALLY !"
 
-// DefaultPath is the hosts file written unless Path says otherwise.
-var DefaultPath = paths.HostsFile
+// defaultPath is the hosts file written unless Path says otherwise.
+var defaultPath = paths.HostsFile
 
 // EtcHosts writes managed entries to a hosts file. The zero value writes to
-// DefaultPath and marks its lines with DefaultBanner.
+// defaultPath and marks its lines with defaultBanner.
 type EtcHosts struct {
-	// Banner marks the lines this instance manages; DefaultBanner when empty.
+	// Banner marks the lines this instance manages; defaultBanner when empty.
 	// It must start with "#" so the resolver reads it as a comment.
 	Banner string
-	// Path is the hosts file; DefaultPath when empty.
+	// Path is the hosts file; defaultPath when empty.
 	Path string
 	// Logger is optional; nil disables logging.
 	Logger *slog.Logger
@@ -49,7 +49,7 @@ func (eh *EtcHosts) log(level slog.Level, msg string, args ...any) {
 func (eh *EtcHosts) WriteEntries(ipsToNames map[string][]string) error {
 	hostsPath := eh.Path
 	if hostsPath == "" {
-		hostsPath = DefaultPath
+		hostsPath = defaultPath
 	}
 
 	// the hosts file is never created: a missing one means the wrong path
@@ -87,7 +87,7 @@ func (eh *EtcHosts) WriteEntries(ipsToNames map[string][]string) error {
 func (eh *EtcHosts) writeEntries(orig io.Reader, dest io.Writer, ipsToNames map[string][]string) error {
 	banner := eh.Banner
 	if banner == "" {
-		banner = DefaultBanner
+		banner = defaultBanner
 	}
 	w := bufio.NewWriter(dest)
 	written := make(map[string]bool, len(ipsToNames))

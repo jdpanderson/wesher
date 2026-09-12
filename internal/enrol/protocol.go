@@ -18,8 +18,8 @@ import (
 	"github.com/jdpanderson/cheesecloth/internal/wire"
 )
 
-// Version identifies this exchange format; a mismatch fails closed.
-const Version = 4
+// protocolVersion identifies this exchange format; a mismatch fails closed.
+const protocolVersion = 4
 
 const (
 	nonceLen         = 32

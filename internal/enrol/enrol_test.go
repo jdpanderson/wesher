@@ -136,7 +136,7 @@ func Test_Join_memberMustProveToken(t *testing.T) {
 	srv, _ := member(t)
 	real, err := srv.Tokens.Mint(time.Minute, 1)
 	require.NoError(t, err)
-	key, _ := DecodeToken(real)
+	key, _ := decodeToken(real)
 
 	// impostor: same token id (it saw the hello), different key
 	impostor := &Server{Identity: newID(t), Tokens: NewTokenStore(nil), Root: srv.Root, GossipAddr: "x",

@@ -34,11 +34,11 @@ func idOf(key []byte) tokenID {
 // pasted after --join-key, and a double-click selects the whole of it.
 var tokenEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
 
-// EncodeToken is the printable form of a token.
-func EncodeToken(key []byte) string { return strings.ToLower(tokenEncoding.EncodeToString(key)) }
+// encodeToken is the printable form of a token.
+func encodeToken(key []byte) string { return strings.ToLower(tokenEncoding.EncodeToString(key)) }
 
-// DecodeToken parses the printable form; case does not matter.
-func DecodeToken(s string) ([]byte, error) {
+// decodeToken parses the printable form; case does not matter.
+func decodeToken(s string) ([]byte, error) {
 	key, err := tokenEncoding.DecodeString(strings.ToUpper(strings.TrimSpace(s)))
 	if err != nil {
 		return nil, fmt.Errorf("join key: %w", err)
@@ -84,7 +84,7 @@ func (s *TokenStore) Mint(ttl time.Duration, uses int) (string, error) {
 	defer s.mu.Unlock()
 	s.gc()
 	s.tokens[idOf(key)] = &token{key: key, expires: s.now().Add(ttl), uses: uses}
-	return EncodeToken(key), nil
+	return encodeToken(key), nil
 }
 
 // lookup returns the key for a pending token without consuming it.

@@ -45,8 +45,8 @@ func NewSet(root PublicKey) *Set {
 // be stored in the map being replaced.
 func (s *Set) forget() { s.members.Store(&sync.Map{}) }
 
-// ErrUntrustedRoot is returned for a self-signed admission of a non-root identity.
-var ErrUntrustedRoot = errors.New("self-signed admission is not the pinned root")
+// errUntrustedRoot is returned for a self-signed admission of a non-root identity.
+var errUntrustedRoot = errors.New("self-signed admission is not the pinned root")
 
 // AddAdmission stores a signature-valid record. It reports whether the set
 // changed; a record for an identity already present is kept only if newer.
@@ -55,7 +55,7 @@ func (s *Set) AddAdmission(a Admission) (bool, error) {
 		return false, err
 	}
 	if a.Admitter == a.Identity && a.Identity != s.root {
-		return false, ErrUntrustedRoot
+		return false, errUntrustedRoot
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
