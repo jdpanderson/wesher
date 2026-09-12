@@ -622,3 +622,66 @@ and memberlist's own push/pull cap is 20 MiB.
       a root-signed checkpoint that re-anchors the current membership, or
       dropping revoked leaves that admitted nobody. Needs a call before any
       work.
+
+## Phase 13: BSD, iOS and Android
+
+Proposed 2026-09-12. What stands in the way today, checked from the macOS
+host:
+
+- `GOOS=android GOARCH=arm64 go build ./...` already succeeds, and
+  `GOOS=ios CGO_ENABLED=1 go vet ./...` is clean: android satisfies the
+  `linux` build tag and ios the `darwin` one, so both pick up implementations
+  written for a privileged host. Compiling is not the problem there; what the
+  code does is. Neither platform lets a process create its own tunnel, write
+  `/etc/hosts` or keep state in `/var/lib`.
+- `GOOS=freebsd` and `GOOS=openbsd` do not build, for two reasons.
+  `internal/paths` has one file per operating system and no fallback, so
+  `stateDir`, `configFile`, `runDir` and `hostsFile` are undefined. And
+  wgctrl's FreeBSD kernel client is cgo (`import "C"` in
+  `internal/wgfreebsd/client_freebsd.go`), so with `CGO_ENABLED=0` the file is
+  ignored and `wgfreebsd.New` is undefined. Releases are built with cgo off so
+  that every target cross-compiles (phase 8), which FreeBSD would break.
+- `GOOS=netbsd` cannot run the in-process device at all: wireguard-go has
+  `tun_` implementations for darwin, freebsd, openbsd, linux and windows, and
+  its `ipc` package covers darwin, freebsd and openbsd. wgctrl has kernel
+  clients for linux, freebsd, openbsd and windows.
+- The BSD work is mostly done already without being called that: `bsdLinker`
+  in `link_darwin.go` drives addresses with `SIOCAIFADDR` ioctls and routes
+  over the routing socket, which is how FreeBSD and OpenBSD work too.
+
+- [ ] `internal/paths` for the BSDs: `/var/db/cheesecloth`,
+      `/usr/local/etc/cheesecloth/config.yaml`, `/var/run/cheesecloth`,
+      `/etc/hosts`. The tree then builds for freebsd and openbsd apart from
+      wgctrl, and `GOOS=freebsd go vet ./...` joins the cross-compile gate.
+- [ ] FreeBSD and OpenBSD device and link. Both have kernel WireGuard
+      (`wg(4)`) and a wgctrl client for it, so the shape is the Linux one:
+      create the interface, fall back to the in-process device when the kernel
+      refuses. Widen `bsdLinker` past `//go:build darwin` and check the ioctl
+      struct layouts per operating system rather than assuming Darwin's. The
+      interface is named by the agent on the BSDs, not by the system as on
+      macOS, so `tunname` becomes a no-op there.
+- [ ] **DECISION** cgo on FreeBSD. The kernel client cannot be reached without
+      it, and it is linked in whether or not `--userspace` is given, so
+      FreeBSD binaries are either built natively with a C toolchain, or with a
+      wgctrl that does not need cgo, or FreeBSD ships without kernel support.
+      This is the only platform so far that cannot be cross-compiled from the
+      release job.
+- [ ] NetBSD is out of reach until wireguard-go grows a tun and uapi
+      implementation for it. Record it as unsupported rather than pretending.
+- [ ] Verification. GitHub-hosted runners have no BSD, so the gate is
+      cross-compilation plus vet in CI, and a manual run on a FreeBSD VM
+      before claiming support, in the way the Linode cluster proved Linux.
+- [ ] **DECISION** iOS and Android are a different deliverable, not another
+      `GOOS`. The platform owns the tunnel: an app gets a file descriptor from
+      `VpnService.Builder.establish` or `NEPacketTunnelProvider` and hands it
+      to wireguard-go (`tun.CreateTUNFromFile`), sets addresses and routes
+      through the platform API rather than a linker, and has no hosts file, no
+      service manager, no root and no `/var`. The device would also be
+      configured in process (`device.IpcSet`) instead of through the UAPI
+      socket wgctrl talks to, which an app sandbox cannot open. Membership,
+      trust, enrolment and the agent loop are already portable; what changes
+      is the device and linker seam, the paths, and the operator interface,
+      which becomes a Go API the app calls rather than a command and a unix
+      socket. The call to make is whether cheesecloth ships a library target
+      (gomobile AAR, c-archive framework) at all, since that is a second
+      product surface to keep working, not a port.
