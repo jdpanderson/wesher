@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"time"
@@ -16,10 +17,11 @@ import (
 // state is what a node persists: its identity seed, the membership it trusts
 // and the peers it last saw, so it can restart unattended.
 type state struct {
-	Seed    []byte           `json:"seed"`
-	Root    *trust.PublicKey `json:"root,omitempty"`
-	Records trust.Records    `json:"records"`
-	Peers   []overlay.Node   `json:"peers"`
+	Seed       []byte           `json:"seed"`
+	Root       *trust.PublicKey `json:"root,omitempty"`
+	OverlayNet netip.Prefix     `json:"overlayNet,omitzero"` // the cluster's, so no flag is needed to restart
+	Records    trust.Records    `json:"records"`
+	Peers      []overlay.Node   `json:"peers"`
 }
 
 // DefaultDir is where the agent keeps state unless told otherwise.
@@ -116,10 +118,11 @@ func Forget(dir, name string) error {
 // agent then either makes the node a root, enrols it, or finds it already
 // enrolled, and hands it to New, which keeps it up to date and saves it.
 type Bootstrap struct {
-	Identity *trust.Identity
-	Root     trust.PublicKey // zero until enrolled or initialised
-	Records  trust.Records
-	Peers    []overlay.Node // last known peers, with metadata
+	Identity   *trust.Identity
+	Root       trust.PublicKey // zero until enrolled or initialised
+	OverlayNet netip.Prefix    // the cluster's; zero until enrolled, initialised or read from state
+	Records    trust.Records
+	Peers      []overlay.Node // last known peers, with metadata
 }
 
 // Load reads the state kept under dir for name, or starts fresh when init is
@@ -149,7 +152,7 @@ func Load(dir, name string, init bool) (*Bootstrap, error) {
 	if err != nil {
 		return nil, fmt.Errorf("loading identity from %s: %w", path, err)
 	}
-	b := &Bootstrap{Identity: id, Records: st.Records, Peers: st.Peers}
+	b := &Bootstrap{Identity: id, OverlayNet: st.OverlayNet, Records: st.Records, Peers: st.Peers}
 	if st.Root != nil {
 		b.Root = *st.Root
 	}
@@ -161,7 +164,7 @@ func (b *Bootstrap) Enrolled() bool { return b.Root != (trust.PublicKey{}) }
 
 // save persists the bootstrap at statePath.
 func (b *Bootstrap) save(statePath string) error {
-	st := &state{Seed: b.Identity.Seed(), Records: b.Records, Peers: b.Peers}
+	st := &state{Seed: b.Identity.Seed(), OverlayNet: b.OverlayNet, Records: b.Records, Peers: b.Peers}
 	if b.Enrolled() {
 		root := b.Root
 		st.Root = &root
@@ -187,9 +190,12 @@ func (b *Bootstrap) InitRoot(nodeName string) {
 	b.Peers = nil
 }
 
-// Enrol records the outcome of an enrolment exchange.
-func (b *Bootstrap) Enrol(root trust.PublicKey, records trust.Records) {
+// Enrol records the outcome of an enrolment exchange. The overlay network is
+// the cluster's, as the admitting member stated it; a member too old to say
+// leaves it zero and the node falls back to its own setting.
+func (b *Bootstrap) Enrol(root trust.PublicKey, records trust.Records, overlayNet netip.Prefix) {
 	b.Root = root
 	b.Records = records
+	b.OverlayNet = overlayNet
 	b.Peers = nil
 }

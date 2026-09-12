@@ -204,7 +204,7 @@ func (a *AgentCmd) bootstrap(ctx context.Context, boot *cluster.Bootstrap, hostn
 		if err != nil {
 			return nil, err
 		}
-		boot.Enrol(w.Root, w.Records)
+		boot.Enrol(w.Root, w.Records, w.OverlayNet)
 		slog.Info("enrolled in cluster", "root", w.Root.Short(), "via", w.GossipAddr, "member", member.Short())
 		return []string{w.GossipAddr}, nil
 	default:

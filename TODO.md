@@ -559,9 +559,9 @@ same value.
 - [x] `enrol`: the welcome carries the cluster's overlay network, asserted by
       the admitting member alongside the slot it assigns and the record set.
       An old member sends none, which reads as "not known". Done 2026-09-12.
-- [ ] `cluster`: the overlay network is persisted with the rest of the
+- [x] `cluster`: the overlay network is persisted with the rest of the
       bootstrap, so a restart needs no flag; the cluster stores the value it
-      was created with.
+      was created with. Done 2026-09-12.
 - [ ] `cli`: resolve the overlay network in that order, re-check it against
       `--allowed-ips` once resolved, and warn when an explicit value differs
       from the cluster's. Docs: `--overlay-net` is no longer needed to enrol

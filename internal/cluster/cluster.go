@@ -82,6 +82,8 @@ func New(cfg Config) (*Cluster, error) {
 		return nil, fmt.Errorf("local overlay address %s is not the assigned %s", cfg.LocalNode.OverlayAddr, want)
 	}
 
+	cfg.Boot.OverlayNet = cfg.OverlayNet // what the cluster runs with is what a restart reads back
+
 	// bind our ephemeral wireguard key, overlay address and routes to our identity
 	cfg.LocalNode.Identity = id.Public()
 	cfg.LocalNode.Signature = id.Sign(trust.MetaDigest(cfg.LocalNode.Name, cfg.LocalNode.OverlayAddr, cfg.LocalNode.PubKey, cfg.LocalNode.AllowedIPs))

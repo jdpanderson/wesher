@@ -65,7 +65,7 @@ func enrolCluster(t *testing.T, dir string, member *Cluster, name string, opts .
 	w, memberID, err := Enrol(context.Background(), gossipAddr(member), token, b.Identity, name)
 	require.NoError(t, err)
 	require.Equal(t, member.Identity(), memberID)
-	b.Enrol(w.Root, w.Records)
+	b.Enrol(w.Root, w.Records, w.OverlayNet)
 	cfg := Config{
 		StateDir: dir, StateName: name, BindAddr: loopback, AdvertiseAddr: loopback, OverlayNet: testOverlay,
 		LocalNode: testNodeFor(t, name, b), Boot: b,
@@ -108,6 +108,23 @@ func Test_Cluster_Join_rememberedPeers(t *testing.T) {
 	drain(b.Members())
 	require.NoError(t, b.Join(nil))
 	assert.Equal(t, "b", waitMembers(t, chA, 1)[0].Name)
+}
+
+// The cluster keeps the network it allocates addresses in, for the root and
+// for a node the welcome told, so neither needs a setting of its own to
+// restart.
+func Test_Cluster_persistsOverlayNet(t *testing.T) {
+	dir := useTempStatePaths(t)
+	a := rootCluster(t, dir, "a", fastMemberlist)
+	defer a.Leave()
+	b := enrolCluster(t, dir, a, "b", fastMemberlist)
+	defer b.Leave()
+
+	for _, name := range []string{"a", "b"} {
+		boot, err := Load(dir, name, false)
+		require.NoError(t, err)
+		assert.Equal(t, testOverlay, boot.OverlayNet, "%s", name)
+	}
 }
 
 // A member listening on its own port is remembered with it, so a restart

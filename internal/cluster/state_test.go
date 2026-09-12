@@ -140,9 +140,11 @@ func Test_Bootstrap_initAndEnrol(t *testing.T) {
 	j, err := Load(dir, "joiner", true)
 	require.NoError(t, err)
 	adm := trust.Admit(other, j.Identity.Public(), j.Identity.DHPublic(), "joiner", 7, time.Now())
-	j.Enrol(other.Public(), trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(other, "o", time.Now()), adm}})
+	records := trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(other, "o", time.Now()), adm}}
+	j.Enrol(other.Public(), records, netip.MustParsePrefix("10.42.0.0/16"))
 	assert.True(t, j.Enrolled())
 	assert.Equal(t, other.Public(), j.Root)
+	assert.Equal(t, netip.MustParsePrefix("10.42.0.0/16"), j.OverlayNet, "the cluster's, as the member stated it")
 	host, err := j.Host()
 	require.NoError(t, err)
 	assert.Equal(t, uint64(7), host)
