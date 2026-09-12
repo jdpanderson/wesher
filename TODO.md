@@ -314,7 +314,7 @@ before starting; none are committed yet.
       `docs/configuration.md`, permissions/systemd/status/security/limitations
       to `docs/operations.md` (2026-09-11).
 - [x] systemd `sd_notify` readiness and a `Type=notify` unit file. 2026-09-09:
-      `internal/sdnotify` (stdlib only) sends READY after the first snapshot
+      `internal/notify` (stdlib only) sends READY after the first snapshot
       is applied, STATUS with the peer count on every change and STOPPING on
       shutdown. `Members()` now emits a first snapshot at once, so a lone
       node brings its interface up without waiting for a peer.
@@ -385,7 +385,9 @@ entries when opted out). Tests keep recording fakes rather than nulls. On
 Linux the kernel module is used whenever it is present; the userspace device
 is a fallback, never a replacement.
 
-- [ ] Portability seams, Linux behaviour unchanged. `wg.netlinker` becomes an
+- [x] Portability seams, Linux behaviour unchanged. Done 2026-09-11: `wg` has
+      `device` and `linker` interfaces, `internal/paths`, `internal/notify`;
+      the whole tree vets for darwin and windows and the suite runs on macOS. `wg.netlinker` becomes an
       OS-neutral link interface in `netip` terms: ensure interface, set
       address and MTU, up, replace routes, list addresses, delete. The
       netlink implementation moves behind `//go:build linux`; the fake becomes

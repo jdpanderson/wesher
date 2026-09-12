@@ -23,6 +23,11 @@ jobs:
 
       - run: go test -race -v ./...
 
+      - name: Cross-compile for macOS and Windows, tests included
+        run: |
+          GOOS=darwin go vet ./...
+          GOOS=windows go vet ./...
+
       - run: make e2e
       - run: make release GOARCHES="amd64 arm arm64 mipsle riscv64"
 
