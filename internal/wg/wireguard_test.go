@@ -11,12 +11,28 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
-func Test_addrToIPNet(t *testing.T) {
-	v4 := addrToIPNet(netip.MustParseAddr("10.0.0.1"))
-	assert.Equal(t, "10.0.0.1/32", v4.String())
+// testConfig uses a non-default MTU so the test proves it is applied.
+func testConfig() Config {
+	return Config{
+		Interface: "wgtest0", Port: 51820,
+		OverlayAddr: netip.MustParseAddr("10.99.0.100"), MTU: 1400, PersistentKeepalive: 25 * time.Second,
+	}
+}
 
-	v6 := addrToIPNet(netip.MustParseAddr("2001:db8::1"))
-	assert.Equal(t, "2001:db8::1/128", v6.String())
+func testPeer(t *testing.T, name, addr, overlayAddr string) overlay.Node {
+	t.Helper()
+	key, err := wgtypes.GeneratePrivateKey()
+	require.NoError(t, err)
+	n := overlay.Node{Name: name, Addr: netip.MustParseAddr(addr)}
+	n.OverlayAddr = netip.MustParseAddr(overlayAddr)
+	n.PubKey = key.PublicKey().String()
+	return n
+}
+
+func Test_hostPrefix(t *testing.T) {
+	assert.Equal(t, "10.0.0.1/32", hostPrefix(netip.MustParseAddr("10.0.0.1")).String())
+	assert.Equal(t, "2001:db8::1/128", hostPrefix(netip.MustParseAddr("2001:db8::1")).String())
+	assert.Equal(t, "10.0.0.1/32", prefixToIPNet(hostPrefix(netip.MustParseAddr("10.0.0.1"))).String())
 }
 
 func Test_State_nodesToPeerConfigs(t *testing.T) {

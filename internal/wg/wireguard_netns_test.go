@@ -1,3 +1,5 @@
+//go:build linux
+
 package wg
 
 import (
@@ -14,10 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netns"
-	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
-
-const testPrefix = "10.99.0.0/16"
 
 // enterTestNetns runs the rest of the test in a fresh network namespace.
 // Skips without CAP_NET_ADMIN; `unshare -r go test ./...` or root provides it.
@@ -40,30 +39,12 @@ func enterTestNetns(t *testing.T) {
 	})
 }
 
-// testConfig uses a non-default MTU so the test proves it is applied.
-func testConfig() Config {
-	return Config{
-		Interface: "wgtest0", Port: 51820,
-		OverlayAddr: netip.MustParseAddr("10.99.0.100"), MTU: 1400, PersistentKeepalive: 25 * time.Second,
-	}
-}
-
-func testPeer(t *testing.T, name, addr, overlayAddr string) overlay.Node {
-	t.Helper()
-	key, err := wgtypes.GeneratePrivateKey()
-	require.NoError(t, err)
-	n := overlay.Node{Name: name, Addr: netip.MustParseAddr(addr)}
-	n.OverlayAddr = netip.MustParseAddr(overlayAddr)
-	n.PubKey = key.PublicKey().String()
-	return n
-}
-
 func Test_New(t *testing.T) {
 	enterTestNetns(t)
 	s, err := New(testConfig())
 	require.NoError(t, err)
 	assert.Equal(t, s.privKey.PublicKey(), s.PubKey)
-	assert.True(t, netip.MustParsePrefix(testPrefix).Contains(s.overlayAddr))
+	assert.True(t, netip.MustParsePrefix("10.99.0.0/16").Contains(s.overlayAddr))
 }
 
 func Test_State_SetUpInterface_and_Down(t *testing.T) {
@@ -127,6 +108,37 @@ func Test_State_SetUpInterface_and_Down(t *testing.T) {
 	assert.Error(t, err)
 
 	require.NoError(t, s.DownInterface(), "down on a missing device is a no-op")
+}
+
+func Test_netlinkLinker_idempotent(t *testing.T) {
+	enterTestNetns(t)
+	link := netlinkLinker{}
+	name, err := kernelDevice{}.Create("wgtest1", 0)
+	require.NoError(t, err)
+	assert.Equal(t, "wgtest1", name)
+	_, err = kernelDevice{}.Create("wgtest1", 0)
+	require.NoError(t, err, "creating an existing interface is fine")
+	require.NoError(t, link.Up(name))
+
+	dst := netip.MustParsePrefix("192.0.2.0/24")
+	require.NoError(t, link.AddRoute(name, dst))
+	require.NoError(t, link.AddRoute(name, dst), "adding an existing route is fine")
+	routes, err := link.Routes(name)
+	require.NoError(t, err)
+	assert.Equal(t, []netip.Prefix{dst}, routes)
+	require.NoError(t, link.DelRoute(name, dst))
+	require.NoError(t, link.DelRoute(name, dst), "removing a missing route is fine")
+	routes, err = link.Routes(name)
+	require.NoError(t, err)
+	assert.Empty(t, routes)
+
+	osName, _, err := lookup("wgtest1")
+	require.NoError(t, err)
+	assert.Equal(t, "wgtest1", osName)
+	require.NoError(t, kernelDevice{}.Delete(name))
+	require.NoError(t, kernelDevice{}.Delete(name), "deleting a missing interface is fine")
+	_, _, err = lookup("wgtest1")
+	assert.Error(t, err)
 }
 
 func Test_State_SetUpInterface_badPeerKey(t *testing.T) {

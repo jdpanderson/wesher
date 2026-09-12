@@ -1,16 +1,16 @@
+// Package wg keeps one WireGuard interface in step with the cluster: the
+// device itself, its key and peers, and the address, MTU and routes the
+// operating system needs around it.
 package wg
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/netip"
-	"os"
 	"time"
 
 	"github.com/jdpanderson/cheesecloth/internal/overlay"
-	"github.com/vishvananda/netlink"
 	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
@@ -21,18 +21,34 @@ type wgClient interface {
 	ConfigureDevice(name string, cfg wgtypes.Config) error
 }
 
-// netlinker is the subset of *netlink.Handle used by State.
-type netlinker interface {
-	LinkAdd(netlink.Link) error
-	LinkDel(netlink.Link) error
-	LinkByName(string) (netlink.Link, error)
-	AddrReplace(netlink.Link, *netlink.Addr) error
-	LinkSetMTU(netlink.Link, int) error
-	LinkSetUp(netlink.Link) error
-	RouteAdd(*netlink.Route) error
-	RouteDel(*netlink.Route) error
-	RouteList(netlink.Link, int) ([]netlink.Route, error)
-	AddrList(netlink.Link, int) ([]netlink.Addr, error)
+// device is where a WireGuard interface comes from: the kernel module, or an
+// implementation running in this process. Its methods take the name the
+// agent knows the interface by, which is also the name wgctrl configures it
+// under.
+type device interface {
+	// Create makes the interface exist, with the MTU where that is fixed at
+	// creation; an interface that already exists is fine. It returns the
+	// name the operating system gave the interface, which the linker uses.
+	Create(name string, mtu int) (string, error)
+	// Delete removes the interface; a missing one is not an error.
+	Delete(name string) error
+	// Kind names the implementation for the log: "kernel" or "userspace".
+	Kind() string
+}
+
+// linker is what the agent needs from the operating system's network stack
+// for one interface, named as the operating system knows it. Every method
+// is idempotent: setting what is set, adding what exists and removing what
+// is missing all succeed.
+type linker interface {
+	SetAddr(iface string, addr netip.Prefix) error
+	SetMTU(iface string, mtu int) error
+	Up(iface string) error
+	Addrs(iface string) ([]netip.Prefix, error)
+	// Routes lists the destinations routed through the interface.
+	Routes(iface string) ([]netip.Prefix, error)
+	AddRoute(iface string, dst netip.Prefix) error
+	DelRoute(iface string, dst netip.Prefix) error
 }
 
 // Config describes the wireguard interface a State manages.
@@ -52,7 +68,9 @@ type State struct {
 	mtu         int
 	keepalive   time.Duration
 	client      wgClient
-	nl          netlinker
+	dev         device
+	link        linker
+	osName      string // what the operating system calls the interface, once created
 	privKey     wgtypes.Key
 	overlayAddr netip.Addr
 	port        int
@@ -62,14 +80,18 @@ type State struct {
 // New creates a new Cheesecloth Wireguard state with a fresh key pair.
 // The interface must later be set up using SetUpInterface.
 func New(cfg Config) (*State, error) {
+	dev, link, err := platform(cfg)
+	if err != nil {
+		return nil, err
+	}
 	client, err := wgctrl.New()
 	if err != nil {
 		return nil, fmt.Errorf("instantiating wireguard client: %w", err)
 	}
-	return newState(cfg, client, &netlink.Handle{})
+	return newState(cfg, client, dev, link)
 }
 
-func newState(cfg Config, client wgClient, nl netlinker) (*State, error) {
+func newState(cfg Config, client wgClient, dev device, link linker) (*State, error) {
 	privKey, err := wgtypes.GeneratePrivateKey()
 	if err != nil {
 		return nil, fmt.Errorf("generating private key: %w", err)
@@ -79,7 +101,8 @@ func newState(cfg Config, client wgClient, nl netlinker) (*State, error) {
 		mtu:         cfg.MTU,
 		keepalive:   cfg.PersistentKeepalive,
 		client:      client,
-		nl:          nl,
+		dev:         dev,
+		link:        link,
 		privKey:     privKey,
 		overlayAddr: cfg.OverlayAddr,
 		port:        cfg.Port,
@@ -89,21 +112,22 @@ func newState(cfg Config, client wgClient, nl netlinker) (*State, error) {
 
 // DownInterface deletes the associated network interface; a missing interface is not an error.
 func (s *State) DownInterface() error {
-	link, err := s.nl.LinkByName(s.iface)
-	if err != nil {
-		var notFound netlink.LinkNotFoundError
-		if errors.As(err, &notFound) {
-			return nil
-		}
-		return fmt.Errorf("getting link for %s: %w", s.iface, err)
+	if err := s.dev.Delete(s.iface); err != nil {
+		return fmt.Errorf("removing interface %s: %w", s.iface, err)
 	}
-	return s.nl.LinkDel(link)
+	s.osName = ""
+	return nil
 }
 
 // SetUpInterface creates and sets up the associated network interface.
 func (s *State) SetUpInterface(nodes []overlay.Node) error {
-	if err := s.nl.LinkAdd(&netlink.Wireguard{LinkAttrs: netlink.LinkAttrs{Name: s.iface}}); err != nil && !errors.Is(err, os.ErrExist) {
-		return fmt.Errorf("creating link %s: %w", s.iface, err)
+	osName, err := s.dev.Create(s.iface, s.mtu)
+	if err != nil {
+		return fmt.Errorf("creating interface %s: %w", s.iface, err)
+	}
+	if osName != s.osName {
+		slog.Info("wireguard interface", "iface", s.iface, "os", osName, "device", s.dev.Kind())
+		s.osName = osName
 	}
 
 	peerCfgs, err := s.nodesToPeerConfigs(nodes)
@@ -119,64 +143,54 @@ func (s *State) SetUpInterface(nodes []overlay.Node) error {
 		return fmt.Errorf("setting wireguard configuration for %s: %w", s.iface, err)
 	}
 
-	link, err := s.nl.LinkByName(s.iface)
-	if err != nil {
-		return fmt.Errorf("getting link information for %s: %w", s.iface, err)
+	if err := s.link.SetAddr(osName, hostPrefix(s.overlayAddr)); err != nil {
+		return fmt.Errorf("setting address for %s: %w", osName, err)
 	}
-	if err := s.nl.AddrReplace(link, &netlink.Addr{
-		IPNet: addrToIPNet(s.overlayAddr),
-	}); err != nil {
-		return fmt.Errorf("setting address for %s: %w", s.iface, err)
+	if err := s.link.SetMTU(osName, s.mtu); err != nil {
+		return fmt.Errorf("setting MTU for %s: %w", osName, err)
 	}
-	if err := s.nl.LinkSetMTU(link, s.mtu); err != nil {
-		return fmt.Errorf("setting MTU for %s: %w", s.iface, err)
-	}
-	if err := s.nl.LinkSetUp(link); err != nil {
-		return fmt.Errorf("enabling interface %s: %w", s.iface, err)
+	if err := s.link.Up(osName); err != nil {
+		return fmt.Errorf("enabling interface %s: %w", osName, err)
 	}
 	wanted := make(map[netip.Prefix]bool, len(nodes))
 	for _, node := range nodes {
 		for _, dst := range peerPrefixes(node) {
 			wanted[dst] = true
-			if err := s.nl.RouteAdd(&netlink.Route{
-				LinkIndex: link.Attrs().Index,
-				Dst:       prefixToIPNet(dst),
-				Scope:     netlink.SCOPE_LINK,
-			}); err != nil && !errors.Is(err, os.ErrExist) {
-				return fmt.Errorf("adding route %s to %s: %w", dst, s.iface, err)
+			if err := s.link.AddRoute(osName, dst); err != nil {
+				return fmt.Errorf("adding route %s to %s: %w", dst, osName, err)
 			}
 		}
 	}
-
-	return s.removeStaleRoutes(link, wanted)
+	return s.removeStaleRoutes(osName, wanted)
 }
 
 // peerPrefixes lists what is reachable through node: its overlay address and
 // the extra networks it advertises.
 func peerPrefixes(node overlay.Node) []netip.Prefix {
 	out := make([]netip.Prefix, 0, 1+len(node.AllowedIPs))
-	out = append(out, netip.PrefixFrom(node.OverlayAddr, node.OverlayAddr.BitLen()))
+	out = append(out, hostPrefix(node.OverlayAddr))
 	return append(out, node.AllowedIPs...)
 }
 
-// removeStaleRoutes deletes the routes on link that no current peer owns; the
-// interface is ours, so every route on it is. The route to our own address
-// (the kernel adds one for IPv6 /128 addresses) is left alone.
-func (s *State) removeStaleRoutes(link netlink.Link, wanted map[netip.Prefix]bool) error {
-	wanted[netip.PrefixFrom(s.overlayAddr, s.overlayAddr.BitLen())] = true
-	routes, err := s.nl.RouteList(link, netlink.FAMILY_ALL)
+// hostPrefix is the single-address prefix for addr.
+func hostPrefix(addr netip.Addr) netip.Prefix { return netip.PrefixFrom(addr, addr.BitLen()) }
+
+// removeStaleRoutes deletes the routes on the interface that no current peer
+// owns; the interface is ours, so every route on it is. The route to our own
+// address (the kernel adds one for IPv6 /128 addresses) is left alone.
+func (s *State) removeStaleRoutes(osName string, wanted map[netip.Prefix]bool) error {
+	wanted[hostPrefix(s.overlayAddr)] = true
+	routes, err := s.link.Routes(osName)
 	if err != nil {
-		return fmt.Errorf("listing routes on %s: %w", s.iface, err)
+		return fmt.Errorf("listing routes on %s: %w", osName, err)
 	}
-	for i := range routes {
-		route := &routes[i]
-		dst, ok := prefixFromIPNet(route.Dst)
-		if !ok || wanted[dst] {
+	for _, dst := range routes {
+		if wanted[dst] {
 			continue
 		}
-		slog.Debug("removing stale route", "dst", dst, "iface", s.iface)
-		if err := s.nl.RouteDel(route); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("removing route %s from %s: %w", dst, s.iface, err)
+		slog.Debug("removing stale route", "dst", dst, "iface", osName)
+		if err := s.link.DelRoute(osName, dst); err != nil {
+			return fmt.Errorf("removing route %s from %s: %w", dst, osName, err)
 		}
 	}
 	return nil
@@ -196,10 +210,6 @@ func prefixFromIPNet(n *net.IPNet) (netip.Prefix, bool) {
 		ones -= 96
 	}
 	return netip.PrefixFrom(addr.Unmap(), ones), true
-}
-
-func addrToIPNet(addr netip.Addr) *net.IPNet {
-	return prefixToIPNet(netip.PrefixFrom(addr, addr.BitLen()))
 }
 
 func prefixToIPNet(p netip.Prefix) *net.IPNet {

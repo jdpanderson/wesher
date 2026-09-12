@@ -5,7 +5,6 @@ import (
 	"net/netip"
 	"time"
 
-	"github.com/vishvananda/netlink"
 	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
@@ -32,26 +31,26 @@ type PeerReport struct {
 
 // Status reports on the wireguard interface iface. It needs the same privileges as the agent.
 func Status(iface string) (*Report, error) {
+	osName, link, err := lookup(iface)
+	if err != nil {
+		return nil, fmt.Errorf("getting interface %s: %w", iface, err)
+	}
 	client, err := wgctrl.New()
 	if err != nil {
 		return nil, fmt.Errorf("instantiating wireguard client: %w", err)
 	}
 	defer func() { _ = client.Close() }()
-	return status(iface, client, &netlink.Handle{})
+	return status(iface, osName, client, link)
 }
 
-func status(iface string, client wgClient, nl netlinker) (*Report, error) {
+func status(iface, osName string, client wgClient, link linker) (*Report, error) {
 	dev, err := client.Device(iface)
 	if err != nil {
 		return nil, fmt.Errorf("getting wireguard device %s: %w", iface, err)
 	}
-	link, err := nl.LinkByName(iface)
+	addrs, err := link.Addrs(osName)
 	if err != nil {
-		return nil, fmt.Errorf("getting link %s: %w", iface, err)
-	}
-	addrs, err := nl.AddrList(link, netlink.FAMILY_ALL)
-	if err != nil {
-		return nil, fmt.Errorf("listing addresses of %s: %w", iface, err)
+		return nil, fmt.Errorf("listing addresses of %s: %w", osName, err)
 	}
 
 	r := &Report{
@@ -61,9 +60,9 @@ func status(iface string, client wgClient, nl netlinker) (*Report, error) {
 		Addrs:      make([]netip.Prefix, 0, len(addrs)),
 		Peers:      make([]PeerReport, 0, len(dev.Peers)),
 	}
-	for _, a := range addrs {
+	for _, p := range addrs {
 		// the kernel adds an fe80:: address to every interface; only the overlay addresses are of interest
-		if p, ok := prefixFromIPNet(a.IPNet); ok && !p.Addr().IsLinkLocalUnicast() {
+		if !p.Addr().IsLinkLocalUnicast() {
 			r.Addrs = append(r.Addrs, p)
 		}
 	}

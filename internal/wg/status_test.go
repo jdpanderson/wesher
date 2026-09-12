@@ -9,7 +9,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/vishvananda/netlink"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
@@ -30,12 +29,11 @@ func Test_status_fake(t *testing.T) {
 			{PublicKey: wgtypes.Key{3}, AllowedIPs: []net.IPNet{*allowed, *routed}},   // also routes a network
 		},
 	}
-	_, ifaddr, _ := net.ParseCIDR("10.99.0.1/32")
-	_, linkLocal, _ := net.ParseCIDR("fe80::1/64")
-	nl := &fakeNL{addrs: []netlink.Addr{{IPNet: linkLocal}, {IPNet: ifaddr}}}
+	link := &fakeLinker{addrs: []netip.Prefix{netip.MustParsePrefix("fe80::1/64"), netip.MustParsePrefix("10.99.0.1/32")}}
 
-	r, err := status("wgtest0", &fakeWG{device: dev}, nl)
+	r, err := status("wgtest0", "utun3", &fakeWG{device: dev}, link)
 	require.NoError(t, err)
+	assert.Equal(t, "utun3", link.iface, "addresses come from the operating system's interface")
 	assert.Equal(t, "wgtest0", r.Interface)
 	assert.Equal(t, 51820, r.ListenPort)
 	assert.Equal(t, wgtypes.Key{9}.String(), r.PublicKey)
@@ -61,13 +59,10 @@ func Test_status_fake(t *testing.T) {
 
 func Test_status_fake_errors(t *testing.T) {
 	boom := errors.New("boom")
-	_, err := status("wgtest0", &fakeWG{deviceErr: boom}, &fakeNL{})
+	_, err := status("wgtest0", "wgtest0", &fakeWG{deviceErr: boom}, &fakeLinker{})
 	assert.ErrorContains(t, err, "getting wireguard device")
 
-	_, err = status("wgtest0", &fakeWG{}, &fakeNL{errs: map[string]error{"LinkByName": boom}})
-	assert.ErrorContains(t, err, "getting link")
-
-	_, err = status("wgtest0", &fakeWG{}, &fakeNL{errs: map[string]error{"AddrList": boom}})
+	_, err = status("wgtest0", "wgtest0", &fakeWG{}, &fakeLinker{errs: map[string]error{"Addrs": boom}})
 	assert.ErrorContains(t, err, "listing addresses")
 }
 
