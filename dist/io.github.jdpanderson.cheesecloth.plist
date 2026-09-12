@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd job for the cheesecloth agent on macOS. Install the binary at
+  /usr/local/sbin/cheesecloth and the settings in /etc/cheesecloth/config.yaml,
+  copy this file to /Library/LaunchDaemons/ and run:
+    sudo launchctl bootstrap system /Library/LaunchDaemons/io.github.jdpanderson.cheesecloth.plist
+  The agent runs as root, which creating the utun interface requires. launchd
+  restarts it if it exits.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>io.github.jdpanderson.cheesecloth</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/local/sbin/cheesecloth</string>
+		<string>agent</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>/var/log/cheesecloth.log</string>
+	<key>StandardErrorPath</key>
+	<string>/var/log/cheesecloth.log</string>
+</dict>
+</plist>

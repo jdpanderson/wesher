@@ -408,7 +408,9 @@ is a fallback, never a replacement.
       says which one is in use. The e2e image drops the separate wireguard-go
       install; the container scenarios exercise the userspace path, the
       Linode hosts the kernel path.
-- [ ] macOS. Link implementation over the BSD routing socket for addresses
+- [x] macOS. Done 2026-09-11: ioctls for address, MTU and flags, the routing
+      socket for routes; `dist/io.github.jdpanderson.cheesecloth.plist`; a
+      `macos` CI job runs the suite and a live root test. Link implementation over the BSD routing socket for addresses
       and routes. The device is a `utun` the system names, so the user-facing
       interface name is the control socket name and `status` shows both. A
       launchd plist under `dist/`. GitHub's macOS runners allow sudo: unit
