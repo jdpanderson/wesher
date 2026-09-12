@@ -178,6 +178,23 @@ test_multiple_clusters_restart() {
     stop_test_container test1-orig
 }
 
+# wireguard runs inside the agent when asked (and wherever the kernel has none)
+test_userspace_device() {
+    run_test_container test1-orig test1 --init --userspace
+    token=$(invite test1-orig 1)
+    run_test_container test2-orig test2 --join test1-orig --join-key "$token" --userspace
+
+    sleep 3
+
+    ping_ok test1-orig test2 test2-orig
+    ping_ok test2-orig test1 test1-orig
+    docker logs test1-orig 2>&1 | grep -q "device=userspace" || { echo "the device did not run in userspace"; docker logs test1-orig; false; }
+    docker exec test1-orig /app/cheesecloth status | grep -q test2 || { docker exec test1-orig /app/cheesecloth status; false; }
+
+    stop_test_container test2-orig
+    stop_test_container test1-orig
+}
+
 # IPv6 underlay (gossip, enrolment and wireguard endpoints over fd00:57::/64) and IPv6 overlay
 test_ipv6_cluster() {
     network=cheesecloth_test6

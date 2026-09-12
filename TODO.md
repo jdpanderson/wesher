@@ -397,7 +397,8 @@ is a fallback, never a replacement.
       values, one file each. A service notifier interface fronts sd_notify.
       Gate: `GOOS=darwin` and `GOOS=windows` builds pass and join CI as
       compile checks; Linux e2e stays green.
-- [ ] Device provider. On Linux the kernel provider creates the link as
+- [x] Device provider. Done 2026-09-11 (`--userspace`; e2e image no longer
+      installs wireguard-go; `test_userspace_device`). On Linux the kernel provider creates the link as
       today and is used whenever the module is present (probe: create the
       link; `EOPNOTSUPP`/`ENOTSUP` means no module). Only when that fails, or
       `--userspace` is given, the agent embeds wireguard-go as a library: the
