@@ -70,6 +70,10 @@ func Test_TokenStore_expiry(t *testing.T) {
 
 func Test_TokenStore_uses(t *testing.T) {
 	s := NewTokenStore(nil)
+	_, err := s.Mint(0, 1)
+	assert.Error(t, err, "a token must last")
+	_, err = s.Mint(time.Minute, 0)
+	assert.Error(t, err, "and be usable")
 	tok, err := s.Mint(time.Minute, 2)
 	require.NoError(t, err)
 	key, _ := DecodeToken(tok)

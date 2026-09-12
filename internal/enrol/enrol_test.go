@@ -166,24 +166,6 @@ func Test_Join_welcomeMustBeConsistent(t *testing.T) {
 	assert.Contains(t, err.Error(), "not a valid member")
 }
 
-func Test_TokenStore(t *testing.T) {
-	s := NewTokenStore(nil)
-	_, err := s.Mint(0, 1)
-	assert.Error(t, err)
-	_, err = s.Mint(time.Minute, 0)
-	assert.Error(t, err)
-	tok, err := s.Mint(time.Minute, 1)
-	require.NoError(t, err)
-	key, err := DecodeToken(tok)
-	require.NoError(t, err)
-	assert.Len(t, key, tokenLen)
-	_, ok := s.lookup(idOf(key))
-	assert.True(t, ok)
-	s.consume(idOf(key))
-	_, ok = s.lookup(idOf(key))
-	assert.False(t, ok)
-}
-
 func Test_transcriptAndKeys(t *testing.T) {
 	a, b := newID(t), newID(t)
 	nJ, nM := []byte("nJ"), []byte("nM")
