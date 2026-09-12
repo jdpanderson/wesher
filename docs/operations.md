@@ -121,8 +121,13 @@ agent keeps in `/var/run/wireguard/<interface>.name`.
 
 ### macOS
 
-Build the binary (`GOOS=darwin go build ./cmd/cheesecloth`) or take it from a
-release, and put it in `/usr/local/sbin/`. Put the node's settings in
+Take `cheesecloth-darwin-amd64` or `cheesecloth-darwin-arm64` from a release,
+or build it (`GOOS=darwin go build ./cmd/cheesecloth`), and put it in
+`/usr/local/sbin/` as `cheesecloth`. The release binaries are not signed or
+notarised: download them with `curl` or `wget`, which do not mark the file as
+quarantined. A binary downloaded with a browser is refused by Gatekeeper until
+`xattr -d com.apple.quarantine cheesecloth` clears the mark or it is approved
+under Privacy & Security in System Settings. Put the node's settings in
 `/etc/cheesecloth/config.yaml`. Initialise or enrol the node once by hand, as
 root, the same way as on Linux. Then install the launchd job:
 
@@ -138,9 +143,13 @@ process runs.
 
 ### Windows
 
-Put `cheesecloth.exe` and `wintun.dll` (from [wintun.net](https://www.wintun.net/),
-the architecture of the binary) in one directory. Put the node's settings in
-`%ProgramData%\cheesecloth\config.yaml`. From an administrator console,
+Take `cheesecloth-windows-amd64.exe` or `cheesecloth-windows-arm64.exe` from a
+release, or build it (`GOOS=windows go build ./cmd/cheesecloth`). Put it and
+`wintun.dll` (from [wintun.net](https://www.wintun.net/), the architecture of
+the binary) in one directory, with the binary renamed to `cheesecloth.exe`.
+Wintun is not shipped in the release; without it the agent cannot create its
+interface. Put the node's settings in `%ProgramData%\cheesecloth\config.yaml`.
+From an administrator console,
 initialise or enrol the node once by hand (`cheesecloth.exe --init` or
 `cheesecloth.exe --join HOST --join-key TOKEN`, stop it with Ctrl-C once it is
 a member), then register and start the service:
@@ -158,9 +167,12 @@ to be missing.
 
 ## Packages
 
-Each GitHub release carries, next to the plain binaries, a `.deb` for amd64
-and arm64 and an Arch Linux package for x86_64. Install them with `dpkg -i` or
-`pacman -U`. Both install the binary, the systemd unit and
+Each GitHub release carries a binary per platform, named
+`cheesecloth-<os>-<arch>`, with `.exe` on Windows: Linux on amd64, arm, arm64,
+mipsle and riscv64, macOS on amd64 and arm64, and Windows on amd64 and arm64.
+`cheesecloth.sha256sums` lists their checksums. Next to them are a `.deb` for
+amd64 and arm64 and an Arch Linux package for x86_64. Install those with
+`dpkg -i` or `pacman -U`. Both install the binary, the systemd unit and
 `/etc/cheesecloth/config.yaml` as a configuration file, and leave the service
 disabled: initialise or enrol the node once by hand, edit the configuration,
 then `systemctl enable --now cheesecloth`.

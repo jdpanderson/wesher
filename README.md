@@ -23,7 +23,7 @@ for Linux; the other platforms are described in [operations](docs/operations.md#
 1. Download the binary on every node:
 
    ```
-   $ wget -O cheesecloth https://github.com/jdpanderson/cheesecloth/releases/latest/download/cheesecloth-$(go env GOARCH)
+   $ wget -O cheesecloth https://github.com/jdpanderson/cheesecloth/releases/latest/download/cheesecloth-$(go env GOOS)-$(go env GOARCH)
    $ chmod a+x cheesecloth
    ```
 

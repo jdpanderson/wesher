@@ -429,6 +429,13 @@ is a fallback, never a replacement.
 - [x] Docs for each platform once it runs: install, privileges (root or
       Administrator), which device is in use and how to tell. Done 2026-09-11:
       `docs/operations.md` Platforms section, README and configuration updated.
+- [x] Releases carry macOS and Windows binaries. Done 2026-09-11: the Makefile
+      builds `os/arch` pairs from `TARGETS` rather than architectures from
+      `GOARCHES`, naming them `cheesecloth-<os>-<arch>` with `.exe` on
+      Windows; CI builds nine of them on the Linux runner (CGO is off, so
+      every platform cross-compiles) and the existing upload globs them.
+      macOS binaries are unsigned, so the docs point at `curl`/`wget` rather
+      than a browser download; Wintun is still not shipped with the exe.
 - [ ] Windows follow-ups: the control socket relies on file permissions the
       hosts file directory does not give (an ACL on the socket, or a named
       pipe, would); wintun.dll is not shipped with the binary yet; service
