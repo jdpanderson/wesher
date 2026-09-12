@@ -154,7 +154,7 @@ func Test_State_SetUpInterface_fake_removesStaleRoutes(t *testing.T) {
 	// leftovers on the interface from a previous run, and the kernel's route to our own address
 	_, foreign, _ := net.ParseCIDR("192.0.2.9/32")
 	_, wide, _ := net.ParseCIDR("10.99.0.0/24")
-	nl.routes = append(nl.routes, &netlink.Route{Dst: foreign}, &netlink.Route{Dst: wide}, &netlink.Route{Dst: addrToIPNet(s.OverlayAddr)}, &netlink.Route{Dst: nil})
+	nl.routes = append(nl.routes, &netlink.Route{Dst: foreign}, &netlink.Route{Dst: wide}, &netlink.Route{Dst: addrToIPNet(s.overlayAddr)}, &netlink.Route{Dst: nil})
 
 	require.NoError(t, s.SetUpInterface([]overlay.Node{p1, p2}))
 	dsts := func() []string {
@@ -164,13 +164,13 @@ func Test_State_SetUpInterface_fake_removesStaleRoutes(t *testing.T) {
 		}
 		return out
 	}
-	assert.ElementsMatch(t, []string{"<nil>", s.OverlayAddr.String() + "/32", "10.99.0.1/32", "192.168.7.0/24", "10.99.0.2/32"}, dsts(),
+	assert.ElementsMatch(t, []string{"<nil>", s.overlayAddr.String() + "/32", "10.99.0.1/32", "192.168.7.0/24", "10.99.0.2/32"}, dsts(),
 		"routes nobody advertises are removed, routes without a destination are left alone")
 
 	nl.calls = nil
 	require.NoError(t, s.SetUpInterface([]overlay.Node{p2}))
 	assert.Contains(t, nl.calls, "RouteDel")
-	assert.ElementsMatch(t, []string{"<nil>", s.OverlayAddr.String() + "/32", "10.99.0.2/32"}, dsts(), "p1's address and network went with it")
+	assert.ElementsMatch(t, []string{"<nil>", s.overlayAddr.String() + "/32", "10.99.0.2/32"}, dsts(), "p1's address and network went with it")
 
 	// route del failure is reported
 	nl.errs = map[string]error{"RouteDel": errors.New("boom")}

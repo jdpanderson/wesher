@@ -30,7 +30,7 @@ func Test_State_nodesToPeerConfigs(t *testing.T) {
 	n2.OverlayAddr = netip.MustParseAddr("fd00::2")
 	n2.PubKey = key2
 
-	s := &State{Port: 51820}
+	s := &State{port: 51820}
 	cfgs, err := s.nodesToPeerConfigs([]overlay.Node{n1, n2})
 	require.NoError(t, err)
 	require.Len(t, cfgs, 2)
@@ -51,7 +51,7 @@ func Test_State_nodesToPeerConfigs_keepalive(t *testing.T) {
 	n.OverlayAddr = netip.MustParseAddr("10.0.0.1")
 	n.PubKey = wgtypes.Key{1}.String()
 
-	s := &State{Port: 51820, keepalive: 25 * time.Second}
+	s := &State{port: 51820, keepalive: 25 * time.Second}
 	cfgs, err := s.nodesToPeerConfigs([]overlay.Node{n})
 	require.NoError(t, err)
 	require.NotNil(t, cfgs[0].PersistentKeepaliveInterval)

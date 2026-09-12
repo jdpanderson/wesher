@@ -54,8 +54,8 @@ type State struct {
 	client      wgClient
 	nl          netlinker
 	privKey     wgtypes.Key
-	OverlayAddr netip.Addr
-	Port        int
+	overlayAddr netip.Addr
+	port        int
 	PubKey      wgtypes.Key // fresh on every start; gossiped to peers
 }
 
@@ -81,8 +81,8 @@ func newState(cfg Config, client wgClient, nl netlinker) (*State, error) {
 		client:      client,
 		nl:          nl,
 		privKey:     privKey,
-		OverlayAddr: cfg.OverlayAddr,
-		Port:        cfg.Port,
+		overlayAddr: cfg.OverlayAddr,
+		port:        cfg.Port,
 		PubKey:      privKey.PublicKey(),
 	}, nil
 }
@@ -112,7 +112,7 @@ func (s *State) SetUpInterface(nodes []overlay.Node) error {
 	}
 	if err = s.client.ConfigureDevice(s.iface, wgtypes.Config{
 		PrivateKey:   &s.privKey,
-		ListenPort:   &s.Port,
+		ListenPort:   &s.port,
 		ReplacePeers: true,
 		Peers:        peerCfgs,
 	}); err != nil {
@@ -124,7 +124,7 @@ func (s *State) SetUpInterface(nodes []overlay.Node) error {
 		return fmt.Errorf("getting link information for %s: %w", s.iface, err)
 	}
 	if err := s.nl.AddrReplace(link, &netlink.Addr{
-		IPNet: addrToIPNet(s.OverlayAddr),
+		IPNet: addrToIPNet(s.overlayAddr),
 	}); err != nil {
 		return fmt.Errorf("setting address for %s: %w", s.iface, err)
 	}
@@ -163,7 +163,7 @@ func peerPrefixes(node overlay.Node) []netip.Prefix {
 // interface is ours, so every route on it is. The route to our own address
 // (the kernel adds one for IPv6 /128 addresses) is left alone.
 func (s *State) removeStaleRoutes(link netlink.Link, wanted map[netip.Prefix]bool) error {
-	wanted[netip.PrefixFrom(s.OverlayAddr, s.OverlayAddr.BitLen())] = true
+	wanted[netip.PrefixFrom(s.overlayAddr, s.overlayAddr.BitLen())] = true
 	routes, err := s.nl.RouteList(link, netlink.FAMILY_ALL)
 	if err != nil {
 		return fmt.Errorf("listing routes on %s: %w", s.iface, err)
@@ -229,7 +229,7 @@ func (s *State) nodesToPeerConfigs(nodes []overlay.Node) ([]wgtypes.PeerConfig, 
 			PublicKey:                   pubKey,
 			ReplaceAllowedIPs:           true,
 			PersistentKeepaliveInterval: keepalive,
-			Endpoint:                    net.UDPAddrFromAddrPort(netip.AddrPortFrom(node.Addr, uint16(s.Port))),
+			Endpoint:                    net.UDPAddrFromAddrPort(netip.AddrPortFrom(node.Addr, uint16(s.port))),
 			AllowedIPs:                  allowed,
 		}
 	}

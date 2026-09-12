@@ -63,7 +63,7 @@ func Test_New(t *testing.T) {
 	s, err := New(testConfig())
 	require.NoError(t, err)
 	assert.Equal(t, s.privKey.PublicKey(), s.PubKey)
-	assert.True(t, netip.MustParsePrefix(testPrefix).Contains(s.OverlayAddr))
+	assert.True(t, netip.MustParsePrefix(testPrefix).Contains(s.overlayAddr))
 }
 
 func Test_State_SetUpInterface_and_Down(t *testing.T) {
@@ -85,7 +85,7 @@ func Test_State_SetUpInterface_and_Down(t *testing.T) {
 	addrs, err := netlink.AddrList(link, netlink.FAMILY_V4)
 	require.NoError(t, err)
 	require.Len(t, addrs, 1)
-	assert.Equal(t, s.OverlayAddr.String()+"/32", addrs[0].IPNet.String())
+	assert.Equal(t, s.overlayAddr.String()+"/32", addrs[0].IPNet.String())
 
 	dev, err := s.client.Device("wgtest0")
 	require.NoError(t, err)
@@ -105,7 +105,7 @@ func Test_State_SetUpInterface_and_Down(t *testing.T) {
 	report, err := Status("wgtest0")
 	require.NoError(t, err)
 	assert.Equal(t, s.PubKey.String(), report.PublicKey)
-	assert.Equal(t, []netip.Prefix{netip.PrefixFrom(s.OverlayAddr, 32)}, report.Addrs)
+	assert.Equal(t, []netip.Prefix{netip.PrefixFrom(s.overlayAddr, 32)}, report.Addrs)
 	require.Len(t, report.Peers, 2)
 	assert.Equal(t, 25*time.Second, report.Peers[0].PersistentKeepalive)
 
