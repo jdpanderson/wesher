@@ -282,6 +282,10 @@ issuer's clock (see [membership.md](membership.md#clocks)).
 
 ## Known limitations
 
+What follows are consequences of how cheesecloth is designed, and are not
+expected to change. Defects that should eventually be fixed are kept apart, in
+[known issues](known-issues.md).
+
 ### Overlay address collisions
 
 Two nodes can be assigned the same overlay address only if two different members

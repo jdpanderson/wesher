@@ -118,6 +118,8 @@ entries are updated whenever the membership changes.
   how membership becomes an interface configuration.
 - [Membership design](docs/membership.md): a full description of identities, admission records, the enrolment
   exchange and the transport.
+- [Known issues](docs/known-issues.md): defects and rough edges that are understood but not yet fixed, and the
+  workarounds for them.
 - [wesher](https://github.com/costela/wesher): the project cheesecloth was forked from. cheesecloth follows the same
   approach of a WireGuard mesh configured by gossip, but its protocol, state and key model are all different.
 
