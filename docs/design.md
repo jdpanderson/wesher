@@ -65,7 +65,8 @@ There are two kinds, an admission and a revocation, both signed with the
 admitter's identity key.
 
 The founding node signs its own admission, and that record is the root. Every
-other node pins the root's identity when it enrols. A record is valid if its
+other node pins the root's identity when it enrols. The root is a key, not a
+machine, and the node holding it has no standing the others lack. A record is valid if its
 signature verifies and its admitter is the root or itself holds a valid
 admission. The result is a chain back to the root, evaluated locally by every
 node from data it already has.
@@ -90,6 +91,14 @@ spreads the same way. A revoked node is cut off rather than told: peers drop
 its connections and stop installing it. Admissions it made earlier stay valid,
 because those nodes were legitimately invited at the time. Removing them is the
 operator's decision, not an automatic consequence.
+
+Every member is revoked by that one rule, by itself or by another member, and
+the root is no exception. It differs from the rest only in needing no admitter.
+Revoking it removes it from the mesh without disturbing anything it admitted,
+so the node that founded a cluster can hand in its membership and leave, and
+the cluster carries on with that key still pinned as the anchor its chains end
+at. This is what makes the mesh a set of peers rather than a tree with an
+indispensable machine at its root.
 
 ## Addressing
 
@@ -216,7 +225,9 @@ give, such as the kernel module path.
 - The clock matters in two places: a revocation counts only against admissions
   made before it, and the earlier of two admissions to one slot wins. Nodes are
   expected to keep their clocks synchronised.
-- The pinned root cannot be rotated. Replacing it means rebuilding the cluster.
+- The pinned root cannot be rotated. It stays the anchor every chain ends at,
+  even after it has been revoked and its machine is gone. Replacing it means
+  rebuilding the cluster.
 - The gossiped announcement has a small size limit, which bounds how many
   extra networks a node can advertise.
 - Membership is the only unit of access control. Every member can reach every

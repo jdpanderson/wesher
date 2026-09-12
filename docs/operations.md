@@ -78,16 +78,16 @@ The agent exits, so a service that starts it at boot should be disabled as
 well (`systemctl disable cheesecloth`). Starting it again without a fresh
 invitation fails: the node is no longer a member and has no state.
 
-Two cases cannot tell the cluster anything, and both need `--force`:
+Any node may leave this way, the node that ran `--init` included. The root is
+a peer: revoking it takes it out of the mesh and leaves every node it admitted
+where it is, because records are judged as of the moment they were signed. The
+cluster carries on without it, and still admits new nodes.
 
-- **The node's agent is not running.** Nothing can sign or send a revocation.
-  `--force` removes the interface, the hosts entries and the state file only.
-- **The node is the cluster root.** Every admission chains back to the root's
-  own record, so the root cannot be revoked. `--force` leaves without
-  revoking.
-
-In both cases the command prints the node's identity and the cluster keeps
-trusting it until a member revokes it:
+One case cannot tell the cluster anything, and needs `--force`: the node's
+agent is not running, so nothing can sign or send a revocation. `--force`
+removes the interface, the hosts entries and the state file only. The command
+then prints the node's identity, and the cluster keeps trusting it until a
+member revokes it:
 
 ```
 # cheesecloth leave --force

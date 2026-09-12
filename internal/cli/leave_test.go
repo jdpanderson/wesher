@@ -40,10 +40,10 @@ func Test_LeaveCmd_Run_notRevoked(t *testing.T) {
 }
 
 func Test_LeaveCmd_Run_agentRefuses(t *testing.T) {
-	agent := &fakeAgent{err: errors.New("the root cannot be revoked")}
+	agent := &fakeAgent{err: errors.New("signing the revocation failed")}
 	cmd := &LeaveCmd{controlFlags: controlFlags{ControlSocket: listenFakeAgent(t, agent)}}
 	_, _, err := captureOutput(t, cmd.Run)
-	assert.ErrorContains(t, err, "the root cannot be revoked")
+	assert.ErrorContains(t, err, "signing the revocation failed")
 	assert.ErrorContains(t, err, "--force leaves without telling the cluster")
 }
 

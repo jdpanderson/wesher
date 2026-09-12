@@ -117,11 +117,11 @@ func Test_agentControl_Leave(t *testing.T) {
 // A node that cannot revoke itself stays where it is unless the operator insists.
 func Test_agentControl_Leave_cannotRevoke(t *testing.T) {
 	m, _ := newFakeMembership(t)
-	m.revokeSelfErr = errors.New("the root cannot be revoked")
+	m.revokeSelfErr = errors.New("signing the revocation failed")
 	ctl, l, stopped := leaveControl(m)
 
 	_, err := ctl.Leave(false)
-	assert.ErrorContains(t, err, "root cannot be revoked")
+	assert.ErrorContains(t, err, "signing the revocation failed")
 	assert.False(t, l.requested.Load())
 	select {
 	case <-stopped:

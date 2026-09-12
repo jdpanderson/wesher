@@ -351,16 +351,16 @@ before starting; none are committed yet.
       treating the flag as an override that logs a renumbering would remove
       the failure, and pairs with the invitation item above: the joiner could
       learn the network at enrolment and never be told it again.
-- [ ] **DECISION** a forced leave on the root tells the operator to do
-      something that cannot be done. `leave --force` prints "the cluster still
-      trusts this node: run 'cheesecloth revoke <id>' on a member", and
-      `docs/operations.md` repeats it, but revoking the root fails with "the
-      root cannot be revoked": verified 2026-09-12 on a two-node cluster. The
-      cluster itself is fine without its root, also verified: the remaining
-      member kept running, admitted a third node and meshed with it. What is
-      left is a trusted identity that nothing can retire, and its overlay slot.
-      The message and the documentation need to say what the operator should
-      actually do, which depends on whether the root stays unrevocable.
+- [x] The root is a peer, not a king: it can revoke itself, and any member can
+      revoke it. Done 2026-09-12. Before this the root was valid
+      unconditionally, so it could not leave its own cluster except with
+      `leave --force`, which told the cluster nothing and left an identity
+      nothing could ever retire. `leave` now works on the root like any other
+      node. Nothing cascades: records are judged as of the moment they were
+      signed, so the members a departed root admitted are unaffected and the
+      cluster keeps admitting new ones with that key still pinned as the anchor.
+      A revoked root admits nobody afterwards. This also retires the root key
+      of a decommissioned machine, which used to be trusted for good.
 - [x] A member cannot revoke the member that admitted it. `Set.validAt` guarded
       against cycles with a set keyed on identity alone, so judging the
       revoker's own admission re-entered that identity at an earlier time and

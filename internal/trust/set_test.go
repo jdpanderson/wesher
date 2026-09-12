@@ -90,21 +90,48 @@ func Test_Set_revocation(t *testing.T) {
 		assert.True(t, set.Valid(a.Public()))
 	})
 
-	t.Run("root cannot be revoked", func(t *testing.T) {
-		root, a, _, _, set := cluster(t)
-		_, err := set.AddRevocation(Revoke(a, root.Public(), t0))
-		assert.ErrorContains(t, err, "root cannot be revoked")
+	t.Run("by a member removes the root like any other peer", func(t *testing.T) {
+		root, a, b, _, set := cluster(t)
+		ok, err := set.AddRevocation(Revoke(a, root.Public(), t0.Add(3*time.Minute)))
+		require.NoError(t, err)
+		assert.True(t, ok)
+		assert.False(t, set.Valid(root.Public()))
+		assert.True(t, set.Valid(a.Public()), "the members the root admitted are unaffected")
+		assert.True(t, set.Valid(b.Public()))
+	})
+
+	t.Run("by the root on itself removes the root", func(t *testing.T) {
+		root, a, b, _, set := cluster(t)
+		ok, err := set.AddRevocation(Revoke(root, root.Public(), t0.Add(3*time.Minute)))
+		require.NoError(t, err)
+		assert.True(t, ok)
+		assert.False(t, set.Valid(root.Public()), "the root may leave for good")
+		assert.True(t, set.Valid(a.Public()))
+		assert.True(t, set.Valid(b.Public()))
+
+		// the cluster carries on: a admits c, and the departed root admits nobody
+		c, d := newID(t), newID(t)
+		_, err = set.AddAdmission(Admit(a, c.Public(), c.DHPublic(), "c", 4, t0.Add(10*time.Minute)))
+		require.NoError(t, err)
+		assert.True(t, set.Valid(c.Public()), "a member admitted after the root left")
+		_, err = set.AddAdmission(Admit(root, d.Public(), d.DHPublic(), "d", 5, t0.Add(10*time.Minute)))
+		require.NoError(t, err)
+		assert.False(t, set.Valid(d.Public()), "admitted by the root after its revocation")
+	})
+
+	t.Run("by a non-member leaves the root alone", func(t *testing.T) {
+		root, _, _, stranger, set := cluster(t)
+		_, err := set.AddRevocation(Revoke(stranger, root.Public(), t0.Add(3*time.Minute)))
+		require.NoError(t, err)
+		assert.True(t, set.Valid(root.Public()))
 	})
 }
 
 func Test_Set_AddRevocation(t *testing.T) {
 	root, a, b, stranger, set := cluster(t)
-	_, err := set.AddRevocation(Revoke(a, root.Public(), t0))
-	assert.ErrorContains(t, err, "root cannot be revoked")
-
 	rev := Revoke(a, b.Public(), t0.Add(time.Hour))
 	rev.IssuedAt++
-	_, err = set.AddRevocation(rev)
+	_, err := set.AddRevocation(rev)
 	assert.ErrorContains(t, err, "signature")
 
 	ok, err := set.AddRevocation(Revoke(a, b.Public(), t0.Add(time.Hour)))
@@ -127,10 +154,12 @@ func Test_Set_Merge_skipsBadRecords(t *testing.T) {
 	good := Admit(root, c.Public(), c.DHPublic(), "c", 4, t0)
 	bad := Admit(root, c.Public(), c.DHPublic(), "c", 5, t0)
 	bad.Name = "tampered"
-	badRev := Revoke(a, root.Public(), t0)
+	badRev := Revoke(a, a.Public(), t0)
+	badRev.IssuedAt++ // the signature no longer covers the record
 	n := set.Merge(Records{Admissions: []Admission{bad, good}, Revocations: []Revocation{badRev}})
 	assert.Equal(t, 1, n)
 	assert.True(t, set.Valid(c.Public()))
+	assert.True(t, set.Valid(a.Public()), "the tampered revocation was skipped")
 }
 
 func Test_Set_mergeAndRoundTrip(t *testing.T) {

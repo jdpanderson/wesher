@@ -65,8 +65,8 @@ func (a agentControl) Invite(ttl time.Duration, uses int) (string, error) {
 }
 
 // Leave revokes this node and stops the agent. Without force a node that
-// cannot revoke itself, the root, stays where it is rather than leaving a
-// member the cluster still trusts without saying so.
+// cannot revoke itself stays where it is, rather than leaving a member the
+// cluster still trusts without saying so.
 func (a agentControl) Leave(force bool) (control.LeaveResult, error) {
 	left := control.LeaveResult{Identity: a.cluster.Identity().String()}
 	notified, err := a.cluster.RevokeSelf()

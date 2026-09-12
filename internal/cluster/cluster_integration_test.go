@@ -285,8 +285,8 @@ func Test_Cluster_RevokeSelf_root(t *testing.T) {
 	a := rootCluster(t, dir, "a")
 	defer a.Leave()
 	_, err := a.RevokeSelf()
-	assert.ErrorContains(t, err, "root cannot be revoked")
-	assert.True(t, a.Trust().Valid(a.Identity()))
+	require.NoError(t, err, "the root may leave its own cluster")
+	assert.False(t, a.Trust().Valid(a.Identity()))
 }
 
 func Test_Cluster_recordsSpreadTransitively(t *testing.T) {

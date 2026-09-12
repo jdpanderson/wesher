@@ -52,13 +52,11 @@ func (s *Set) AddAdmission(a Admission) (bool, error) {
 	return true, nil
 }
 
-// AddRevocation stores a signature-valid revocation; the root cannot be revoked.
+// AddRevocation stores a signature-valid revocation. Any member may be
+// revoked, the root included: it is a peer, not an authority over the others.
 func (s *Set) AddRevocation(r Revocation) (bool, error) {
 	if err := r.Validate(); err != nil {
 		return false, err
-	}
-	if r.Identity == s.root {
-		return false, errors.New("the root cannot be revoked")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -104,7 +102,7 @@ func (s *Set) Records() Records {
 
 // Valid reports whether id is currently a member: not revoked by itself or by
 // a member, and admitted by the root or by an identity that was a member at
-// the time it issued the admission. The root is always valid.
+// the time it issued the admission. The root needs no admission of its own.
 func (s *Set) Valid(id PublicKey) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -145,9 +143,19 @@ func (s *Set) validAdmissions() iter.Seq[Admission] {
 // at the earlier time that identity was admitted, so the cycle guard tracks
 // the time as well as the identity. A record's time never changes, so the
 // questions the recursion can ask are finite and it always ends.
+//
+// The root differs from the rest only in needing no admitter. It is revoked by
+// the same rule, and judging a revocation of the root reaches the root again
+// at the earlier time its revoker was admitted, where the revocation does not
+// yet apply. Records the root signed while it was a member therefore stay
+// valid after it leaves, and the chains that rest on them are unaffected.
 func (s *Set) validAt(id PublicKey, at int64, visiting map[question]bool) bool {
 	if id == s.root {
-		return true
+		rev, ok := s.revocations[id]
+		if !ok || rev.IssuedAt > at {
+			return true
+		}
+		return rev.Revoker != id && !s.validAt(rev.Revoker, rev.IssuedAt, visiting)
 	}
 	q := question{id, at}
 	if visiting[q] {

@@ -52,9 +52,10 @@ func Test_Cluster_NotifyMsg(t *testing.T) {
 	a.NotifyMsg(recordJSON(t, recordMsg{Admission: &adm}))
 	assert.Empty(t, a.GetBroadcasts(0, 1<<16), "a record already known is not")
 
-	rootRev := trust.Revoke(j, a.Identity(), time.Now())
+	rootRev := trust.Revoke(j, a.Identity(), time.Now().Add(time.Minute)) // after j's own admission
 	a.NotifyMsg(recordJSON(t, recordMsg{Revocation: &rootRev}))
-	assert.True(t, a.Trust().Valid(a.Identity()), "the root cannot be revoked")
+	assert.False(t, a.Trust().Valid(a.Identity()), "a member may revoke the root, which is a peer like any other")
+	assert.True(t, a.Trust().Valid(j.Public()), "the revoker keeps its own membership")
 
 	rev := trust.Revoke(a.id, j.Public(), time.Now())
 	a.NotifyMsg(recordJSON(t, recordMsg{Revocation: &rev}))
@@ -143,12 +144,13 @@ func Test_Cluster_admit_refusesTakenName(t *testing.T) {
 	assert.ErrorContains(t, err, "already exists")
 }
 
+// The root is revoked like any other member, by itself or by a peer.
 func Test_Cluster_Revoke_root(t *testing.T) {
 	dir := useTempStatePaths(t)
 	a := rootCluster(t, dir, "a")
 	defer a.Leave()
-	assert.ErrorContains(t, a.Revoke(a.Identity()), "root cannot be revoked")
-	assert.True(t, a.Trust().Valid(a.Identity()))
+	require.NoError(t, a.Revoke(a.Identity()))
+	assert.False(t, a.Trust().Valid(a.Identity()))
 }
 
 // A cluster whose overlay net is full refuses the next joiner, naming the net.

@@ -12,12 +12,12 @@ import (
 
 // LeaveCmd takes this node out of its cluster for good: the running agent
 // revokes this node's identity, hands the revocation to the members, tears
-// the interface down and deletes the state file. With --force it leaves
-// without telling the cluster, which is the only way out for the root and for
-// a node whose agent is no longer running.
+// the interface down and deletes the state file. Any node may leave this way,
+// the root included. With --force it leaves without telling the cluster, which
+// is the only way out for a node whose agent is no longer running.
 type LeaveCmd struct {
 	controlFlags
-	Force bool `help:"leave even when the cluster cannot be told: no agent is running, or this node is the root, which cannot be revoked"`
+	Force bool `help:"leave even when the cluster cannot be told, such as when no agent is running to sign the revocation"`
 
 	stateDir string      // where the agent keeps its state; empty means cluster.DefaultDir
 	hosts    hostsWriter // this interface's hosts entries; nil means the hosts file

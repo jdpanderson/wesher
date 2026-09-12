@@ -53,13 +53,23 @@ prefix (`cheesecloth/admission/v1`, `cheesecloth/revocation/v1`).
   state file; a self-signed record is accepted only for the pinned root.
 - An admission is valid if its signature verifies and its admitter is the
   root or itself holds a valid admission. Validity is evaluated recursively
-  with a cycle guard.
+  with a cycle guard, which tracks the time each question is asked about as
+  well as the identity: asking whether a revoker was a member reaches the
+  identity it revokes again, at the earlier time that identity was admitted.
 - A revocation is valid if signed by a valid identity, or by the identity it
   revokes: a member may always revoke itself, which is how a node leaves the
   cluster for good. A revoked identity is no longer a member. Admissions it
   issued earlier stay valid, because those nodes proved knowledge of a token
   at the time. Revoking them automatically would remove nodes the operator did
   not ask to remove; revoke them explicitly if that is wanted.
+- The root is a peer, not an authority over the others. It is revoked by the
+  same rule: by itself, which is how the founding node leaves, or by any
+  member. Revoking it removes it from the mesh and nothing else, because the
+  records it signed while it was a member are still judged as of the moment it
+  signed them. The cluster carries on admitting new nodes with the departed
+  root still pinned as the anchor its chains end at. A revoked root admits
+  nobody: records it signs afterwards are judged at their own time, when it was
+  no longer a member.
 - Records are distributed by memberlist's push/pull state sync (whole set,
   union merge) and by broadcast when a record is created. Nodes persist the
   set, so a restarted node has it before contacting anyone.
@@ -190,8 +200,9 @@ identity can be revoked.
   socket `/run/cheesecloth/<interface>.sock`).
 - `cheesecloth revoke NAME|IDENTITY`: sign and broadcast a revocation.
 - `cheesecloth leave`: revoke this node itself, hand the revocation to the
-  members, and delete the state file. The root cannot revoke itself, so it can
-  only leave with `--force`, which tells the cluster nothing.
+  members, and delete the state file. Any node may leave this way, the root
+  included. `--force` skips the revocation for a node whose agent is no longer
+  running to sign it, and tells the cluster nothing.
 - `cheesecloth status`: shows peers with their identity fingerprints.
 
 ## Clocks
@@ -205,5 +216,6 @@ admission it should cover. Revocations are rare enough that this is accepted.
 
 ## Out of scope for now
 
-Rotation of the pinned root; cascading revocation; a PAKE for short human
+Rotation of the pinned root, which stays the anchor even once revoked;
+cascading revocation; a PAKE for short human
 codes; clock-independent ordering of records.
