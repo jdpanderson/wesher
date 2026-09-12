@@ -9,8 +9,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/jdpanderson/cheesecloth/internal/notify"
 	"github.com/jdpanderson/cheesecloth/internal/overlay"
-	"github.com/jdpanderson/cheesecloth/internal/sdnotify"
 )
 
 // clusterController, wgController and hostsWriter are the parts of the
@@ -31,26 +31,26 @@ type hostsWriter interface {
 }
 
 // loop applies each membership update until ctx is done, then leaves and
-// tears down. systemd is told the service is ready once the interface has been
-// configured from the first snapshot, and kept posted on the peer count.
-func (a *AgentCmd) loop(ctx context.Context, peerc <-chan []overlay.Node, cl clusterController, wgstate wgController, hosts hostsWriter) error {
+// tears down. The service manager is told the service is ready once the
+// interface has been configured from the first snapshot, and kept posted on
+// the peer count.
+func (a *AgentCmd) loop(ctx context.Context, peerc <-chan []overlay.Node, cl clusterController, wgstate wgController, hosts hostsWriter, n notify.Notifier) error {
 	slog.Debug("waiting for cluster events")
-	notify := sdnotify.Ready
+	report := n.Ready
 	for {
 		select {
 		case peers, ok := <-peerc:
 			if !ok {
 				return errors.New("cluster membership channel closed")
 			}
-			n := a.apply(peers, wgstate, hosts)
-			if err := notify(fmt.Sprintf("%d peers", n)); err != nil {
-				slog.Warn("could not notify systemd", "err", err)
+			if err := report(fmt.Sprintf("%d peers", a.apply(peers, wgstate, hosts))); err != nil {
+				slog.Warn("could not notify the service manager", "err", err)
 			}
-			notify = sdnotify.Status
+			report = n.Status
 		case <-ctx.Done():
 			slog.Info("terminating")
-			if err := sdnotify.Stopping(); err != nil {
-				slog.Warn("could not notify systemd", "err", err)
+			if err := n.Stopping(); err != nil {
+				slog.Warn("could not notify the service manager", "err", err)
 			}
 			cl.Leave()
 			if !a.NoEtcHosts {

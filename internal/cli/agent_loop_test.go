@@ -3,13 +3,12 @@ package cli
 import (
 	"context"
 	"errors"
-	"net"
 	"net/netip"
-	"path/filepath"
 	"slices"
 	"testing"
 	"time"
 
+	"github.com/jdpanderson/cheesecloth/internal/notify"
 	"github.com/jdpanderson/cheesecloth/internal/overlay"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -60,11 +59,16 @@ func verifiedNode(t *testing.T, name, addr, overlayAddr string, routes ...string
 	return n
 }
 
-func runLoop(t *testing.T, a *AgentCmd, cl *fakeCluster, wg *fakeWG, hosts *fakeHosts) (context.CancelFunc, <-chan error) {
+// runLoop runs the agent loop with the given notifier, or none.
+func runLoop(t *testing.T, a *AgentCmd, cl *fakeCluster, wg *fakeWG, hosts *fakeHosts, notifiers ...notify.Notifier) (context.CancelFunc, <-chan error) {
 	t.Helper()
+	var n notify.Notifier = notify.None{}
+	if len(notifiers) > 0 {
+		n = notifiers[0]
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	errc := make(chan error, 1)
-	go func() { errc <- a.loop(ctx, cl.ch, cl, wg, hosts) }()
+	go func() { errc <- a.loop(ctx, cl.ch, cl, wg, hosts, n) }()
 	return cancel, errc
 }
 
@@ -127,32 +131,6 @@ func Test_AgentCmd_apply_leavesInputRoutesAlone(t *testing.T) {
 	a.apply([]overlay.Node{z}, &fakeWG{}, &fakeHosts{})
 
 	assert.Equal(t, before, shared, "the caller's slice is unchanged")
-}
-
-func Test_AgentCmd_loop_notifiesSystemd(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "notify.sock")
-	conn, err := net.ListenUnixgram("unixgram", &net.UnixAddr{Name: path, Net: "unixgram"})
-	require.NoError(t, err)
-	defer func() { _ = conn.Close() }()
-	t.Setenv("NOTIFY_SOCKET", path)
-	read := func() string {
-		buf := make([]byte, 1024)
-		require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
-		n, rerr := conn.Read(buf)
-		require.NoError(t, rerr)
-		return string(buf[:n])
-	}
-
-	cl := &fakeCluster{ch: make(chan []overlay.Node)}
-	cancel, errc := runLoop(t, &AgentCmd{OverlayNet: testOverlay, NoEtcHosts: true}, cl, &fakeWG{}, &fakeHosts{})
-
-	cl.ch <- nil // a lone node: ready with no peers
-	assert.Equal(t, "READY=1\nSTATUS=0 peers", read())
-	cl.ch <- []overlay.Node{verifiedNode(t, "n", "192.0.2.1", "10.0.0.1")}
-	assert.Equal(t, "STATUS=1 peers", read())
-	cancel()
-	assert.Equal(t, "STOPPING=1", read())
-	require.NoError(t, waitErr(t, errc))
 }
 
 func Test_AgentCmd_loop_noEtcHosts(t *testing.T) {

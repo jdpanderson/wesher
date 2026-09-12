@@ -18,6 +18,7 @@ import (
 	"github.com/jdpanderson/cheesecloth/internal/control"
 	"github.com/jdpanderson/cheesecloth/internal/enrol"
 	"github.com/jdpanderson/cheesecloth/internal/etchosts"
+	"github.com/jdpanderson/cheesecloth/internal/notify"
 	"github.com/jdpanderson/cheesecloth/internal/overlay"
 	"github.com/jdpanderson/cheesecloth/internal/trust"
 	"github.com/jdpanderson/cheesecloth/internal/wg"
@@ -39,7 +40,7 @@ type AgentCmd struct {
 	// PersistentKeepalive is a time.Duration so kong accepts "25s"; 0 disables it.
 	PersistentKeepalive time.Duration `help:"interval at which peers send keepalives, to keep NAT mappings open (e.g. 25s); 0 disables" default:"0"`
 	NoEtcHosts          bool          `help:"disable writing of entries to /etc/hosts"`
-	ControlSocket       string        `help:"unix socket for 'cheesecloth invite' and 'cheesecloth revoke' (default /run/cheesecloth/<interface>.sock)"`
+	ControlSocket       string        `help:"unix socket for 'cheesecloth invite' and 'cheesecloth revoke' (default ${default_socket_dir}/<interface>.sock)"`
 
 	addrs func(skip string) []net.Addr // lists this host's candidate addresses; nil means the interfaces
 }
@@ -155,7 +156,7 @@ func (a *AgentCmd) Run() error {
 		return fmt.Errorf("joining cluster: %w", err) // not reached today: the retry gives up only when ctx does
 	}
 
-	return a.loop(ctx, peerc, cl, wgstate, hostsFile)
+	return a.loop(ctx, peerc, cl, wgstate, hostsFile, notify.Default())
 }
 
 // bootstrap settles this node's membership before it joins: a node that is

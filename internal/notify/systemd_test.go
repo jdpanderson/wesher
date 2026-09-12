@@ -1,4 +1,6 @@
-package sdnotify
+//go:build unix
+
+package notify
 
 import (
 	"net"
@@ -43,19 +45,20 @@ func recv(t *testing.T, msgs <-chan string) string {
 	}
 }
 
-func Test_Send(t *testing.T) {
+func Test_Systemd(t *testing.T) {
 	msgs := listen(t)
-	require.NoError(t, Ready("2 peers"))
+	var n Notifier = Systemd{}
+	require.NoError(t, n.Ready("2 peers"))
 	assert.Equal(t, "READY=1\nSTATUS=2 peers", recv(t, msgs))
-	require.NoError(t, Status("3 peers"))
+	require.NoError(t, n.Status("3 peers"))
 	assert.Equal(t, "STATUS=3 peers", recv(t, msgs))
-	require.NoError(t, Stopping())
+	require.NoError(t, n.Stopping())
 	assert.Equal(t, "STOPPING=1", recv(t, msgs))
 }
 
-func Test_Send_noSocket(t *testing.T) {
+func Test_Systemd_noSocket(t *testing.T) {
 	t.Setenv("NOTIFY_SOCKET", "")
-	assert.NoError(t, Ready("ok"), "not under systemd: nothing to do")
+	assert.NoError(t, Systemd{}.Ready("ok"), "not under systemd: nothing to do")
 	t.Setenv("NOTIFY_SOCKET", filepath.Join(t.TempDir(), "missing.sock"))
-	assert.Error(t, Ready("ok"))
+	assert.Error(t, Systemd{}.Ready("ok"))
 }
