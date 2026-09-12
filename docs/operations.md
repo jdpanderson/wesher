@@ -80,6 +80,82 @@ Go version as the tag. Without a checkout (`--version` will then report `dev`):
 $ go install github.com/jdpanderson/cheesecloth/cmd/cheesecloth@latest
 ```
 
+## Platforms
+
+cheesecloth runs on Linux, macOS and Windows. Membership, enrolment and gossip
+are the same code everywhere. What differs is where the WireGuard interface
+comes from, how the service is run, and where the files are.
+
+| | Linux | macOS | Windows |
+|---|---|---|---|
+| WireGuard | the kernel module when the kernel has it, otherwise inside the agent | inside the agent, on a `utun` interface | inside the agent, on a Wintun adapter; `wintun.dll` must sit next to the binary |
+| Runs as | root, or with `cap_net_admin` (see [Permissions](#permissions)) | root | Administrator |
+| Service manager | systemd, `dist/cheesecloth.service` | launchd, `dist/io.github.jdpanderson.cheesecloth.plist` | Service Control Manager, `cheesecloth service install` |
+| State | `/var/lib/cheesecloth/` | `/var/db/cheesecloth/` | `%ProgramData%\cheesecloth\` |
+| Configuration | `/etc/cheesecloth/config.yaml` | `/etc/cheesecloth/config.yaml` | `%ProgramData%\cheesecloth\config.yaml` |
+| Control socket | `/run/cheesecloth/<interface>.sock` | `/var/run/cheesecloth/<interface>.sock` | `%ProgramData%\cheesecloth\<interface>.sock` |
+| Hosts file | `/etc/hosts` | `/etc/hosts` | `%SystemRoot%\System32\drivers\etc\hosts` |
+
+### Which WireGuard is running
+
+When the interface comes up the agent logs one line saying so, at level
+`info`:
+
+```
+wireguard interface iface=wgoverlay os=wgoverlay device=kernel
+```
+
+`device=kernel` is the Linux kernel module. `device=userspace` is WireGuard
+running inside the agent (the wireguard-go implementation, built into the
+binary). On Linux the module is used whenever the kernel has it; when the
+kernel refuses to create a WireGuard interface the agent says so and runs the
+device itself, which needs `/dev/net/tun`. `--userspace` asks for that
+regardless. The userspace device moves packets through the tun device and
+back, so it is slower than the module; on a Linux host, load the module.
+
+`os=` is the interface's name in the operating system. On Linux and Windows
+it is the `--interface` name. On macOS the system names tun interfaces
+itself (`utun4`, say); `--interface` then names the WireGuard control socket,
+and `cheesecloth status` and `wg show` find the utun through the record the
+agent keeps in `/var/run/wireguard/<interface>.name`.
+
+### macOS
+
+Build the binary (`GOOS=darwin go build ./cmd/cheesecloth`) or take it from a
+release, and put it in `/usr/local/sbin/`. Put the node's settings in
+`/etc/cheesecloth/config.yaml`. Initialise or enrol the node once by hand, as
+root, the same way as on Linux. Then install the launchd job:
+
+```
+# cp dist/io.github.jdpanderson.cheesecloth.plist /Library/LaunchDaemons/
+# launchctl bootstrap system /Library/LaunchDaemons/io.github.jdpanderson.cheesecloth.plist
+```
+
+The agent logs to `/var/log/cheesecloth.log`; launchd restarts it if it
+exits. `launchctl bootout system/io.github.jdpanderson.cheesecloth` stops and
+unloads it. launchd has no readiness protocol, so the job is up as soon as the
+process runs.
+
+### Windows
+
+Put `cheesecloth.exe` and `wintun.dll` (from [wintun.net](https://www.wintun.net/),
+the architecture of the binary) in one directory. Put the node's settings in
+`%ProgramData%\cheesecloth\config.yaml`. From an administrator console,
+initialise or enrol the node once by hand (`cheesecloth.exe --init` or
+`cheesecloth.exe --join HOST --join-key TOKEN`, stop it with Ctrl-C once it is
+a member), then register and start the service:
+
+```
+> cheesecloth.exe service install
+> sc start cheesecloth
+```
+
+The service starts at boot, reports its state to the Service Control Manager
+and logs to `%ProgramData%\cheesecloth\agent.log`. `sc stop cheesecloth` stops
+it and `cheesecloth.exe service uninstall` removes it. Windows support is
+newer than Linux and macOS and has had less use; the TODO lists what is known
+to be missing.
+
 ## Packages
 
 Each GitHub release carries, next to the plain binaries, a `.deb` for amd64

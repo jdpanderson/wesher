@@ -15,8 +15,10 @@ encrypted: node names, identities, keys, the invitation exchange, and all traffi
 
 ## Quickstart
 
-Every node needs the WireGuard kernel module, which is included in Linux 5.6 and later. Two UDP ports must be open
-between the nodes: 51820 for WireGuard and 7946 for cheesecloth.
+cheesecloth runs on Linux, macOS and Windows. On Linux it uses the kernel's WireGuard, which is in Linux 5.6 and
+later, and runs WireGuard itself where the kernel has none. On macOS and Windows it always runs WireGuard itself.
+Two UDP ports must be open between the nodes: 51820 for WireGuard and 7946 for cheesecloth. The commands below are
+for Linux; the other platforms are described in [operations](docs/operations.md#platforms).
 
 1. Download the binary on every node:
 

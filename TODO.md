@@ -426,8 +426,9 @@ is a fallback, never a replacement.
       `%ProgramData%\cheesecloth`; the hosts file is
       `%SystemRoot%\System32\drivers\etc\hosts`. Unit tests on a Windows
       runner. Packaging (zip or MSI) is a later item.
-- [ ] Docs for each platform once it runs: install, privileges (root or
-      Administrator), which device is in use and how to tell.
+- [x] Docs for each platform once it runs: install, privileges (root or
+      Administrator), which device is in use and how to tell. Done 2026-09-11:
+      `docs/operations.md` Platforms section, README and configuration updated.
 - [ ] Windows follow-ups: the control socket relies on file permissions the
       hosts file directory does not give (an ACL on the socket, or a named
       pipe, would); wintun.dll is not shipped with the binary yet; service

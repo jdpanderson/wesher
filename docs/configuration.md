@@ -1,7 +1,7 @@
 # Configuration
 
 Options come from command-line flags or from a YAML configuration file,
-`/etc/cheesecloth/config.yaml` by default or the file named by `--config`.
+`/etc/cheesecloth/config.yaml` by default (on Windows `%ProgramData%\cheesecloth\config.yaml`) or the file named by `--config`.
 Config keys are the flag names without the leading dashes, e.g. `bind-addr: "::"`.
 A flag given on the command line overrides the file. Unknown keys in the file are
 an error, as are `join-key` and `init`, which are one-time actions and stay on the
@@ -13,7 +13,7 @@ command line. Environment variables are not read. An annotated example is in
 | `--join HOST[:PORT],...` | `join` | comma separated list of hostnames or IP addresses of existing cluster members, with the cluster port unless given; if not provided, will attempt resuming any known state or otherwise wait for further members |  |
 | `--join-key TOKEN` | command line only | invitation token from `cheesecloth invite` on a member; needed only the first time this node joins, ignored afterwards |  |
 | `--init` | command line only | start a new cluster with this node as its root; any known state from previous runs will be forgotten | `false` |
-| `--control-socket PATH` | `control-socket` | unix socket used by `cheesecloth invite` and `cheesecloth revoke` | `/run/cheesecloth/<interface>.sock` |
+| `--control-socket PATH` | `control-socket` | unix socket used by `cheesecloth invite` and `cheesecloth revoke` | `/run/cheesecloth/<interface>.sock` on Linux, see [Platforms](operations.md#platforms) |
 | `--bind-addr ADDR` | `bind-addr` | address to bind for cluster membership; `0.0.0.0` or `::` binds every interface of that family and advertises one of its addresses (public preferred). The family decides whether the cluster runs over IPv4 or IPv6, see [IPv4 and IPv6](#ipv4-and-ipv6) | `0.0.0.0` |
 | `--cluster-port PORT` | `cluster-port` | UDP port used for membership gossip and enrolment (QUIC); must be the same across cluster | `7946` |
 | `--wireguard-port PORT` | `wireguard-port` | port used for wireguard traffic (UDP); must be the same across cluster | `51820` |
@@ -23,8 +23,9 @@ command line. Environment variables are not read. An annotated example is in
 | `--mtu MTU` | `mtu` | MTU of the wireguard interface | `1420` |
 | `--persistent-keepalive DURATION` | `persistent-keepalive` | interval at which peers send keepalives, to keep NAT mappings open (e.g. `25s`); `0` disables | `0` |
 | `--no-etc-hosts` | `no-etc-hosts` | whether to skip writing hosts entries for each node in mesh | `false` |
+| `--userspace` | `userspace` | run WireGuard inside the agent instead of the kernel module (Linux); the default wherever the kernel has none, see [Platforms](operations.md#platforms) | `false` |
 | `--log-level LEVEL` | `log-level` | set the verbosity (one of debug/info/warn/error) | `warn` |
-| `--config PATH` | command line only | configuration file to read | `/etc/cheesecloth/config.yaml` |
+| `--config PATH` | command line only | configuration file to read | `/etc/cheesecloth/config.yaml` on Linux and macOS, see [Platforms](operations.md#platforms) |
 
 ## Overlay addresses
 
@@ -83,7 +84,8 @@ on the next membership change.
 
 cheesecloth adds an entry to `/etc/hosts` for each peer, so the nodes' hostnames
 resolve to their overlay addresses (assuming `files` comes first for `hosts` in
-`/etc/nsswitch.conf`). `--no-etc-hosts` disables this.
+`/etc/nsswitch.conf`). `--no-etc-hosts` disables this. On Windows the file is
+`%SystemRoot%\System32\drivers\etc\hosts`.
 
 ## Running multiple clusters
 
