@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jdpanderson/cheesecloth/internal/overlay"
+	"github.com/jdpanderson/cheesecloth/internal/paths"
 	"github.com/jdpanderson/cheesecloth/internal/trust"
 )
 
@@ -22,7 +23,7 @@ type state struct {
 }
 
 // DefaultDir is where the agent keeps state unless told otherwise.
-const DefaultDir = "/var/lib/cheesecloth"
+var DefaultDir = paths.StateDir
 
 // statePath is where the state named name is kept under dir.
 func statePath(dir, name string) string { return filepath.Join(dir, name+".json") }

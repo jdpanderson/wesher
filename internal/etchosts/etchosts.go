@@ -11,14 +11,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
+
+	"github.com/jdpanderson/cheesecloth/internal/paths"
 )
 
 // DefaultBanner is the comment that marks a line as managed by this package.
 const DefaultBanner = "# ! MANAGED AUTOMATICALLY !"
 
 // DefaultPath is the hosts file written unless Path says otherwise.
-const DefaultPath = "/etc/hosts"
+var DefaultPath = paths.HostsFile
 
 // EtcHosts writes managed entries to a hosts file. The zero value writes to
 // DefaultPath and marks its lines with DefaultBanner.
@@ -141,10 +142,8 @@ func (eh *EtcHosts) movePreservePerms(src, dst *os.File) error {
 	if err = src.Chmod(etcHostsInfo.Mode()); err != nil {
 		return fmt.Errorf("could not chmod %s: %w", src.Name(), err)
 	}
-	if st, ok := etcHostsInfo.Sys().(*syscall.Stat_t); ok {
-		if err = src.Chown(int(st.Uid), int(st.Gid)); err != nil {
-			eh.log(slog.LevelWarn, "could not keep the owner of the hosts file", "path", dst.Name(), "err", err)
-		}
+	if err = keepOwner(src, etcHostsInfo); err != nil {
+		eh.log(slog.LevelWarn, "could not keep the owner of the hosts file", "path", dst.Name(), "err", err)
 	}
 
 	rename := eh.rename

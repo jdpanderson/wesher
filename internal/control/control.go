@@ -11,10 +11,14 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
+
+	"github.com/jdpanderson/cheesecloth/internal/paths"
 )
 
-// DefaultSocket is where the agent for iface listens.
-func DefaultSocket(iface string) string { return filepath.Join("/run/cheesecloth", iface+".sock") }
+// DefaultDir is where the control sockets live; DefaultSocket is the one for iface.
+var DefaultDir = paths.RunDir
+
+func DefaultSocket(iface string) string { return filepath.Join(DefaultDir, iface+".sock") }
 
 // Operations a Request may ask for.
 const (

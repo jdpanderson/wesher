@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -161,33 +160,6 @@ func TestEtcHosts_WriteEntries(t *testing.T) {
 			assert.Equal(t, tt.want, string(got))
 		})
 	}
-}
-
-func TestEtcHosts_WriteEntries_preservesMode(t *testing.T) {
-	p := writeTempHosts(t, "", 0o640)
-	eh := &EtcHosts{Path: p}
-	require.NoError(t, eh.WriteEntries(map[string][]string{"10.0.0.1": {"a"}}))
-
-	info, err := os.Stat(p)
-	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o640), info.Mode().Perm())
-}
-
-func TestEtcHosts_WriteEntries_preservesOwner(t *testing.T) {
-	if os.Geteuid() != 0 {
-		t.Skip("changing file ownership needs root")
-	}
-	p := writeTempHosts(t, "", 0o644)
-	const nobody = 65534
-	require.NoError(t, os.Chown(p, nobody, nobody))
-	eh := &EtcHosts{Path: p}
-	require.NoError(t, eh.WriteEntries(map[string][]string{"10.0.0.1": {"a"}}))
-
-	info, err := os.Stat(p)
-	require.NoError(t, err)
-	st := info.Sys().(*syscall.Stat_t)
-	assert.EqualValues(t, nobody, st.Uid)
-	assert.EqualValues(t, nobody, st.Gid)
 }
 
 func TestEtcHosts_WriteEntries_nilLogger(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/alecthomas/kong"
+	"github.com/jdpanderson/cheesecloth/internal/paths"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -15,7 +16,7 @@ import (
 // kong resolver defaults so command-line flags override it.
 
 // DefaultConfigPath is read when it exists; --config names another file.
-const DefaultConfigPath = "/etc/cheesecloth/config.yaml"
+var DefaultConfigPath = paths.ConfigFile
 
 // commandLineOnly are flags that must not appear in the config file, with the
 // reason the operator is told: --join-key is a one-time secret, --init is a

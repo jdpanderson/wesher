@@ -2,6 +2,7 @@ package cli
 
 import (
 	"github.com/alecthomas/kong"
+	"github.com/jdpanderson/cheesecloth/internal/control"
 )
 
 // DefaultInterface is the wireguard interface the commands act on unless told otherwise.
@@ -27,7 +28,7 @@ func Parser(c *CLI, configPath, version string) (*kong.Kong, error) {
 		kong.Description("mesh overlay network manager. Settings may come from a YAML config file ("+configPath+
 			" or --config) keyed by flag name; command-line flags override it."),
 		kong.UsageOnError(),
-		kong.Vars{"version": version, "default_config": configPath, "default_interface": DefaultInterface},
+		kong.Vars{"version": version, "default_config": configPath, "default_interface": DefaultInterface, "default_socket_dir": control.DefaultDir},
 		kong.Configuration(configLoader, configPath),
 	)
 }

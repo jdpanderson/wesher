@@ -31,10 +31,20 @@ func (f *fakeAgent) Revoke(target string) (string, error) {
 	return "IDENTITY", f.err
 }
 
+// socketDir is a short-lived directory for sockets. t.TempDir() names the
+// test in the path, which pushes a socket past the platform's path limit.
+func socketDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "ctl")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
 // listenFakeAgent serves a fake agent on a temp socket and returns its path.
 func listenFakeAgent(t *testing.T, agent *fakeAgent) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "ctl.sock")
+	path := filepath.Join(socketDir(t), "ctl.sock")
 	srv, err := control.Listen(path, agent)
 	require.NoError(t, err)
 	t.Cleanup(srv.Close)
