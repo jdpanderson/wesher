@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 )
 
@@ -50,11 +51,19 @@ type Server struct {
 	path    string
 }
 
+// maxSocketPath is the longest path a unix socket address can hold on this
+// platform: 107 bytes on Linux, 103 on macOS and the BSDs.
+var maxSocketPath = len(syscall.RawSockaddrUnix{}.Path) - 1
+
 // Listen creates the socket at path (owner-only) and starts serving. The
 // socket is created in a private directory and renamed into place once its
 // mode is set, so it is never reachable by anyone else, not even briefly.
 func Listen(path string, h Handler) (*Server, error) {
 	dir := filepath.Dir(path)
+	// the staging path is the final one plus a directory of this length
+	if n := len(path) + len("/.control-0000000000"); n > maxSocketPath {
+		return nil, fmt.Errorf("control socket path %s is too long: %d bytes with its staging directory, at most %d", path, n, maxSocketPath)
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("creating control socket directory: %w", err)
 	}

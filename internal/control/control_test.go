@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,8 +32,18 @@ func (f *fakeHandler) Revoke(target string) (string, error) {
 	return "IDENTITY-" + target, nil
 }
 
+// socketDir is a short-lived directory for sockets. t.TempDir() names the
+// test in the path, which pushes a socket past the platform's path limit.
+func socketDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "ctl")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
 func Test_control_roundTrip(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "w.sock")
+	path := filepath.Join(socketDir(t), "w.sock")
 	h := &fakeHandler{}
 	srv, err := Listen(path, h)
 	require.NoError(t, err)
@@ -64,7 +75,7 @@ func Test_control_roundTrip(t *testing.T) {
 }
 
 func Test_Listen_replacesStaleSocket(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "w.sock")
+	path := filepath.Join(socketDir(t), "w.sock")
 	first, err := Listen(path, &fakeHandler{})
 	require.NoError(t, err)
 	_ = first.ln.Close() // simulate an unclean exit that left the file behind
@@ -76,7 +87,7 @@ func Test_Listen_replacesStaleSocket(t *testing.T) {
 }
 
 func Test_Listen_ownerOnly(t *testing.T) {
-	dir := t.TempDir()
+	dir := socketDir(t)
 	path := filepath.Join(dir, "ctl.sock")
 	srv, err := Listen(path, &fakeHandler{})
 	require.NoError(t, err)
@@ -97,13 +108,19 @@ func Test_Listen_ownerOnly(t *testing.T) {
 }
 
 func Test_Listen_refusesToReplaceAFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "notes.txt")
+	path := filepath.Join(socketDir(t), "notes.txt")
 	require.NoError(t, os.WriteFile(path, []byte("keep me"), 0o600))
 	_, err := Listen(path, &fakeHandler{})
 	assert.ErrorContains(t, err, "not a socket")
 	content, err := os.ReadFile(path)
 	require.NoError(t, err)
 	assert.Equal(t, "keep me", string(content))
+}
+
+func Test_Listen_refusesLongPath(t *testing.T) {
+	path := filepath.Join(socketDir(t), strings.Repeat("x", maxSocketPath), "ctl.sock")
+	_, err := Listen(path, &fakeHandler{})
+	assert.ErrorContains(t, err, "too long")
 }
 
 func Test_DefaultSocket(t *testing.T) {
