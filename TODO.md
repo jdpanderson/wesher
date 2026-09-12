@@ -279,14 +279,8 @@ before starting; none are committed yet.
       the wireguard port. WireGuard keeps its own UDP port: the kernel owns it.
       Done the same day; the welcome message lost its own encryption since
       the stream carries it, and `--join` takes an optional port.
-- [ ] **DECISION** macOS and Windows support. Both need the userspace
-      `wireguard-go` (macOS has no kernel module; Windows has the WireGuardNT
-      driver, driven through `wireguard-go`/`wgctrl` over its own IPC) and
-      replacements for the Linux-only parts: `vishvananda/netlink` for
-      interface, address and route setup, `/etc/hosts` handling, the unix
-      control socket and sd_notify. The trust, enrolment, gossip and cluster
-      packages are portable already. Decide whether to target both, macOS
-      only, or neither.
+- [x] **DECISION** macOS and Windows support. Decided 2026-09-11: target
+      both, kernel WireGuard stays the way on Linux. Plan in phase 8.
 - [ ] Tool dependencies as `tool` directives in `go.mod` (Go 1.24+), run with
       `go tool golangci-lint` and `go tool govulncheck`, instead of
       `go run pkg@version` pinned in the Makefile; Dependabot then updates
@@ -377,3 +371,51 @@ transport. Not compatible with shared-key wesher.
       what the interface is, not who made it). Dropped the old logo and the
       upstream deepsource config. GitHub repository rename is the user's step;
       the old URL redirects.
+
+## Phase 8: macOS and Windows
+
+Decided 2026-09-11. Cross-building fails today in two places only: the `wg`
+package (netlink throughout) and one chown in `etchosts`. The trust,
+enrolment, gossip, cluster, control socket and sd_notify code already compiles
+for both platforms. Principles: one interface per Linux-specific concern,
+implementations selected by build tag, an implementation that refuses at
+startup ("not supported on this platform") where nothing real exists, and a
+no-op only where absence is legitimate (service readiness on macOS, hosts
+entries when opted out). Tests keep recording fakes rather than nulls. On
+Linux the kernel module is used whenever it is present; the userspace device
+is a fallback, never a replacement.
+
+- [ ] Portability seams, Linux behaviour unchanged. `wg.netlinker` becomes an
+      OS-neutral link interface in `netip` terms: ensure interface, set
+      address and MTU, up, replace routes, list addresses, delete. The
+      netlink implementation moves behind `//go:build linux`; the fake becomes
+      portable; an "unsupported" implementation covers other platforms. The
+      hosts-file chown splits into a Unix file and a Windows no-op. The four
+      default paths (state dir, control socket, config, hosts) get per-OS
+      values, one file each. A service notifier interface fronts sd_notify.
+      Gate: `GOOS=darwin` and `GOOS=windows` builds pass and join CI as
+      compile checks; Linux e2e stays green.
+- [ ] Device provider. On Linux the kernel provider creates the link as
+      today and is used whenever the module is present (probe: create the
+      link; `EOPNOTSUPP`/`ENOTSUP` means no module). Only when that fails, or
+      `--userspace` is given, the agent embeds wireguard-go as a library: the
+      device runs in-process and exposes the standard userspace control
+      socket under the interface name, so wgctrl configures it exactly like a
+      kernel device and the peer configuration code does not change. The log
+      says which one is in use. The e2e image drops the separate wireguard-go
+      install; the container scenarios exercise the userspace path, the
+      Linode hosts the kernel path.
+- [ ] macOS. Link implementation over the BSD routing socket for addresses
+      and routes. The device is a `utun` the system names, so the user-facing
+      interface name is the control socket name and `status` shows both. A
+      launchd plist under `dist/`. GitHub's macOS runners allow sudo: unit
+      tests and a one-node smoke test run there.
+- [ ] Windows. Link implementation over the IP helper API (the
+      wireguard-windows module wraps it in pure Go). `wintun.dll` ships next
+      to the binary. The notifier reports to the Service Control Manager and a
+      `service install` subcommand registers the agent. Paths move under
+      `%ProgramData%\cheesecloth`; the hosts file is
+      `%SystemRoot%\System32\drivers\etc\hosts`. Unit tests on a Windows
+      runner. Packaging (zip or MSI) is a later item.
+- [ ] Docs for each platform once it runs: install, privileges (root or
+      Administrator), which device is in use and how to tell.
