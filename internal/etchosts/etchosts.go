@@ -1,3 +1,5 @@
+// Package etchosts keeps a block of managed entries in an /etc/hosts file,
+// each line marked with a banner comment, without touching the rest of the file.
 package etchosts
 
 import (
@@ -12,19 +14,19 @@ import (
 	"syscall"
 )
 
-// DefaultBanner is the default magic comment used to identify entries managed by etchosts
+// DefaultBanner is the comment that marks a line as managed by this package.
 const DefaultBanner = "# ! MANAGED AUTOMATICALLY !"
 
-// DefaultPath is the default path used to write hosts entries
+// DefaultPath is the hosts file written unless Path says otherwise.
 const DefaultPath = "/etc/hosts"
 
-// EtcHosts contains the options used to write hosts entries.
-// The zero value can be used to write to DefaultPath using DefaultBanner as a marker.
+// EtcHosts writes managed entries to a hosts file. The zero value writes to
+// DefaultPath and marks its lines with DefaultBanner.
 type EtcHosts struct {
-	// Banner is the magic comment used to identify entries managed by etchosts; if not set, will use DefaultBanner.
-	// It must start with "#" to mark it as a comment.
+	// Banner marks the lines this instance manages; DefaultBanner when empty.
+	// It must start with "#" so the resolver reads it as a comment.
 	Banner string
-	// Path is the path to the /etc/hosts file; if not set, will use DefaultPath.
+	// Path is the hosts file; DefaultPath when empty.
 	Path string
 	// Logger is optional; nil disables logging.
 	Logger *slog.Logger
@@ -40,16 +42,16 @@ func (eh *EtcHosts) log(level slog.Level, msg string, args ...any) {
 	}
 }
 
-// WriteEntries is used to write the hosts entries to EtcHosts.Path
-// Each IP address with their (potentially multiple) hostnames are written to a line marked with EtcHosts.Banner, to
-// avoid overwriting preexisting entries.
+// WriteEntries makes the managed block of the hosts file exactly ipsToNames:
+// one banner-marked line per address with its names. Lines without the banner
+// are kept as they are.
 func (eh *EtcHosts) WriteEntries(ipsToNames map[string][]string) error {
 	hostsPath := eh.Path
 	if hostsPath == "" {
 		hostsPath = DefaultPath
 	}
 
-	// We do not want to create the hosts file; if it's not there, we probably have the wrong path.
+	// the hosts file is never created: a missing one means the wrong path
 	etcHosts, err := os.OpenFile(hostsPath, os.O_RDWR, 0o644)
 	if err != nil {
 		return fmt.Errorf("could not open %s for reading: %w", hostsPath, err)
@@ -63,7 +65,7 @@ func (eh *EtcHosts) WriteEntries(ipsToNames map[string][]string) error {
 		return fmt.Errorf("could not create tempfile: %w", err)
 	}
 
-	// remove tempfile; this might fail if we managed to move it, which is ok
+	// the temp file is gone already once renamed into place
 	defer func(file *os.File) {
 		_ = file.Close()
 		if err := os.Remove(file.Name()); err != nil && !os.IsNotExist(err) {
@@ -165,8 +167,10 @@ func (eh *EtcHosts) movePreservePerms(src, dst *os.File) error {
 		if err = dst.Truncate(0); err != nil {
 			return err
 		}
-		_, err = io.Copy(dst, src)
-		return err
+		if _, err = io.Copy(dst, src); err != nil {
+			return err
+		}
+		return dst.Sync()
 	}
 	return nil
 }

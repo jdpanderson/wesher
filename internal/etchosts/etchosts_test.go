@@ -42,9 +42,7 @@ func TestEtcHosts_writeEntryWithBanner(t *testing.T) {
 			w := bufio.NewWriter(tmp)
 			eh.writeEntryWithBanner(w, tt.args.banner, tt.args.ip, tt.args.names)
 			require.NoError(t, w.Flush())
-			if gotTmp := tmp.String(); gotTmp != tt.wantTmp {
-				t.Errorf("writeEntryWithBanner() got:\n%#v, want\n%#v", gotTmp, tt.wantTmp)
-			}
+			assert.Equal(t, tt.wantTmp, tmp.String())
 		})
 	}
 }
@@ -64,49 +62,42 @@ func TestEtcHosts_writeEntries(t *testing.T) {
 		fields   fields
 		args     args
 		wantDest string
-		wantErr  bool
 	}{
 		{
 			"simple empty write",
 			fields{},
 			args{strings.NewReader(""), map[string][]string{"1.2.3.4": {"foo", "bar"}}},
 			"1.2.3.4\tfoo bar\t# ! MANAGED AUTOMATICALLY !\n",
-			false,
 		},
 		{
 			"do not touch comments",
 			fields{},
 			args{strings.NewReader("# some comment\n"), map[string][]string{"1.2.3.4": {"foo", "bar"}}},
 			"# some comment\n1.2.3.4\tfoo bar\t# ! MANAGED AUTOMATICALLY !\n",
-			false,
 		},
 		{
 			"do not touch existing entries",
 			fields{},
 			args{strings.NewReader("4.3.2.1 hostname1 hostname2\n"), map[string][]string{"1.2.3.4": {"foo", "bar"}}},
 			"4.3.2.1 hostname1 hostname2\n1.2.3.4\tfoo bar\t# ! MANAGED AUTOMATICALLY !\n",
-			false,
 		},
 		{
 			"remove managed entry not in map",
 			fields{},
 			args{strings.NewReader("4.3.2.1 fooz baarz # ! MANAGED AUTOMATICALLY !\n"), map[string][]string{"1.2.3.4": {"foo", "bar"}}},
 			"1.2.3.4\tfoo bar\t# ! MANAGED AUTOMATICALLY !\n",
-			false,
 		},
 		{
 			"custom banner",
 			fields{Banner: "# somebanner"},
 			args{strings.NewReader(""), map[string][]string{"1.2.3.4": {"foo", "bar"}}},
 			"1.2.3.4\tfoo bar\t# somebanner\n",
-			false,
 		},
 		{
 			"a managed ip listed twice is written once, in place of its first line",
 			fields{},
 			args{strings.NewReader("1.2.3.4 old # ! MANAGED AUTOMATICALLY !\n# between\n1.2.3.4 older # ! MANAGED AUTOMATICALLY !\n"), map[string][]string{"1.2.3.4": {"foo"}}},
 			"1.2.3.4\tfoo\t# ! MANAGED AUTOMATICALLY !\n# between\n",
-			false,
 		},
 	}
 	for _, tt := range tests {
@@ -118,14 +109,9 @@ func TestEtcHosts_writeEntries(t *testing.T) {
 			}
 			dest := &bytes.Buffer{}
 			wantLen := len(tt.args.ipsToNames)
-			if err := eh.writeEntries(tt.args.orig, dest, tt.args.ipsToNames); (err != nil) != tt.wantErr {
-				t.Errorf("EtcHosts.writeEntries() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
+			require.NoError(t, eh.writeEntries(tt.args.orig, dest, tt.args.ipsToNames))
 			assert.Len(t, tt.args.ipsToNames, wantLen, "caller's map must not be modified")
-			if gotDest := dest.String(); gotDest != tt.wantDest {
-				t.Errorf("EtcHosts.writeEntries() = '%#v', want '%#v'", gotDest, tt.wantDest)
-			}
+			assert.Equal(t, tt.wantDest, dest.String())
 		})
 	}
 }
