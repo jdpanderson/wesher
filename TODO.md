@@ -334,23 +334,21 @@ before starting; none are committed yet.
       podman's default 10.89.0.0/24 sits inside the default overlay net. Found
       and fixed on the way: stale-route pruning removed the kernel's route to
       our own IPv6 /128 address.
-- [ ] **DECISION** the invitation output prints `cheesecloth --join <host>
-      --join-key TOKEN`, which enrols the joiner onto the default overlay
-      network. On a cluster that set `--overlay-net`, the joiner computes
-      every address from the wrong network and the mesh does not work. The
-      interface name is not a problem, being local to each node. Options: the
-      agent prints its own `--overlay-net` in the invitation, or the welcome
-      carries the cluster's overlay network and the joiner adopts it, which
-      would also remove a setting an operator can get wrong. The README works
-      around it by telling the operator to add the flag.
-- [ ] **DECISION** `--overlay-net` is not persisted, so a node restarted
-      without it silently moves to the default network: verified 2026-09-12, a
-      node on `10.42.0.0/24` came back as `10.0.0.1` with nothing in the log.
-      Its peers then reject its announcement, because the address no longer
-      matches the one its admission assigns. Persisting the network and
-      treating the flag as an override that logs a renumbering would remove
-      the failure, and pairs with the invitation item above: the joiner could
-      learn the network at enrolment and never be told it again.
+- [x] The invitation output printed `cheesecloth --join <host> --join-key
+      TOKEN`, which enrolled the joiner onto the default overlay network: on a
+      cluster that set `--overlay-net`, the joiner computed every address from
+      the wrong network and the mesh did not work. Done in phase 11: the
+      welcome carries the cluster's overlay network and the joiner adopts it,
+      so the printed command is right for every cluster. The interface name
+      was never part of this, being local to each node.
+- [x] `--overlay-net` was not persisted, so a node restarted without it
+      silently moved to the default network: a node on `10.42.0.0/24` came
+      back as `10.0.0.1` with nothing in the log, and its peers then rejected
+      its announcement, because the address no longer matched the one its
+      admission assigns. Done in phase 11: the network is kept with the rest
+      of the bootstrap state, an explicit flag still wins so a cluster can be
+      renumbered, and a value that differs from the cluster's is logged as a
+      warning rather than applied in silence.
 - [x] The root is a peer, not a king: it can revoke itself, and any member can
       revoke it. Done 2026-09-12. Before this the root was valid
       unconditionally, so it could not leave its own cluster except with
@@ -514,7 +512,8 @@ separate items, still to be designed.
       honoured a revocation whose revoker was valid, and the cycle guard made
       a self-revocation a no-op: the record was accepted and had no effect.
       Only the holder of that key can sign it and it removes nobody else, so
-      it is honoured unconditionally. The root still cannot be revoked.
+      it is honoured unconditionally. The root was still exempt at this point;
+      phase 6 took that exemption away later the same day.
 - [x] `cluster.RevokeSelf`: revoke this node's identity and push the record to
       each member over the stream transport, rather than only queueing it for
       gossip, because the node is about to stop. `cluster.Forget` deletes the
@@ -528,10 +527,11 @@ separate items, still to be designed.
       kernel interface outlives its agent; elsewhere it is a no-op. Done
       2026-09-12.
 - [x] `cheesecloth leave`: the agent revokes this node, tears the interface
-      down and forgets the cluster. `--force` leaves without revoking, for the
-      root (which cannot be revoked) and for a node whose agent is not
-      running; it says the cluster keeps trusting the identity until a member
-      revokes it. Done 2026-09-12, with the `test_leave_command` e2e scenario:
+      down and forgets the cluster. `--force` leaves without revoking, at this
+      point for the root as well as for a node whose agent is not running; it
+      says the cluster keeps trusting the identity until a member revokes it.
+      The root stopped needing it in phase 6, where it became a peer.
+      Done 2026-09-12, with the `test_leave_command` e2e scenario:
       the leaving node's peers drop it, including the one the operator never
       talked to, and its state file is gone.
 - [x] A remembered peer is rejoined on its own gossip port. The peers in the

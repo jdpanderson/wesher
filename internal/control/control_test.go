@@ -96,9 +96,9 @@ func Test_control_roundTrip(t *testing.T) {
 	assert.True(t, resp.Revoked)
 	assert.Equal(t, 2, resp.Notified)
 	assert.True(t, h.force)
-	h.leaveErr = errors.New("the root cannot be revoked")
+	h.leaveErr = errors.New("signing the revocation failed")
 	_, err = Call(path, Request{Op: OpLeave})
-	assert.ErrorContains(t, err, "root cannot be revoked")
+	assert.ErrorContains(t, err, "signing the revocation failed")
 	assert.False(t, h.force)
 
 	srv.Close()
