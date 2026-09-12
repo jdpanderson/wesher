@@ -440,3 +440,15 @@ is a fallback, never a replacement.
       hosts file directory does not give (an ACL on the socket, or a named
       pipe, would); wintun.dll is not shipped with the binary yet; service
       logs go to a file, not the event log.
+
+## Phase 9: design documentation
+
+- [x] `docs/design.md`: the critical design elements at a level above the
+      code. Done 2026-09-12: goals and non-goals, the control and data planes
+      and why the keys differ, trust and derived addressing, the whole-state
+      agent loop, the portability seams, state, the operator interface,
+      failure behaviour, testing and known limits. Points at
+      `docs/membership.md` for the protocol rather than repeating it.
+- [ ] **DECISION** whether to add a second layer of design documentation
+      covering the code itself: package responsibilities, the main types and
+      how a change moves through them.

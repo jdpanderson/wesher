@@ -81,6 +81,8 @@ entries are updated whenever the membership changes.
   node, and running several clusters on one host.
 - [Operations](docs/operations.md): permissions, systemd, the status command, recovery, building from source,
   security considerations and known limitations.
+- [Design](docs/design.md): how the system is put together, the trust model, the control and data planes, and
+  how membership becomes an interface configuration.
 - [Membership design](docs/membership.md): a full description of identities, admission records, the enrolment
   exchange and the transport.
 - [wesher](https://github.com/costela/wesher): the project cheesecloth was forked from. cheesecloth follows the same
