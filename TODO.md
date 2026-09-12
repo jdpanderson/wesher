@@ -361,6 +361,15 @@ before starting; none are committed yet.
       left is a trusted identity that nothing can retire, and its overlay slot.
       The message and the documentation need to say what the operator should
       actually do, which depends on whether the root stays unrevocable.
+- [ ] A member cannot revoke the member that admitted it. `Set.validAt` guards
+      against cycles with a set keyed on identity alone, so judging the
+      revoker's own admission re-enters that identity at an earlier time and
+      the guard reads it as a cycle. Verified 2026-09-12 on unmodified code: in
+      a root -> B -> C chain, C revoking B leaves B a member, while the root
+      revoking B works. The record is stored and gossiped, so `cheesecloth
+      revoke` reports success and nothing happens. Keying the guard on identity
+      and time fixes it, and the existing cycle test still passes; the time
+      values come from the records, so the key space stays finite.
 - [ ] A node that runs with no peers erases the addresses it needs to rejoin.
       The state file's peer list is written from the live membership, so a node
       left alone persists an empty list: verified 2026-09-12, a two-node
