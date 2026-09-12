@@ -122,6 +122,57 @@ func Test_AgentCmd_enrol_unreachable(t *testing.T) {
 	assert.Contains(t, err.Error(), "enrolling with 127.0.0.1:2", "the last member tried is reported")
 }
 
+// The command line, then the config file (kong has merged the two by now),
+// then what the cluster says, then the default for a new cluster.
+func Test_AgentCmd_settleOverlayNet(t *testing.T) {
+	clusterNet := netip.MustParsePrefix("10.42.0.0/16")
+	tests := []struct {
+		name          string
+		given, ofNode netip.Prefix
+		want          netip.Prefix
+	}{
+		{"given here", netip.MustParsePrefix("10.9.0.0/16"), netip.Prefix{}, netip.MustParsePrefix("10.9.0.0/16")},
+		{"from the cluster", netip.Prefix{}, clusterNet, clusterNet},
+		{"the default for a new cluster", netip.Prefix{}, netip.Prefix{}, DefaultOverlayNet},
+		{"given here, and the cluster agrees", clusterNet, clusterNet, clusterNet},
+		{"given here, and the cluster does not", netip.MustParsePrefix("10.9.0.0/16"), clusterNet, netip.MustParsePrefix("10.9.0.0/16")},
+		{"host bits are cleared", netip.MustParsePrefix("10.9.0.5/16"), netip.Prefix{}, netip.MustParsePrefix("10.9.0.0/16")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := validCmd()
+			a.OverlayNet = tt.given
+			require.NoError(t, a.settleOverlayNet(tt.ofNode))
+			assert.Equal(t, tt.want, a.OverlayNet)
+		})
+	}
+}
+
+// A network that comes from the cluster is checked like one given here.
+func Test_AgentCmd_settleOverlayNet_checksTheResult(t *testing.T) {
+	unset := func(routes ...netip.Prefix) AgentCmd {
+		a := validCmd()
+		a.OverlayNet, a.AllowedIPs = netip.Prefix{}, routes
+		return a
+	}
+	route := netip.MustParsePrefix("10.1.0.0/16")
+
+	a := unset(route)
+	assert.ErrorContains(t, a.settleOverlayNet(netip.Prefix{}), "overlaps the overlay network 10.0.0.0/8", "the default")
+	a = unset(route)
+	assert.ErrorContains(t, a.settleOverlayNet(netip.MustParsePrefix("10.1.0.0/24")), "overlaps the overlay network", "the cluster's")
+	a = unset()
+	assert.ErrorContains(t, a.settleOverlayNet(netip.MustParsePrefix("10.0.0.0/31")), "no room for two nodes")
+}
+
+// Nothing to check until the cluster has been asked.
+func Test_AgentCmd_Validate_overlayNetUnset(t *testing.T) {
+	a := validCmd()
+	a.OverlayNet = netip.Prefix{}
+	a.AllowedIPs = []netip.Prefix{netip.MustParsePrefix("10.1.0.0/16")}
+	assert.NoError(t, a.Validate())
+}
+
 // The state file is deleted only when the agent stopped because it left the
 // cluster; an ordinary stop keeps everything for the next start.
 func Test_AgentCmd_forget(t *testing.T) {

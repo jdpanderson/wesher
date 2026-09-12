@@ -72,8 +72,10 @@ admitter gives a joiner the lowest slot no admission in its set uses (slots of
 revoked members are reused only when nothing else is free). Every node derives
 every member's address from the same records, so addresses are stable across
 restarts, allocated from the start of the overlay net, and independent of
-hostnames. Changing `--overlay-net` on every node changes every address
-without re-enrolling, because each node keeps its slot number.
+hostnames. The network itself is part of the welcome, so a joiner is told
+which one the cluster uses rather than being configured with it. Changing
+`--overlay-net` on every node changes every address without re-enrolling,
+because each node keeps its slot number.
 
 Two members can be handed the same slot only if two admitters enrol joiners
 at the same time, before either admission has spread. The records resolve
@@ -114,7 +116,8 @@ DH public keys, and `K` the token:
    `HMAC(kMac, "joiner" || transcript)`.
 4. Member verifies, consumes one token use, signs an admission for `J`,
    broadcasts it, and sends the joiner the root record, the full record set,
-   and its own gossip address. Both sides discard `K`.
+   its own gossip address and the cluster's overlay network. Both sides
+   discard `K`.
 5. Joiner -> Member: an acknowledgement once it has checked the welcome, so
    the member knows it arrived and closes the connection.
 
@@ -180,7 +183,8 @@ identity can be revoked.
 ## Operations
 
 - `cheesecloth --init`: create identity and root; start the cluster.
-- `cheesecloth --join HOST --join-key TOKEN`: first start of a new node.
+- `cheesecloth --join HOST --join-key TOKEN`: first start of a new node. The
+  overlay network comes with the welcome; the node needs no setting of its own.
 - `cheesecloth --join HOST` or bare `cheesecloth`: restart of an admitted node.
 - `cheesecloth invite [--ttl] [--uses]`: mint a token on a member (via the control
   socket `/run/cheesecloth/<interface>.sock`).

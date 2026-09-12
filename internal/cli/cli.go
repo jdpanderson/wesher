@@ -1,12 +1,18 @@
 package cli
 
 import (
+	"net/netip"
+
 	"github.com/alecthomas/kong"
 	"github.com/jdpanderson/cheesecloth/internal/control"
 )
 
 // DefaultInterface is the wireguard interface the commands act on unless told otherwise.
 const DefaultInterface = "wgoverlay"
+
+// DefaultOverlayNet is where a new cluster allocates its addresses; a node
+// joining an existing one takes that cluster's network instead.
+var DefaultOverlayNet = netip.MustParsePrefix("10.0.0.0/8")
 
 // CLI is the command tree.
 type CLI struct {
@@ -31,7 +37,8 @@ func Parser(c *CLI, configPath, version string) (*kong.Kong, error) {
 		kong.Description("mesh overlay network manager. Settings may come from a YAML config file ("+configPath+
 			" or --config) keyed by flag name; command-line flags override it."),
 		kong.UsageOnError(),
-		kong.Vars{"version": version, "default_config": configPath, "default_interface": DefaultInterface, "default_socket_dir": control.DefaultDir},
+		kong.Vars{"version": version, "default_config": configPath, "default_interface": DefaultInterface,
+			"default_overlay_net": DefaultOverlayNet.String(), "default_socket_dir": control.DefaultDir},
 		kong.Configuration(configLoader, configPath),
 	)
 }

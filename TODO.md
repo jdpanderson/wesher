@@ -562,7 +562,12 @@ same value.
 - [x] `cluster`: the overlay network is persisted with the rest of the
       bootstrap, so a restart needs no flag; the cluster stores the value it
       was created with. Done 2026-09-12.
-- [ ] `cli`: resolve the overlay network in that order, re-check it against
+- [x] `cli`: resolve the overlay network in that order, re-check it against
       `--allowed-ips` once resolved, and warn when an explicit value differs
       from the cluster's. Docs: `--overlay-net` is no longer needed to enrol
-      or restart a node, in configuration, README and membership.
+      or restart a node, in configuration, README and membership. Done
+      2026-09-12, with the `test_overlay_net_from_cluster` e2e scenario: a
+      joiner given no network takes the cluster's 10.77.0.0/16, at enrolment
+      and on every later start. The flag lost its kong default, so an
+      `--allowed-ips` overlap with the default network is now reported when
+      the agent starts rather than when the flags are parsed.

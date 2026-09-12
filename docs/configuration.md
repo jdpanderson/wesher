@@ -17,7 +17,7 @@ command line. Environment variables are not read. An annotated example is in
 | `--bind-addr ADDR` | `bind-addr` | address to bind for cluster membership; `0.0.0.0` or `::` binds every interface of that family and advertises one of its addresses (public preferred). The family decides whether the cluster runs over IPv4 or IPv6, see [IPv4 and IPv6](#ipv4-and-ipv6) | `0.0.0.0` |
 | `--cluster-port PORT` | `cluster-port` | UDP port this node listens on for membership gossip and enrolment (QUIC); peers learn it and remember it, so it need not be the same on every node, but a member listening on another port must be given as `host:port` in `--join` | `7946` |
 | `--wireguard-port PORT` | `wireguard-port` | port used for wireguard traffic (UDP); must be the same across cluster | `51820` |
-| `--overlay-net ADDR/MASK` | `overlay-net` | the network in which to allocate addresses for the overlay mesh network (CIDR format); must be the same across cluster | `10.0.0.0/8` |
+| `--overlay-net ADDR/MASK` | `overlay-net` | the network in which to allocate addresses for the overlay mesh network (CIDR format), see [Overlay addresses](#overlay-addresses); the same on every node of a cluster | the cluster's, learned at enrolment and kept; `10.0.0.0/8` for a new cluster |
 | `--allowed-ips NET/MASK,...` | `allowed-ips` | extra networks reachable through this node, see [Routing networks through a node](#routing-networks-through-a-node); must not overlap `--overlay-net` |  |
 | `--interface DEV` | `interface` | name of the wireguard interface to create and manage | `wgoverlay` |
 | `--mtu MTU` | `mtu` | MTU of the wireguard interface | `1420` |
@@ -38,8 +38,20 @@ Addresses are therefore stable across restarts, allocated from the start of
 the network, and agreed on by every member. A node claiming an address other
 than its assigned one is ignored.
 
-The overlay network must be the same on every node. Changing `--overlay-net`
-on every node changes every address, since each node keeps its slot number.
+The overlay network must be the same on every node, and a node is not expected
+to be told it twice: the member that admits a node states the network in the
+welcome, and the node keeps it in its state file. So only the node that starts
+a cluster needs `--overlay-net`; everything after that, enrolment and restarts
+alike, takes it from the cluster.
+
+Where the value comes from, in order: the command line, then the configuration
+file, then the cluster (the welcome for a node being enrolled, the state file
+for one that is already a member), then `10.0.0.0/8`. A value given here wins,
+so a whole cluster can be renumbered by giving every node the new network —
+each node keeps its slot number, so every address changes and no node has to
+enrol again. Until every node has the new value, a node that has it stands
+alone: it derives different addresses from the same records and every peer's
+metadata fails to verify, which is logged as a warning on both sides.
 
 The node's hostname identifies it in the cluster and must be unique; enrolment
 refuses a name another member already holds.

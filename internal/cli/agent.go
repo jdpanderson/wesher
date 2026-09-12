@@ -32,7 +32,7 @@ type AgentCmd struct {
 	BindAddr      netip.Addr     `help:"address to bind for cluster membership traffic; 0.0.0.0 or :: binds every interface of that family and advertises one of its addresses. The address family decides whether the cluster runs over IPv4 or IPv6" default:"0.0.0.0"`
 	ClusterPort   int            `help:"UDP port used for membership gossip and enrolment (QUIC); must be the same across cluster" default:"7946"`
 	WireguardPort int            `help:"port used for wireguard traffic (UDP); must be the same across cluster" default:"51820"`
-	OverlayNet    netip.Prefix   `help:"the network in which to allocate addresses for the overlay mesh network (CIDR format); must be the same across cluster" default:"10.0.0.0/8"`
+	OverlayNet    netip.Prefix   `help:"the network in which to allocate addresses for the overlay mesh network (CIDR format); a node that is already a member, or being enrolled, takes the cluster's unless this says otherwise. Defaults to ${default_overlay_net} for a new cluster"`
 	AllowedIPs    []netip.Prefix `name:"allowed-ips" help:"extra networks reachable through this node (CIDR, comma separated); peers route them over the mesh via this node, which must forward. Must not overlap --overlay-net"`
 	Interface     string         `help:"name of the wireguard interface to create and manage" default:"${default_interface}"`
 	MTU           int            `help:"MTU of the wireguard interface" default:"1420"`
@@ -55,12 +55,11 @@ func (a *AgentCmd) state() string {
 }
 
 func (a *AgentCmd) Validate() error {
-	if overlay.MaxHost(a.OverlayNet) < 2 {
-		return fmt.Errorf("overlay network %s has no room for two nodes", a.OverlayNet)
-	}
-	for _, p := range a.AllowedIPs {
-		if p.Overlaps(a.OverlayNet) {
-			return fmt.Errorf("--allowed-ips %s overlaps the overlay network %s", p, a.OverlayNet)
+	// an overlay network given here is checked now; one that comes from the
+	// cluster is checked once it is known, in Run
+	if a.OverlayNet.IsValid() {
+		if err := checkOverlayNet(a.OverlayNet.Masked(), a.AllowedIPs); err != nil {
+			return err
 		}
 	}
 
@@ -80,6 +79,44 @@ func (a *AgentCmd) Validate() error {
 	}
 
 	return nil
+}
+
+// checkOverlayNet is what must hold of the overlay network once it is known,
+// whether it came from the command line, the cluster or the default.
+func checkOverlayNet(overlayNet netip.Prefix, allowedIPs []netip.Prefix) error {
+	if overlay.MaxHost(overlayNet) < 2 {
+		return fmt.Errorf("overlay network %s has no room for two nodes", overlayNet)
+	}
+	for _, p := range allowedIPs {
+		if p.Overlaps(overlayNet) {
+			return fmt.Errorf("--allowed-ips %s overlaps the overlay network %s", p, overlayNet)
+		}
+	}
+	return nil
+}
+
+// settleOverlayNet decides which network this node allocates addresses in and
+// keeps it: what the command line or config file says, then what the cluster
+// says (the welcome for a node just enrolled, the state file for one that
+// already was a member), then the default for a new cluster. An explicit value
+// wins, so a cluster can be renumbered by giving every node the new one, but
+// until every node has it this node stands alone, and it is told so.
+func (a *AgentCmd) settleOverlayNet(clusterNet netip.Prefix) error {
+	switch {
+	case !a.OverlayNet.IsValid() && clusterNet.IsValid():
+		a.OverlayNet = clusterNet
+		slog.Debug("overlay network taken from the cluster", "net", a.OverlayNet)
+	case !a.OverlayNet.IsValid():
+		a.OverlayNet = DefaultOverlayNet
+		slog.Debug("overlay network not given anywhere; using the default", "net", a.OverlayNet)
+	default:
+		a.OverlayNet = a.OverlayNet.Masked()
+		if clusterNet.IsValid() && a.OverlayNet != clusterNet {
+			slog.Warn("the overlay network given here is not the one the cluster uses; this node has no peers until every node is given the same one",
+				"given", a.OverlayNet, "cluster", clusterNet)
+		}
+	}
+	return checkOverlayNet(a.OverlayNet, a.AllowedIPs)
 }
 
 // Run wires up cluster, wireguard and the hosts file, joins the cluster and
@@ -109,6 +146,9 @@ func (a *AgentCmd) Run(ctx context.Context, n notify.Notifier) error {
 		return err
 	}
 
+	if err = a.settleOverlayNet(boot.OverlayNet); err != nil {
+		return err
+	}
 	host, err := boot.Host()
 	if err != nil {
 		return err

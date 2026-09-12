@@ -30,17 +30,16 @@ for Linux; the other platforms are described in [operations](docs/operations.md#
 2. On the first node, start a cluster:
 
    ```
-   # ./cheesecloth --init
+   ./cheesecloth --init
 
-   # most setups set at least these two: a name for the interface, and an
-   # overlay network smaller than the 10.0.0.0/8 default
-   # ./cheesecloth --init --interface wgmesh --overlay-net 10.42.0.0/24
+   # Or customize the interface name, and the overlay network the cluster allocates addresses in
+   # ./cheesecloth --init --interface wghomelab --overlay-net 10.42.0.0/24
    ```
 
 3. On the same node, create an invitation for the next node:
 
    ```
-   # ./cheesecloth invite
+   ./cheesecloth invite
    7xk3...
    valid for 10m0s, 1 use(s). On the new node:
      cheesecloth --join <this host> --join-key 7xk3...
@@ -49,11 +48,10 @@ for Linux; the other platforms are described in [operations](docs/operations.md#
 4. On the new node, run the command from the invitation:
 
    ```
-   # ./cheesecloth --join first.example.net --join-key 7xk3...
+   ./cheesecloth --join first.example.net --join-key 7xk3...
 
-   # --overlay-net has to match the cluster; --interface is this node's own
-   # choice and need not match anything
-   # ./cheesecloth --join first.example.net --join-key 7xk3... --interface wgmesh --overlay-net 10.42.0.0/24
+   # If you customize the interface name, you might want to use it on the joined hosts
+   # ./cheesecloth --join first.example.net --join-key 7xk3... --interface wghomelab
    ```
 
 The two nodes are now connected. Repeat steps 3 and 4 for each additional node; the invitation can be created on
@@ -62,14 +60,16 @@ from what it saved. `cheesecloth status` lists the peers. `cheesecloth revoke NA
 `cheesecloth leave` removes the node it runs on. Running
 cheesecloth as a system service is described in [operations](docs/operations.md).
 
-A node does still need the settings it runs with, on every start. `--overlay-net` and the two ports must be the same
-across the cluster. `--interface` is local: each node names its interface what it likes, but that name has to be
-given to `invite`, `revoke` and `status` on that node, since they find the agent by it. Rather than repeat them, most
-setups put them in `/etc/cheesecloth/config.yaml` once, after which every command runs with no arguments:
+A node does still need the settings it runs with, on every start, with one exception: `--overlay-net` comes from the
+cluster. The member that admits a node tells it which network the cluster allocates addresses in, and the node keeps
+it, so only the node that starts a cluster is given one. `--wireguard-port` must be the same across the cluster;
+`--cluster-port` need not be, though a member listening on another one has to be named as `host:port` in `--join`.
+`--interface` is local: each node names its interface what it likes, but that name has to be given to `invite`,
+`revoke` and `status` on that node, since they find the agent by it. Rather than repeat them, most setups put them in
+`/etc/cheesecloth/config.yaml` once, after which every command runs with no arguments:
 
 ```yaml
 interface: wgmesh
-overlay-net: 10.42.0.0/24
 ```
 
 [`dist/config.yaml`](dist/config.yaml) is an annotated example, and [configuration](docs/configuration.md) describes

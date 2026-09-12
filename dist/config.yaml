@@ -13,7 +13,9 @@
 bind-addr: 0.0.0.0
 cluster-port: 7946
 wireguard-port: 51820
-overlay-net: 10.0.0.0/8
+# the cluster's overlay network; a node joining an existing cluster is told it
+# at enrolment and keeps it, so this is only needed to start a new cluster
+#overlay-net: 10.0.0.0/8
 # networks behind this node that peers should route through it
 #allowed-ips:
 #  - 192.168.7.0/24

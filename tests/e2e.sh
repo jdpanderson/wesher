@@ -128,6 +128,33 @@ test_node_restart() {
     stop_test_container test1-orig
 }
 
+# a joiner is told which network the cluster allocates addresses in, so it
+# needs no --overlay-net of its own, at enrolment or on any later start
+test_overlay_net_from_cluster() {
+    run_test_container test1-orig test1 --init --overlay-net 10.77.0.0/16
+    token=$(invite test1-orig 1)
+    run_test_container test2-orig test2 --join test1-orig --join-key "$token" # no --overlay-net
+
+    sleep 3
+
+    ping_ok test1-orig 10.77.0.2 test2-orig
+    ping_ok test2-orig 10.77.0.1 test1-orig
+
+    # the network came with the welcome and is kept, so a restart needs it no more
+    docker stop test2-orig
+    docker start test2-orig
+
+    sleep 3
+
+    ping_ok test1-orig 10.77.0.2 test2-orig
+    docker exec test2-orig /app/cheesecloth status | grep -q 10.77.0.2 || {
+        echo "the node did not keep the cluster's overlay network"; dump_logs test2-orig; false
+    }
+
+    stop_test_container test2-orig
+    stop_test_container test1-orig
+}
+
 # nodes of one mesh may listen on different gossip ports: a peer is remembered
 # with the port it was reached at, so a restart finds it without being told
 test_mixed_cluster_ports() {
