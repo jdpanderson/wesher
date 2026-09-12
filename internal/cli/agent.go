@@ -147,12 +147,12 @@ func (a *AgentCmd) Run() error {
 			slog.Error("could not join cluster, retrying", "err", err, "in", dur)
 		}),
 	); err != nil {
+		cl.Leave()
 		if ctx.Err() != nil {
 			slog.Info("terminating")
-			cl.Leave()
 			return nil
 		}
-		return fmt.Errorf("joining cluster: %w", err)
+		return fmt.Errorf("joining cluster: %w", err) // not reached today: the retry gives up only when ctx does
 	}
 
 	return a.loop(ctx, peerc, cl, wgstate, hostsFile)
