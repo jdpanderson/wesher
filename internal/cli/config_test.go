@@ -101,6 +101,11 @@ func Test_config_rejectsUnknownAndCommandLineOnlyKeys(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "join-key")
 	assert.Contains(t, err.Error(), "one-time secret")
+	// commands without the flag never resolve it; the file is still refused
+	for _, cmd := range []string{"status", "invite"} {
+		_, err = parse(t, writeConfig(t, "join-key: secret\n"), cmd)
+		assert.ErrorContains(t, err, "one-time secret", cmd)
+	}
 
 	_, err = parse(t, writeConfig(t, "init: true\n"), "agent")
 	require.Error(t, err)

@@ -64,6 +64,19 @@ func Test_firstAddr_unmaps(t *testing.T) {
 	assert.Equal(t, "198.51.100.7", got.String())
 }
 
+func Test_firstAddr_skipsWhatIsNotAnIP(t *testing.T) {
+	addrs := []net.Addr{
+		&net.TCPAddr{IP: net.ParseIP("192.0.2.1"), Port: 1}, // not an interface address
+		&net.IPNet{IP: net.IP{1, 2, 3}},                     // malformed
+		&net.IPAddr{IP: net.ParseIP("203.0.113.1")},
+	}
+	got, ok := firstAddr(addrs, func(netip.Addr) bool { return true })
+	require.True(t, ok)
+	assert.Equal(t, "203.0.113.1", got.String())
+	_, ok = firstAddr(addrs[:2], func(netip.Addr) bool { return true })
+	assert.False(t, ok)
+}
+
 func Test_AgentCmd_advertiseAddr(t *testing.T) {
 	cmd := validCmd()
 	cmd.BindAddr = netip.MustParseAddr("192.0.2.1")
