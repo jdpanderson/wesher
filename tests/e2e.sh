@@ -128,6 +128,46 @@ test_node_restart() {
     stop_test_container test1-orig
 }
 
+# nodes of one mesh may listen on different gossip ports: a peer is remembered
+# with the port it was reached at, so a restart finds it without being told
+test_mixed_cluster_ports() {
+    idle='--interface wgidle --cluster-port 7948 --wireguard-port 51822 --overlay-net 10.13.0.0/16'
+    # the mesh agent is started by hand so it can be restarted without --join;
+    # the container itself runs an unrelated one-node cluster to stay alive
+    mesh_agent() { # mesh_agent <extra flags...>
+        docker exec -d test2-orig bash -c "echo \$\$ > /run/mesh.pid; exec /entrypoint.sh --cluster-port 7947 $* >> /var/log/cheesecloth-mesh.log 2>&1"
+    }
+
+    run_test_container test1-orig test1 --init # the defaults: wgoverlay, cluster port 7946
+    token=$(invite test1-orig 1)
+    run_test_container test2-orig test2 --init $idle
+    mesh_agent --join test1-orig:7946 --join-key "$token" # test1 is not on test2's port
+
+    sleep 3
+
+    # the overlay addresses, not the names: the container runtime resolves those
+    # over the underlay whether the mesh is up or not
+    ping_ok test1-orig 10.0.0.2 test2-orig
+    ping_ok test2-orig 10.0.0.1 test1-orig
+
+    # the mesh agent restarts with nothing but its state: it must reach test1 on
+    # 7946, the port it remembered, and not on its own 7947
+    docker exec test2-orig bash -c 'kill $(cat /run/mesh.pid)'
+    sleep 2
+    mesh_agent
+
+    sleep 3
+
+    ping_ok test1-orig 10.0.0.2 test2-orig
+    ping_ok test2-orig 10.0.0.1 test1-orig
+    docker exec test1-orig /app/cheesecloth status | grep -q test2 || {
+        echo "the node on another port did not rejoin from its state"; dump_logs test2-orig; false
+    }
+
+    stop_test_container test2-orig
+    stop_test_container test1-orig
+}
+
 # joiners started at the same time with a shared multi-use token
 test_cluster_simultaneous_start() {
     run_test_container test1-orig test1 --init

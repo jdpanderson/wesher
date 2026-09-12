@@ -495,6 +495,15 @@ separate items, still to be designed.
       revokes it. Done 2026-09-12, with the `test_leave_command` e2e scenario:
       the leaving node's peers drop it, including the one the operator never
       talked to, and its state file is gone.
+- [x] A remembered peer is rejoined on its own gossip port. The peers in the
+      state file kept an address and no port, and `Join` completed them with
+      this node's `--cluster-port`, so a restart could only find peers that
+      happened to share it. The port memberlist reached each peer at is now
+      kept with the address; an address without one, from state written
+      before this, still falls back to this node's port. The WireGuard port
+      is a separate matter: peer endpoints are built from this node's
+      `--wireguard-port`, which must still match across the cluster. Done
+      2026-09-12.
 - [x] Docs: decommissioning a node in `docs/operations.md`, the command list
       in `docs/membership.md`, the operator interface in `docs/design.md`,
       README. Done 2026-09-12.

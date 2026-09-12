@@ -159,8 +159,9 @@ is legitimate. A node never appears to be configured when it is not.
 ## State and durability
 
 A node persists one file per interface: its identity seed, the pinned root,
-the record set and the peers it last saw. That is everything needed to rejoin
-without an operator or a token.
+the record set and the peers it last saw, each with the address and port it
+was reached at. That is everything needed to rejoin without an operator or a
+token, whatever port the peers listen on.
 
 The file is written by replacing it, so an interrupted write leaves the
 previous version intact. Nothing else is durable. The WireGuard key, the

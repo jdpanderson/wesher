@@ -170,7 +170,8 @@ claiming another member's address.
 ## Restart and recovery
 
 A restarting node has its seed, the pinned root, the record set, and its last
-known peers on disk. It reconnects over QUIC to any of them and rejoins. No
+known peers on disk, each with the port it was last reached at. It reconnects
+over QUIC to any of them and rejoins. No
 token and no operator are involved. If every node restarts at once, each still
 has everything it needs and nothing has to be fetched. A node that loses its
 disk loses its identity. It is enrolled again with a fresh token, and the old

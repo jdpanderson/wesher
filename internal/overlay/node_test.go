@@ -30,13 +30,22 @@ func Test_Meta_Encode_Decode(t *testing.T) {
 
 // A node is persisted with its metadata decoded, as one flat object.
 func Test_Node_JSON(t *testing.T) {
-	node := Node{Name: "n", Addr: netip.MustParseAddr("192.0.2.1"), Meta: Meta{OverlayAddr: netip.MustParseAddr("10.0.0.1"), PubKey: "k", Identity: trust.PublicKey{1}}}
+	node := Node{Name: "n", Addr: netip.MustParseAddr("192.0.2.1"), Port: 7946, Meta: Meta{OverlayAddr: netip.MustParseAddr("10.0.0.1"), PubKey: "k", Identity: trust.PublicKey{1}}}
 	b, err := json.Marshal(node)
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"name":"n","addr":"192.0.2.1","overlay":"10.0.0.1","wg":"k","id":"`+trust.PublicKey{1}.String()+`","sig":null}`, string(b))
+	assert.JSONEq(t, `{"name":"n","addr":"192.0.2.1","port":7946,"overlay":"10.0.0.1","wg":"k","id":"`+trust.PublicKey{1}.String()+`","sig":null}`, string(b))
 	var back Node
 	require.NoError(t, json.Unmarshal(b, &back))
 	assert.Equal(t, node, back)
+}
+
+// A peer is rejoined at the port it was last reached at; state written before
+// ports were kept has none, and the caller fills it in.
+func Test_Node_GossipAddr(t *testing.T) {
+	assert.Equal(t, "192.0.2.1:7946", Node{Addr: netip.MustParseAddr("192.0.2.1"), Port: 7946}.GossipAddr())
+	assert.Equal(t, "[2001:db8::1]:7947", Node{Addr: netip.MustParseAddr("2001:db8::1"), Port: 7947}.GossipAddr())
+	assert.Equal(t, "192.0.2.1", Node{Addr: netip.MustParseAddr("192.0.2.1")}.GossipAddr())
+	assert.Equal(t, "2001:db8::1", Node{Addr: netip.MustParseAddr("2001:db8::1")}.GossipAddr())
 }
 
 func Test_Meta_Encode_limit(t *testing.T) {

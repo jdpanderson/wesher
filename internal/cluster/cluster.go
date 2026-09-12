@@ -47,7 +47,7 @@ type Cluster struct {
 	id        *trust.Identity
 	set       *trust.Set
 	overlay   netip.Prefix
-	port      int // the gossip port, which every node is assumed to listen on
+	port      int // this node's gossip port, and the one assumed for a peer address given without one
 	tokens    *enrol.TokenStore
 	queue     *memberlist.TransmitLimitedQueue
 	enrolSrv  *enrol.Server
@@ -318,15 +318,16 @@ func (c *Cluster) forwardEvents() {
 }
 
 // Join contacts addrs to join the cluster; given none, it tries the peers
-// remembered from the last run. An address without a port is assumed to
-// listen on the cluster port. It fails if there were addresses to try and
-// none could be joined. No addresses and no remembered peers is a cluster of
-// one, which is not an error.
+// remembered from the last run, each on the port it was last reached at,
+// which need not be this node's. An address without a port is assumed to
+// listen on this node's cluster port. It fails if there were addresses to try
+// and none could be joined. No addresses and no remembered peers is a cluster
+// of one, which is not an error.
 func (c *Cluster) Join(addrs []string) error {
 	if len(addrs) == 0 {
 		c.stateMu.Lock()
 		for _, n := range c.boot.Peers {
-			addrs = append(addrs, n.Addr.String())
+			addrs = append(addrs, n.GossipAddr()) // each on its own port, which need not be ours
 		}
 		c.stateMu.Unlock()
 	}
@@ -435,7 +436,7 @@ func (c *Cluster) snapshot() []overlay.Node {
 			continue
 		}
 		addr, _ := netip.AddrFromSlice(n.Addr)
-		node := overlay.Node{Name: n.Name, Addr: addr.Unmap(), Meta: meta}
+		node := overlay.Node{Name: n.Name, Addr: addr.Unmap(), Port: n.Port, Meta: meta}
 		if err := verifyMeta(c.set, c.overlay, &node); err != nil {
 			slog.Warn("ignoring node with unverified metadata", "name", n.Name, "addr", n.Addr, "err", err)
 			continue

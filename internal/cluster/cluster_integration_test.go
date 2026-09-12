@@ -110,6 +110,35 @@ func Test_Cluster_Join_rememberedPeers(t *testing.T) {
 	assert.Equal(t, "b", waitMembers(t, chA, 1)[0].Name)
 }
 
+// A member listening on its own port is remembered with it, so a restart
+// reaches it there rather than on the port this node happens to use.
+func Test_Cluster_Join_rememberedPeers_ownPort(t *testing.T) {
+	dir := useTempStatePaths(t)
+	a := rootCluster(t, dir, "a") // BindPort 0: a and b end up on different ports
+	defer a.Leave()
+	chA := a.Members()
+	b := enrolCluster(t, dir, a, "b")
+	require.NotEqual(t, a.port, b.port, "the test needs two ports")
+	waitMembers(t, b.Members(), 1)
+	waitMembers(t, chA, 1)
+	b.Leave()
+	waitMembers(t, chA, 0)
+
+	boot, err := Load(dir, "b", false)
+	require.NoError(t, err)
+	require.Len(t, boot.Peers, 1)
+	assert.Equal(t, uint16(a.port), boot.Peers[0].Port, "a's own port was remembered")
+
+	// b restarts from its state alone, on a port of its own again
+	b, err = New(Config{StateDir: dir, StateName: "b", BindAddr: loopback, AdvertiseAddr: loopback,
+		OverlayNet: testOverlay, LocalNode: testNodeFor(t, "b", boot), Boot: boot})
+	require.NoError(t, err)
+	defer b.Leave()
+	drain(b.Members())
+	require.NoError(t, b.Join(nil))
+	assert.Equal(t, "b", waitMembers(t, chA, 1)[0].Name)
+}
+
 // secondLoopback is a loopback address other than 127.0.0.1. Linux answers to
 // all of 127.0.0.0/8; macOS configures only 127.0.0.1 unless an alias is added
 // (ifconfig lo0 alias 127.0.0.2), so the test skips there.

@@ -20,11 +20,24 @@ type Meta struct {
 	Signature   []byte          `json:"sig"`
 }
 
-// Node is a member as memberlist sees it, with its metadata decoded.
+// Node is a member as memberlist sees it, with its metadata decoded. The
+// gossip endpoint is observed rather than signed: it is where this node last
+// reached the member, not something the member asserts.
 type Node struct {
 	Name string     `json:"name"`
-	Addr netip.Addr `json:"addr"` // where memberlist reaches the node
+	Addr netip.Addr `json:"addr"`           // where memberlist reaches the node
+	Port uint16     `json:"port,omitempty"` // the node's own gossip port; 0 when unknown
 	Meta
+}
+
+// GossipAddr is where memberlist reaches the node, as "ip:port". A node whose
+// port is unknown, from state written before ports were kept, is returned as a
+// bare address for the caller to complete.
+func (n Node) GossipAddr() string {
+	if n.Port == 0 {
+		return n.Addr.String()
+	}
+	return netip.AddrPortFrom(n.Addr, n.Port).String()
 }
 
 // Encode is the wire form of the metadata, failing if it exceeds limit.
