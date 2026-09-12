@@ -24,7 +24,7 @@ type CLI struct {
 	Version  kong.VersionFlag `help:"display current version and exit"`
 
 	Agent    AgentCmd  `cmd:"" default:"withargs" help:"start the cheesecloth agent (default when no command specified)"`
-	Settings ConfigCmd `cmd:"" name:"config" help:"print the settings of every configured interface, or of one with --interface, which is also the only form that applies settings given on this command line; --init writes them to the config file instead"`
+	Settings ConfigCmd `cmd:"" name:"config" help:"print the settings of one interface, named with --interface or the only one configured, including any given on this command line; every section is printed when several are configured and none is named; --init writes the section to the config file instead"`
 	Status   StatusCmd `cmd:"" help:"show the wireguard interface and its peers"`
 	Invite   InviteCmd `cmd:"" help:"mint an enrolment token for a new node (talks to the running agent)"`
 	Revoke   RevokeCmd `cmd:"" help:"revoke a node's membership (talks to the running agent)"`

@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"net/netip"
+	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
+	"strings"
 
 	"github.com/jdpanderson/cheesecloth/internal/cluster"
 	"go.yaml.in/yaml/v3"
@@ -61,11 +64,11 @@ func (c *ConfigCmd) Run(cli *CLI) error {
 	return err
 }
 
-// dump is what the command prints. Told which interface to act on, it reports
-// that one's settings as the agent would settle them, the command line
-// included. Told nothing, it reports every section the file holds, as the file
-// holds them, since there is no one section for a flag on this command line to
-// belong to.
+// dump is what the command prints. One interface, named or the only one there
+// is, reports its settings as the agent would settle them, the command line
+// included. Several sections and nothing to choose between them reports each
+// as the file holds it, since there is no one section for a setting given here
+// to belong to; giving one anyway is refused rather than quietly dropped.
 func (c *ConfigCmd) dump(cli *CLI) ([]byte, error) {
 	if cli.ifaceArg != "" {
 		return c.render(cli.LogLevel)
@@ -74,10 +77,29 @@ func (c *ConfigCmd) dump(cli *CLI) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(sections) == 0 {
+	if len(sections) <= 1 {
 		return c.render(cli.LogLevel)
 	}
+	given, err := c.givenHere(cli.LogLevel)
+	if err != nil {
+		return nil, err
+	}
+	if given {
+		return nil, fmt.Errorf("the settings given here belong to one interface, and the config file has sections for %s; name the one they apply to with --interface",
+			strings.Join(slices.Sorted(maps.Keys(sections)), ", "))
+	}
 	return c.renderAll(sections)
+}
+
+// givenHere reports whether any setting was given on this command line. It is
+// asked only of a file with several sections, which resolves none of them, so
+// anything that differs from the flag defaults came from here.
+func (c *ConfigCmd) givenHere(logLevel LogLevelFlag) (bool, error) {
+	s, err := c.sectionFor(logLevel)
+	if err != nil {
+		return false, err
+	}
+	return !reflect.DeepEqual(s, section{}), nil
 }
 
 // renderAll is every section of the config file, each with the overlay network
@@ -122,11 +144,28 @@ func readSections(path string) (map[string]map[string]any, error) {
 	return parseSections(bytes.NewReader(content))
 }
 
-// render is this interface's section as it goes into a config file.
+// render is this interface's section as it goes into a config file, with the
+// overlay network the cluster told this node where nothing else says it, the
+// same way every section of a whole-file dump is filled in.
 func (c *ConfigCmd) render(logLevel LogLevelFlag) ([]byte, error) {
-	def, err := defaultSettings()
+	s, err := c.sectionFor(logLevel)
 	if err != nil {
 		return nil, err
+	}
+	if s.OverlayNet == "" {
+		if net, ok := cluster.KnownOverlayNet(c.state(), c.Interface); ok {
+			s.OverlayNet = net.String()
+		}
+	}
+	return encode(map[string]section{c.Interface: s})
+}
+
+// sectionFor is what the command line and the config file say, and nothing
+// else: only what differs from the flag defaults is worth writing down.
+func (c *ConfigCmd) sectionFor(logLevel LogLevelFlag) (section, error) {
+	def, err := defaultSettings()
+	if err != nil {
+		return section{}, err
 	}
 	s := section{Join: c.Join}
 	if c.BindAddr != def.BindAddr {
@@ -138,8 +177,8 @@ func (c *ConfigCmd) render(logLevel LogLevelFlag) ([]byte, error) {
 	if c.WireguardPort != def.WireguardPort {
 		s.WireguardPort = c.WireguardPort
 	}
-	if net := c.overlayNet(); net.IsValid() {
-		s.OverlayNet = net.String()
+	if c.OverlayNet.IsValid() {
+		s.OverlayNet = c.OverlayNet.Masked().String()
 	}
 	for _, p := range c.AllowedIPs {
 		s.AllowedIPs = append(s.AllowedIPs, p.String())
@@ -155,7 +194,7 @@ func (c *ConfigCmd) render(logLevel LogLevelFlag) ([]byte, error) {
 		s.LogLevel = string(logLevel)
 	}
 
-	return encode(map[string]section{c.Interface: s})
+	return s, nil
 }
 
 // encode writes the sections as the config file spells them.
@@ -170,18 +209,6 @@ func encode(sections map[string]section) ([]byte, error) {
 		return nil, fmt.Errorf("rendering the settings: %w", err)
 	}
 	return buf.Bytes(), nil
-}
-
-// overlayNet is the network this node allocates addresses in, as the agent
-// settles it: what the command line or the config file says, then what the
-// cluster told this node. Neither means the default applies and there is
-// nothing worth writing down.
-func (c *ConfigCmd) overlayNet() netip.Prefix {
-	if c.OverlayNet.IsValid() {
-		return c.OverlayNet.Masked()
-	}
-	net, _ := cluster.KnownOverlayNet(c.state(), c.Interface)
-	return net
 }
 
 // write appends the section to the config file, creating it if it is not

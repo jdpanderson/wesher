@@ -75,10 +75,10 @@ To make a node forget the cluster it is in, use `cheesecloth leave` (or `leave
 node runs with can be captured into a file rather than reconstructed by hand.
 
 With `--interface`, it prints that interface's effective settings — the command
-line, then the file, then what the cluster told the node, then the defaults —
-which is the only form that applies settings given on its own command line.
-Settings that match their default are left out, so the result is as short as
-what has to be maintained:
+line, then the file, then what the cluster told the node, then the defaults.
+A file with a single section needs no `--interface`, since that section is the
+only one a setting could apply to. Settings that match their default are left
+out, so the result is as short as what has to be maintained:
 
 ```
 # cheesecloth config --interface wgmesh
@@ -86,12 +86,15 @@ wgmesh:
   overlay-net: 10.42.0.0/24
 ```
 
-With no `--interface`, it prints every section the file holds, which is the form
-to redirect somewhere as a whole:
+With several sections configured and none named, it prints them all, which is
+the form to redirect somewhere as a whole:
 
 ```
 # cheesecloth config > /etc/cheesecloth/config.yaml
 ```
+
+No one of those sections owns a setting given on that command line, so giving
+one is refused rather than quietly dropped; name the interface it applies to.
 
 `cheesecloth config --init` writes the section to the configuration file instead
 of printing it, which is how a node is set up before its agent first runs. The

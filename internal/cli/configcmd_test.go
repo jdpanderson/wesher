@@ -56,11 +56,32 @@ func Test_ConfigCmd_dumpsEverySection(t *testing.T) {
 	writeState(t, dir, "wg8", "10.42.0.0/16")
 	path := writeConfig(t, "wg7:\n  mtu: 1380\nwg8:\n  cluster-port: 17946\n")
 
-	// no --interface: every section, with what the state adds, and the
-	// command line left out since no one section owns it
-	stdout, _, err := runConfig(t, path, dir, "config", "--mtu", "9000")
+	// no --interface and nothing to apply: every section, with what the state adds
+	stdout, _, err := runConfig(t, path, dir, "config")
 	require.NoError(t, err)
 	assert.Equal(t, "wg7:\n  mtu: 1380\nwg8:\n  cluster-port: 17946\n  overlay-net: 10.42.0.0/16\n", stdout)
+}
+
+func Test_ConfigCmd_refusesSettingsNoSectionOwns(t *testing.T) {
+	dir := t.TempDir()
+	path := writeConfig(t, "wg7:\n  mtu: 1380\nwg8:\n  cluster-port: 17946\n")
+
+	// a setting given with several sections configured and none named belongs
+	// to no one of them, so it is refused rather than dropped
+	_, _, err := runConfig(t, path, dir, "config", "--mtu", "9000")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "wg7, wg8")
+	assert.Contains(t, err.Error(), "--interface")
+}
+
+func Test_ConfigCmd_dumpsTheOnlySectionWithTheCommandLine(t *testing.T) {
+	dir := t.TempDir()
+	path := writeConfig(t, "wg7:\n  mtu: 1380\n")
+
+	// one section needs no --interface to be the one a setting applies to
+	stdout, _, err := runConfig(t, path, dir, "config", "--mtu", "9000")
+	require.NoError(t, err)
+	assert.Equal(t, "wg7:\n  mtu: 9000\n", stdout)
 }
 
 func Test_ConfigCmd_dumpsDefaultInterfaceWithoutAFile(t *testing.T) {

@@ -38,23 +38,3 @@ $ cheesecloth config --interface wghomelab --overlay-net 10.42.0.0/24 > /etc/che
 
 Fixing this means reading the path in the command rather than leaving it to the
 argument parser, which is worth doing but has not been done.
-
-## Settings on the command line are ignored when no interface is named
-
-`cheesecloth config` without `--interface` reports every configured section as
-the file holds it, and there is no one section for a setting on the command
-line to belong to. Such a setting is dropped rather than refused, so this
-prints the file unchanged and says nothing about the network it was given:
-
-```
-$ cheesecloth config --overlay-net 10.42.0.0/24
-```
-
-Naming the interface is what applies it, and is the form to use whenever the
-output is meant to reflect the command line:
-
-```
-$ cheesecloth config --interface wgcloth --overlay-net 10.42.0.0/24
-```
-
-Refusing the combination outright would be better than ignoring it.
