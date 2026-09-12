@@ -32,13 +32,10 @@ func Enrol(ctx context.Context, addr, token string, id *trust.Identity, name str
 	defer func() { _ = qt.Close(); _ = udp.Close() }()
 
 	conn, err := qt.Dial(ctx, ua, enrolClientTLSConfig(cert), &quic.Config{HandshakeIdleTimeout: handshakeTime})
-	if err != nil {
+	if err != nil { // alpnEnrol alone is offered; a peer that does not speak it fails the handshake
 		return nil, none, fmt.Errorf("connecting to %s: %w", addr, err)
 	}
 	defer func() { _ = conn.CloseWithError(0, "done") }()
-	if conn.ConnectionState().TLS.NegotiatedProtocol != alpnEnrol {
-		return nil, none, fmt.Errorf("%s does not offer enrolment", addr)
-	}
 	s, err := conn.OpenStreamSync(ctx)
 	if err != nil {
 		return nil, none, err

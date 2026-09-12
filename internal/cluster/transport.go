@@ -474,13 +474,9 @@ func (t *quicTransport) dial(ctx context.Context, addr string) (*quic.Conn, erro
 	if err != nil {
 		return nil, err
 	}
-	conn, err := t.qt.Dial(ctx, ua, t.client, t.qconf)
+	conn, err := t.qt.Dial(ctx, ua, t.client, t.qconf) // offers alpnGossip alone; a peer that does not speak it fails the handshake
 	if err != nil {
 		return nil, fmt.Errorf("gossip to %s: %w", addr, err)
-	}
-	if conn.ConnectionState().TLS.NegotiatedProtocol != alpnGossip {
-		_ = conn.CloseWithError(1, "wrong protocol")
-		return nil, fmt.Errorf("gossip to %s: peer does not speak %s", addr, alpnGossip)
 	}
 	if kept := t.adopt(conn, false); kept != nil {
 		return kept, nil
