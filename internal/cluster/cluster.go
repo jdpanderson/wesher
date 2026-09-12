@@ -59,6 +59,7 @@ type Cluster struct {
 	leaveOnce sync.Once
 	subMu     sync.Mutex
 	subs      []chan []overlay.Node // Members channels; fed by watch, closed by Leave
+	left      bool                  // set by Leave under subMu; Members returns closed channels from then on
 }
 
 // New creates a Cluster for an enrolled node and starts gossiping and accepting
@@ -332,6 +333,7 @@ func (c *Cluster) Leave() {
 			close(ch)
 		}
 		c.subs = nil
+		c.left = true
 		c.subMu.Unlock()
 	})
 }
@@ -340,12 +342,16 @@ func (c *Cluster) Leave() {
 // nodes, metadata decoded, right away and then whenever the membership
 // changes. A subscriber that falls behind gets the latest snapshot, not every
 // one: bursts of changes coalesce. Nodes that fail verifyMeta are left out.
-// The channel is closed after Leave.
+// The channel is closed after Leave; one asked for after Leave is already closed.
 func (c *Cluster) Members() <-chan []overlay.Node {
 	ch := make(chan []overlay.Node, 1)
 	c.subMu.Lock()
+	defer c.subMu.Unlock()
+	if c.left {
+		close(ch)
+		return ch
+	}
 	c.subs = append(c.subs, ch)
-	c.subMu.Unlock()
 	c.signalChanged() // the first snapshot may well be empty; the interface still needs to come up
 	return ch
 }

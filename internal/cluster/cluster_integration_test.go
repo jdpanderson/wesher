@@ -300,6 +300,10 @@ func Test_Cluster_Leave_closesMembers(t *testing.T) {
 			}
 		}
 	}
+
+	// a subscriber that arrives after Leave is not left waiting
+	_, ok := <-c.Members()
+	assert.False(t, ok, "Members after Leave is a closed channel")
 }
 
 func Test_Cluster_detectsFailedNode(t *testing.T) {
