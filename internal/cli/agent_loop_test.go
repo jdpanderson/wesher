@@ -165,15 +165,22 @@ func Test_AgentCmd_loop_closedChannel(t *testing.T) {
 	assert.Contains(t, err.Error(), "channel closed")
 }
 
+// failingNotifier is a service manager that cannot be reached.
+type failingNotifier struct{}
+
+func (failingNotifier) Ready(string) error  { return errors.New("notify boom") }
+func (failingNotifier) Status(string) error { return errors.New("notify boom") }
+func (failingNotifier) Stopping() error     { return errors.New("notify boom") }
+
 // Failures to write hosts entries, to down the interface after a failed setup,
-// or to reach systemd are logged and the loop carries on; only a failure to
-// down the interface at shutdown is an error, since the interface is left behind.
+// or to reach the service manager are logged and the loop carries on; only a
+// failure to down the interface at shutdown is an error, since the interface
+// is left behind.
 func Test_AgentCmd_loop_toleratesFailures(t *testing.T) {
-	t.Setenv("NOTIFY_SOCKET", filepath.Join(t.TempDir(), "absent.sock"))
 	cl := &fakeCluster{ch: make(chan []overlay.Node)}
 	wg := &fakeWG{upErr: errors.New("up boom"), downErr: errors.New("down boom")}
 	hosts := &fakeHosts{err: errors.New("hosts boom")}
-	cancel, errc := runLoop(t, &AgentCmd{OverlayNet: testOverlay}, cl, wg, hosts)
+	cancel, errc := runLoop(t, &AgentCmd{OverlayNet: testOverlay}, cl, wg, hosts, failingNotifier{})
 
 	cl.ch <- []overlay.Node{verifiedNode(t, "n", "192.0.2.1", "10.0.0.1")}
 	cl.ch <- nil // still running after every failure
