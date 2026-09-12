@@ -525,7 +525,8 @@ member can `revoke` another node, but a node cannot remove itself, and nothing
 deletes its state file, so a decommissioned node stays trusted and its
 identity lingers in every peer's record set. `cheesecloth leave` fills that
 gap. `--init` as an agent flag and changing settings on a running agent are
-separate items, still to be designed.
+separate items, still to be designed. (Phase 14 took `--init` away; changing
+settings on a running agent is still open.)
 
 - [x] A member may revoke itself. Done 2026-09-12. `Set.validAt` only
       honoured a revocation whose revoker was valid, and the cycle guard made
@@ -732,3 +733,52 @@ host:
       app calls rather than a command and a unix socket. The call to make is whether cheesecloth ships a library target
       (gomobile AAR, c-archive framework) at all, since that is a second
       product surface to keep working, not a port.
+
+## Phase 14: configuring a node
+
+Proposed 2026-09-12. `--init` was an agent flag, so the documented way to start
+a cluster was `cheesecloth --init`, a command that blocks a terminal and does
+three unrelated things at once: write no configuration, root a cluster, and run
+the agent. That is not how a node is actually set up. An operator wants a
+configuration file and a service unit, and the agent to work out the rest on
+every start. The flag was also the only destructive one in the CLI, and the
+only one that had to be remembered exactly once and never again.
+
+Splitting it: configuring a node is `cheesecloth config`, and rooting a cluster
+is what the agent does when it finds a network configured and no state to go
+with it. Nothing then has to be run by hand at the right moment, and the same
+unit file works on the node that starts the cluster and on every node that
+joins it.
+
+- [x] Agent: `--init` is gone. Membership is settled from state and settings —
+      already a member, `--join-key` to enrol, an overlay network with no state
+      to root a cluster, or none of these, which waits. Done 2026-09-12. The
+      waiting case replaces an error that made a service manager restart an
+      agent that was merely unconfigured; it configures nothing and opens no
+      control socket, but generates and keeps the identity, so the node is the
+      same one when it is finally given something to act on. `cluster.Load`
+      lost its `init` parameter with the flag; starting over is `cheesecloth
+      leave --force`, which already removed the state file.
+- [x] Config file: keyed by interface name, one section each, so a host running
+      several clusters has one file rather than one per interface. `interface`
+      is no longer a key, since the section name is the interface and the two
+      could otherwise disagree. A command takes the section named by
+      `--interface`, or the only one there is; several sections and no flag is
+      an error rather than a guess. Done 2026-09-12. Kong traces the command
+      path before it resolves flags, so `ctx.Selected()` exempts `config` from
+      that error; the section itself is chosen from a small scan of the
+      arguments, because the file is loaded before kong has parsed anything.
+- [x] `cheesecloth config`: prints an interface's effective settings, or every
+      section with no `--interface`, and writes them with `--init`. Done
+      2026-09-12. Settings equal to their default are left out, read from the
+      kong tags rather than a second copy, so what it writes cannot drift from
+      what the agent defaults to. `--init` appends, so the comments of the
+      shipped file survive, and refuses an interface the file already has.
+- [x] The shipped `dist/config.yaml` is commented out entirely, including the
+      keys that were previously active. Done 2026-09-12. A fresh install now
+      has no effective settings at all, which is what makes the waiting case
+      the default: the package can be installed and the unit enabled before
+      anyone has decided what the node joins.
+- [ ] Changing settings on a running agent, still to be designed. `cheesecloth
+      config` reads the state and the file but cannot ask the agent what it is
+      actually running with, and nothing rereads the file without a restart.

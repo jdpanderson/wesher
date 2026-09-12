@@ -1,7 +1,10 @@
 post_install() {
   cat <<'MSG'
-cheesecloth is installed but not enabled. Initialise or enrol this node once
-by hand (see /usr/share/doc/cheesecloth/README.md), put its settings in
-/etc/cheesecloth/config.yaml, then: systemctl enable --now cheesecloth
+cheesecloth is installed but not enabled. Put this node's settings in
+/etc/cheesecloth/config.yaml ('cheesecloth config --init --overlay-net NET'
+writes them), then: systemctl enable --now cheesecloth
+A node with a network configured and no state starts a cluster; one that is
+to join an existing cluster is enrolled once by hand with --join-key. See
+/usr/share/doc/cheesecloth/README.md
 MSG
 }

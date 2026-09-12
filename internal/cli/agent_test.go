@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/netip"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,7 +18,7 @@ var testOverlay = netip.MustParsePrefix("10.0.0.0/8")
 
 // validCmd returns an AgentCmd with the flag defaults that Validate requires.
 func validCmd() AgentCmd {
-	return AgentCmd{OverlayNet: testOverlay, MTU: 1420, BindAddr: netip.IPv4Unspecified()}
+	return AgentCmd{settings: settings{OverlayNet: testOverlay, MTU: 1420, BindAddr: netip.IPv4Unspecified()}}
 }
 
 func Test_AgentCmd_Validate_errors(t *testing.T) {
@@ -28,22 +29,22 @@ func Test_AgentCmd_Validate_errors(t *testing.T) {
 	}{
 		{
 			"overlay too small",
-			AgentCmd{OverlayNet: netip.MustParsePrefix("10.0.0.0/31"), MTU: 1420},
+			AgentCmd{settings: settings{OverlayNet: netip.MustParsePrefix("10.0.0.0/31"), MTU: 1420}},
 			"no room for two nodes",
 		},
 		{
 			"allowed ips inside the overlay",
-			AgentCmd{OverlayNet: testOverlay, MTU: 1420, AllowedIPs: []netip.Prefix{netip.MustParsePrefix("10.5.0.0/16")}},
+			AgentCmd{settings: settings{OverlayNet: testOverlay, MTU: 1420, AllowedIPs: []netip.Prefix{netip.MustParsePrefix("10.5.0.0/16")}}},
 			"overlaps the overlay network",
 		},
 		{
 			"mtu too small",
-			AgentCmd{OverlayNet: testOverlay, MTU: 500},
+			AgentCmd{settings: settings{OverlayNet: testOverlay, MTU: 500}},
 			"unsupported MTU",
 		},
 		{
 			"keepalive not whole seconds",
-			AgentCmd{OverlayNet: testOverlay, MTU: 1420, PersistentKeepalive: 1500 * time.Millisecond},
+			AgentCmd{settings: settings{OverlayNet: testOverlay, MTU: 1420, PersistentKeepalive: 1500 * time.Millisecond}},
 			"unsupported persistent keepalive",
 		},
 	}
@@ -69,12 +70,10 @@ func Test_AgentCmd_Validate_joinKey(t *testing.T) {
 	assert.ErrorContains(t, cmd.Validate(), "needs --join")
 	cmd.Join = []string{"member"}
 	require.NoError(t, cmd.Validate())
-	cmd.Init = true
-	assert.ErrorContains(t, cmd.Validate(), "cannot be combined")
 }
 
 func Test_AgentCmd_enrolAddrs(t *testing.T) {
-	cmd := AgentCmd{ClusterPort: 7946, Join: []string{"member", "10.0.0.1:1234", "fd00::1", "[fd00::2]:99"}}
+	cmd := AgentCmd{settings: settings{ClusterPort: 7946, Join: []string{"member", "10.0.0.1:1234", "fd00::1", "[fd00::2]:99"}}}
 	assert.Equal(t, []string{"member:7946", "10.0.0.1:1234", "[fd00::1]:7946", "[fd00::2]:99"}, cmd.enrolAddrs())
 }
 
@@ -87,13 +86,17 @@ func Test_AgentCmd_bootstrap(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
 
-	// not a member and nothing asked for: told what to do
-	_, err := (&AgentCmd{}).bootstrap(ctx, newBoot(), "h")
-	assert.ErrorContains(t, err, "not a member of any cluster")
+	// not a member and nothing configured: left unenrolled, so the agent idles
+	idle := newBoot()
+	addrs, err := (&AgentCmd{}).bootstrap(ctx, idle, "h")
+	require.NoError(t, err)
+	assert.Empty(t, addrs)
+	assert.False(t, idle.Enrolled())
 
-	// --init: root of a new cluster, joining whatever --join names
+	// an overlay network with no state to go with it: root of a new cluster,
+	// joining whatever --join names
 	boot := newBoot()
-	addrs, err := (&AgentCmd{Init: true, Join: []string{"x"}}).bootstrap(ctx, boot, "h")
+	addrs, err = (&AgentCmd{settings: settings{OverlayNet: DefaultOverlayNet, Join: []string{"x"}}}).bootstrap(ctx, boot, "h")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"x"}, addrs)
 	assert.True(t, boot.Enrolled())
@@ -102,19 +105,54 @@ func Test_AgentCmd_bootstrap(t *testing.T) {
 	assert.Equal(t, "h", boot.Records.Admissions[0].Name)
 
 	// already enrolled: the join key is ignored, --join is used as given
-	addrs, err = (&AgentCmd{JoinKey: "stale", Join: []string{"a", "b"}}).bootstrap(ctx, boot, "h")
+	addrs, err = (&AgentCmd{settings: settings{Join: []string{"a", "b"}}, JoinKey: "stale"}).bootstrap(ctx, boot, "h")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"a", "b"}, addrs)
 
 	// --join-key with no reachable member fails
-	_, err = (&AgentCmd{ClusterPort: 1, JoinKey: "token", Join: []string{"127.0.0.1"}}).bootstrap(ctx, newBoot(), "h")
+	_, err = (&AgentCmd{settings: settings{ClusterPort: 1, Join: []string{"127.0.0.1"}}, JoinKey: "token"}).bootstrap(ctx, newBoot(), "h")
 	assert.ErrorContains(t, err, "enrolling with 127.0.0.1:1")
+
+	// enrolling wins over an overlay network the config file happens to set
+	_, err = (&AgentCmd{settings: settings{ClusterPort: 1, Join: []string{"127.0.0.1"}, OverlayNet: DefaultOverlayNet}, JoinKey: "token"}).
+		bootstrap(ctx, newBoot(), "h")
+	assert.ErrorContains(t, err, "enrolling with 127.0.0.1:1", "the join key is tried, not ignored for an init")
 }
+
+// A node with nothing to act on keeps its identity and waits, rather than
+// exiting and leaving the service manager to restart it in a loop. Nothing
+// that needs privileges is touched: no wireguard interface, no control socket.
+func Test_AgentCmd_Run_idles(t *testing.T) {
+	dir := t.TempDir()
+	a := validCmd()
+	a.Interface, a.stateDir, a.OverlayNet = "wg1", dir, netip.Prefix{}
+	n := &recordingNotifier{}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errc := make(chan error, 1)
+	go func() { errc <- a.Run(ctx, n) }()
+
+	require.Eventually(t, func() bool { return n.ready.Load() }, time.Second, 10*time.Millisecond,
+		"the service manager is told the agent is up")
+	assert.FileExists(t, filepath.Join(dir, "wg1.json"), "the identity is still generated and kept")
+	assert.NoFileExists(t, socketFor("wg1", ""), "no control socket without a cluster to control")
+
+	cancel()
+	require.NoError(t, waitErr(t, errc))
+	assert.True(t, n.stopping.Load())
+}
+
+// recordingNotifier is a service manager that remembers what it was told.
+type recordingNotifier struct{ ready, stopping atomic.Bool }
+
+func (n *recordingNotifier) Ready(string) error  { n.ready.Store(true); return nil }
+func (n *recordingNotifier) Status(string) error { return nil }
+func (n *recordingNotifier) Stopping() error     { n.stopping.Store(true); return nil }
 
 func Test_AgentCmd_enrol_unreachable(t *testing.T) {
 	joiner, err := trust.NewIdentity()
 	require.NoError(t, err)
-	cmd := AgentCmd{ClusterPort: 1, JoinKey: "token", Join: []string{"127.0.0.1", "127.0.0.1:2"}}
+	cmd := AgentCmd{settings: settings{ClusterPort: 1, Join: []string{"127.0.0.1", "127.0.0.1:2"}}, JoinKey: "token"}
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
 	_, _, err = cmd.enrol(ctx, joiner, "j")
@@ -179,7 +217,7 @@ func Test_AgentCmd_forget(t *testing.T) {
 	dir := t.TempDir()
 	a := validCmd()
 	a.Interface, a.stateDir = "wg1", dir
-	_, err := cluster.Load(dir, "wg1", true)
+	_, err := cluster.Load(dir, "wg1")
 	require.NoError(t, err)
 	statePath := filepath.Join(dir, "wg1.json")
 	require.FileExists(t, statePath)

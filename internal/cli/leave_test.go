@@ -49,7 +49,7 @@ func Test_LeaveCmd_Run_agentRefuses(t *testing.T) {
 
 func Test_LeaveCmd_Run_noAgent(t *testing.T) {
 	dir := t.TempDir()
-	_, err := cluster.Load(dir, "wg1", true)
+	_, err := cluster.Load(dir, "wg1")
 	require.NoError(t, err)
 	identity, ok := cluster.LocalIdentity(dir, "wg1")
 	require.True(t, ok)

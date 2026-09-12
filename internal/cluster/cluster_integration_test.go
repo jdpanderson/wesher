@@ -37,7 +37,7 @@ func fastMemberlist(c *Config) { c.Memberlist = memberlist.DefaultLocalConfig }
 // rootCluster starts a new cluster whose root is this node, with state under dir.
 func rootCluster(t *testing.T, dir, name string, opts ...func(*Config)) *Cluster {
 	t.Helper()
-	b, err := Load(dir, name, true)
+	b, err := Load(dir, name)
 	require.NoError(t, err)
 	b.InitRoot(name)
 	cfg := Config{
@@ -60,7 +60,7 @@ func enrolCluster(t *testing.T, dir string, member *Cluster, name string, opts .
 	t.Helper()
 	token, err := member.Invite(time.Minute, 1)
 	require.NoError(t, err)
-	b, err := Load(dir, name, true)
+	b, err := Load(dir, name)
 	require.NoError(t, err)
 	w, memberID, err := Enrol(context.Background(), gossipAddr(member), token, b.Identity, name)
 	require.NoError(t, err)
@@ -97,7 +97,7 @@ func Test_Cluster_Join_rememberedPeers(t *testing.T) {
 	waitMembers(t, chA, 0)
 
 	// b restarts from its state: no addresses given, only the remembered a
-	boot, err := Load(dir, "b", false)
+	boot, err := Load(dir, "b")
 	require.NoError(t, err)
 	require.Len(t, boot.Peers, 1)
 	cfg := Config{StateDir: dir, StateName: "b", OverlayNet: testOverlay, LocalNode: testNodeFor(t, "b", boot), Boot: boot}
@@ -121,7 +121,7 @@ func Test_Cluster_persistsOverlayNet(t *testing.T) {
 	defer b.Leave()
 
 	for _, name := range []string{"a", "b"} {
-		boot, err := Load(dir, name, false)
+		boot, err := Load(dir, name)
 		require.NoError(t, err)
 		assert.Equal(t, testOverlay, boot.OverlayNet, "%s", name)
 	}
@@ -141,7 +141,7 @@ func Test_Cluster_Join_rememberedPeers_ownPort(t *testing.T) {
 	b.Leave()
 	waitMembers(t, chA, 0)
 
-	boot, err := Load(dir, "b", false)
+	boot, err := Load(dir, "b")
 	require.NoError(t, err)
 	require.Len(t, boot.Peers, 1)
 	assert.Equal(t, uint16(a.port), boot.Peers[0].Port, "a's own port was remembered")
@@ -221,7 +221,7 @@ func Test_Cluster_enrolJoinLeave(t *testing.T) {
 		assert.Equal(t, a.Identity(), *st.Root, name)
 		assert.Len(t, st.Records.Admissions, 2, name)
 	}
-	boot, err := Load(dir, "b", false)
+	boot, err := Load(dir, "b")
 	require.NoError(t, err)
 	assert.True(t, boot.Enrolled())
 	assert.Equal(t, b.Identity(), boot.Identity.Public())
@@ -312,7 +312,7 @@ func Test_Cluster_recordsSpreadTransitively(t *testing.T) {
 
 func Test_New_badBindAddr(t *testing.T) {
 	dir := useTempStatePaths(t)
-	b, err := Load(dir, "a", true)
+	b, err := Load(dir, "a")
 	require.NoError(t, err)
 	b.InitRoot("a")
 	bad := netip.MustParseAddr("192.0.2.1") // TEST-NET, not a local address
@@ -326,7 +326,7 @@ func Test_New_badBindAddr(t *testing.T) {
 // that address must fit the overlay net; both are checked before anything binds.
 func Test_New_overlayAddressMismatch(t *testing.T) {
 	dir := useTempStatePaths(t)
-	b, err := Load(dir, "a", true)
+	b, err := Load(dir, "a")
 	require.NoError(t, err)
 	b.InitRoot("a")
 	node := testNodeFor(t, "a", b)
@@ -342,7 +342,7 @@ func Test_New_overlayAddressMismatch(t *testing.T) {
 // handed is shut down: the same port binds again at once.
 func Test_New_badAdvertiseAddr(t *testing.T) {
 	dir := useTempStatePaths(t)
-	b, err := Load(dir, "a", true)
+	b, err := Load(dir, "a")
 	require.NoError(t, err)
 	b.InitRoot("a")
 	_, err = New(Config{StateDir: dir, StateName: "a", BindAddr: loopback, OverlayNet: testOverlay, LocalNode: testNodeFor(t, "a", b), Boot: b})
@@ -351,7 +351,7 @@ func Test_New_badAdvertiseAddr(t *testing.T) {
 
 func Test_New_notAMember(t *testing.T) {
 	dir := useTempStatePaths(t)
-	b, err := Load(dir, "a", true)
+	b, err := Load(dir, "a")
 	require.NoError(t, err)
 	b.Root = testIdentity(t).Public() // pinned to a root that never admitted us
 	_, err = New(Config{StateDir: dir, StateName: "a", OverlayNet: testOverlay, LocalNode: &overlay.Node{Name: "a"}, Boot: b})

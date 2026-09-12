@@ -29,7 +29,7 @@ func Test_AgentCmd_loop_notifiesSystemd(t *testing.T) {
 	}
 
 	cl := &fakeCluster{ch: make(chan []overlay.Node)}
-	cancel, errc := runLoop(t, &AgentCmd{OverlayNet: testOverlay, NoEtcHosts: true}, cl, &fakeWG{}, &fakeHosts{}, notify.Systemd{})
+	cancel, errc := runLoop(t, &AgentCmd{settings: settings{OverlayNet: testOverlay, NoEtcHosts: true}}, cl, &fakeWG{}, &fakeHosts{}, notify.Systemd{})
 
 	cl.ch <- nil // a lone node: ready with no peers
 	assert.Equal(t, "READY=1\nSTATUS=0 peers", read())

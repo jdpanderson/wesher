@@ -91,6 +91,17 @@ func KnownNodes(dir, name string) []overlay.Node {
 	return st.Peers
 }
 
+// KnownOverlayNet returns the overlay network the cluster told this node,
+// from the state persisted under dir for name. Unlike Load it creates
+// nothing, so a command that only reports settings leaves no state behind.
+func KnownOverlayNet(dir, name string) (netip.Prefix, bool) {
+	st, err := loadState(statePath(dir, name))
+	if err != nil || !st.OverlayNet.IsValid() {
+		return netip.Prefix{}, false
+	}
+	return st.OverlayNet, true
+}
+
 // LocalIdentity returns the identity persisted under dir for name, if any.
 func LocalIdentity(dir, name string) (trust.PublicKey, bool) {
 	st, err := loadState(statePath(dir, name))
@@ -125,25 +136,21 @@ type Bootstrap struct {
 	Peers      []overlay.Node // last known peers, with metadata
 }
 
-// Load reads the state kept under dir for name, or starts fresh when init is
-// set, and makes sure the node has an identity. The identity is persisted
-// immediately.
-func Load(dir, name string, init bool) (*Bootstrap, error) {
+// Load reads the state kept under dir for name and makes sure the node has an
+// identity. The identity is persisted immediately.
+func Load(dir, name string) (*Bootstrap, error) {
 	path := statePath(dir, name)
-	st := &state{}
-	if !init {
-		var err error
-		if st, err = loadState(path); err != nil {
-			return nil, err
-		}
+	st, err := loadState(path)
+	if err != nil {
+		return nil, err
 	}
 	if len(st.Seed) == 0 {
-		id, err := trust.NewIdentity()
-		if err != nil {
+		var id *trust.Identity
+		if id, err = trust.NewIdentity(); err != nil {
 			return nil, err
 		}
 		st = &state{Seed: id.Seed()}
-		if err := st.save(path); err != nil {
+		if err = st.save(path); err != nil {
 			return nil, fmt.Errorf("saving new identity: %w", err)
 		}
 		slog.Info("generated node identity", "identity", id.Public().Short(), "path", path)

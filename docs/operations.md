@@ -28,10 +28,23 @@ and configured the interface, so a unit with `After=cheesecloth.service` and
 `Requires=cheesecloth.service` starts with the overlay in place. `systemctl
 status` shows the current peer count.
 
-Put the node's settings in `/etc/cheesecloth/config.yaml`. The join key never
-goes in the file: enrol the node once by hand, or from a provisioning step, with
-`cheesecloth --join-key TOKEN` (the `join` hosts can come from the file), then
-let the unit start it on every boot.
+Put the node's settings in `/etc/cheesecloth/config.yaml`, which
+`cheesecloth config --init` writes:
+
+```
+# cheesecloth config --init --overlay-net 10.42.0.0/24
+```
+
+On the node that starts the cluster, that is all the unit needs: the agent finds
+a configured network and no state, and roots a cluster on its first start. The
+join key never goes in the file, so a node that joins an existing cluster is
+enrolled once by hand, or from a provisioning step, with `cheesecloth --join-key
+TOKEN` (the `join` hosts can come from the file), after which the unit starts it
+on every boot from what it saved.
+
+The unit can also be enabled before either has happened: an agent that is not a
+member and has been given nothing to act on waits instead of failing, so
+`systemctl enable --now cheesecloth` does not leave systemd restarting it.
 
 ## Checking on a node
 
@@ -78,7 +91,7 @@ The agent exits, so a service that starts it at boot should be disabled as
 well (`systemctl disable cheesecloth`). Starting it again without a fresh
 invitation fails: the node is no longer a member and has no state.
 
-Any node may leave this way, the node that ran `--init` included. The root is
+Any node may leave this way, the node that started the cluster included. The root is
 a peer: revoking it takes it out of the mesh and leaves every node it admitted
 where it is, because records are judged as of the moment they were signed. The
 cluster carries on without it, and still admits new nodes.
@@ -104,6 +117,15 @@ A restarted node rejoins the last known peers using its persisted identity in
 `/var/lib/cheesecloth/<interface>.json`. No token is needed, even if every node
 restarts at once. A node that loses that file has lost its identity: enrol it
 again with a fresh invitation and revoke the old identity.
+
+To make a node start over deliberately — to root a new cluster on a host that is
+already a member, or to recover one whose state file cannot be read — take it
+out first with `cheesecloth leave` (`--force` when its agent is not running),
+which removes the interface, the hosts entries and the state file. The next
+start then finds no state, and roots a cluster or enrols as its configuration
+says. Nothing starts over by accident: with the state file in place, a
+configured overlay network is read as the network to allocate addresses in, not
+as an instruction to abandon the cluster.
 
 ## Installing from source
 
@@ -188,11 +210,11 @@ release, or build it (`GOOS=windows go build ./cmd/cheesecloth`). Put it and
 `wintun.dll` (from [wintun.net](https://www.wintun.net/), the architecture of
 the binary) in one directory, with the binary renamed to `cheesecloth.exe`.
 Wintun is not shipped in the release; without it the agent cannot create its
-interface. Put the node's settings in `%ProgramData%\cheesecloth\config.yaml`.
-From an administrator console,
-initialise or enrol the node once by hand (`cheesecloth.exe --init` or
-`cheesecloth.exe --join HOST --join-key TOKEN`, stop it with Ctrl-C once it is
-a member), then register and start the service:
+interface. Put the node's settings in `%ProgramData%\cheesecloth\config.yaml`,
+which `cheesecloth.exe config --init` writes. From an administrator console,
+start or enrol the node once by hand (bare `cheesecloth.exe` with an overlay
+network configured, or `cheesecloth.exe --join HOST --join-key TOKEN`, stopping
+it with Ctrl-C once it is a member), then register and start the service:
 
 ```
 > cheesecloth.exe service install
@@ -235,7 +257,7 @@ To build the packages yourself:
 
 There is no cluster-wide secret. Each node has a persisted identity (an Ed25519
 key), and membership is a set of signed admission records rooted at the node
-that ran `--init`. A new node is admitted when it and an existing member prove
+that started the cluster. A new node is admitted when it and an existing member prove
 to each other that they know an invitation token; the token exists only during
 that exchange. Cluster gossip runs over QUIC, inside a TLS 1.3 session per pair
 of nodes authenticated by their identity keys (self-signed certificates, no CA),

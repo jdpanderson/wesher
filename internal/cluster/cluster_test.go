@@ -84,7 +84,7 @@ func Test_Cluster_state_pushPull(t *testing.T) {
 	a.MergeRemoteState(remote, false) // nothing new: no save, no signal
 
 	// the merged record was persisted
-	b, err := Load(dir, "a", false)
+	b, err := Load(dir, "a")
 	require.NoError(t, err)
 	assert.Len(t, b.Records.Admissions, 2)
 }
@@ -157,7 +157,7 @@ func Test_Cluster_Revoke_root(t *testing.T) {
 func Test_Cluster_admit_overlayFull(t *testing.T) {
 	dir := useTempStatePaths(t)
 	small := netip.MustParsePrefix("10.0.0.0/30") // slots 1 and 2
-	b, err := Load(dir, "a", true)
+	b, err := Load(dir, "a")
 	require.NoError(t, err)
 	b.InitRoot("a")
 	node := &overlay.Node{Name: "a"}

@@ -45,7 +45,7 @@ func Test_state_save_load(t *testing.T) {
 
 func Test_Forget(t *testing.T) {
 	dir := useTempStatePaths(t)
-	_, err := Load(dir, "test", true)
+	_, err := Load(dir, "test")
 	require.NoError(t, err)
 	require.FileExists(t, statePath(dir, "test"))
 	require.NoError(t, Forget(dir, "test"))
@@ -62,7 +62,18 @@ func Test_state_save_unwritableDir(t *testing.T) {
 	blocker := filepath.Join(dir, "blocker")
 	require.NoError(t, os.WriteFile(blocker, nil, 0o600))
 	assert.Error(t, (&state{}).save(statePath(blocker, "test")), "a file where the directory should be")
-	_, err := Load(blocker, "test", true)
+	_, err := Load(blocker, "test")
+	assert.ErrorContains(t, err, "reading state", "a file where the directory should be")
+}
+
+// Nothing to read, and nowhere to write the identity that would replace it.
+func Test_Load_reportsUnwritableIdentity(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("a read-only directory does not stop root")
+	}
+	readonly := filepath.Join(useTempStatePaths(t), "readonly")
+	require.NoError(t, os.Mkdir(readonly, 0o500))
+	_, err := Load(readonly, "test")
 	assert.ErrorContains(t, err, "saving new identity")
 }
 
@@ -83,7 +94,7 @@ func Test_loadState_missingOrBroken(t *testing.T) {
 func Test_Load_refusesBadSeed(t *testing.T) {
 	dir := useTempStatePaths(t)
 	require.NoError(t, (&state{Seed: []byte("short")}).save(statePath(dir, "a")))
-	_, err := Load(dir, "a", false)
+	_, err := Load(dir, "a")
 	assert.ErrorContains(t, err, "loading identity")
 }
 
@@ -93,7 +104,7 @@ func Test_Load_refusesBrokenState(t *testing.T) {
 	dir := useTempStatePaths(t)
 	path := filepath.Join(dir, "test.json")
 	require.NoError(t, os.WriteFile(path, []byte("{not json"), 0o600))
-	_, err := Load(dir, "test", false)
+	_, err := Load(dir, "test")
 	require.Error(t, err)
 	content, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -103,30 +114,33 @@ func Test_Load_refusesBrokenState(t *testing.T) {
 	_, ok := LocalIdentity(dir, "test")
 	assert.False(t, ok)
 
-	b, err := Load(dir, "test", true)
-	require.NoError(t, err, "--init is the explicit way to start over")
+	// Forgetting the state is the explicit way to start over.
+	require.NoError(t, Forget(dir, "test"))
+	b, err := Load(dir, "test")
+	require.NoError(t, err)
 	assert.False(t, b.Enrolled())
 }
 
 func Test_Load_createsAndKeepsIdentity(t *testing.T) {
 	dir := useTempStatePaths(t)
-	b, err := Load(dir, "test", false)
+	b, err := Load(dir, "test")
 	require.NoError(t, err)
 	assert.False(t, b.Enrolled())
 	assert.FileExists(t, filepath.Join(dir, "test.json"), "identity persisted right away")
 
-	again, err := Load(dir, "test", false)
+	again, err := Load(dir, "test")
 	require.NoError(t, err)
 	assert.Equal(t, b.Identity.Public(), again.Identity.Public(), "same identity on restart")
 
-	fresh, err := Load(dir, "test", true)
+	require.NoError(t, Forget(dir, "test"))
+	fresh, err := Load(dir, "test")
 	require.NoError(t, err)
-	assert.NotEqual(t, b.Identity.Public(), fresh.Identity.Public(), "--init starts over")
+	assert.NotEqual(t, b.Identity.Public(), fresh.Identity.Public(), "a forgotten node starts over")
 }
 
 func Test_Bootstrap_initAndEnrol(t *testing.T) {
 	dir := useTempStatePaths(t)
-	b, err := Load(dir, "test", true)
+	b, err := Load(dir, "test")
 	require.NoError(t, err)
 	b.InitRoot("root")
 	assert.True(t, b.Enrolled())
@@ -137,7 +151,7 @@ func Test_Bootstrap_initAndEnrol(t *testing.T) {
 	assert.True(t, set.Valid(b.Identity.Public()))
 
 	other := testIdentity(t)
-	j, err := Load(dir, "joiner", true)
+	j, err := Load(dir, "joiner")
 	require.NoError(t, err)
 	adm := trust.Admit(other, j.Identity.Public(), "joiner", 7, time.Now())
 	records := trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(other, "o", time.Now()), adm}}
@@ -172,7 +186,7 @@ func Test_LocalIdentity(t *testing.T) {
 	_, ok := LocalIdentity(dir, "none")
 	assert.False(t, ok)
 
-	b, err := Load(dir, "a", true)
+	b, err := Load(dir, "a")
 	require.NoError(t, err)
 	id, ok := LocalIdentity(dir, "a")
 	require.True(t, ok)
@@ -185,7 +199,7 @@ func Test_LocalIdentity(t *testing.T) {
 
 func Test_Bootstrap_Host_withoutAdmission(t *testing.T) {
 	dir := useTempStatePaths(t)
-	b, err := Load(dir, "a", true)
+	b, err := Load(dir, "a")
 	require.NoError(t, err)
 	_, err = b.Host()
 	assert.ErrorContains(t, err, "no admission record")

@@ -12,7 +12,7 @@ import (
 // newParser builds the parser with no config file and exits captured.
 func newParser(t *testing.T, c *CLI) (*bytes.Buffer, func(args ...string) (string, error)) {
 	t.Helper()
-	k, err := Parser(c, filepath.Join(t.TempDir(), "absent.yaml"), "1.2.3")
+	k, err := Parser(c, filepath.Join(t.TempDir(), "absent.yaml"), "1.2.3", nil)
 	require.NoError(t, err)
 	out := &bytes.Buffer{}
 	k.Stdout, k.Stderr = out, out
@@ -36,10 +36,10 @@ func Test_Parser_commands(t *testing.T) {
 	assert.Equal(t, "wgoverlay", c.Agent.Interface)
 	assert.Equal(t, LogLevelFlag("warn"), c.LogLevel)
 
-	cmd, err = parse("--init", "--overlay-net", "fd00:10::/64", "--allowed-ips", "192.168.7.0/24,192.168.8.0/24")
+	cmd, err = parse("--overlay-net", "fd00:10::/64", "--allowed-ips", "192.168.7.0/24,192.168.8.0/24")
 	require.NoError(t, err)
 	assert.Equal(t, "agent", cmd, "agent flags without the command word")
-	assert.True(t, c.Agent.Init)
+	assert.Equal(t, "fd00:10::/64", c.Agent.OverlayNet.String())
 	assert.Len(t, c.Agent.AllowedIPs, 2)
 
 	cmd, err = parse("invite", "--ttl", "5m", "--uses", "3")

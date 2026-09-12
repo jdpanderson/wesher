@@ -87,7 +87,7 @@ func Test_AgentCmd_loop_appliesAndTearsDown(t *testing.T) {
 	cl := &fakeCluster{ch: make(chan []overlay.Node)}
 	wg := &fakeWG{}
 	hosts := &fakeHosts{}
-	cancel, errc := runLoop(t, &AgentCmd{OverlayNet: testOverlay}, cl, wg, hosts)
+	cancel, errc := runLoop(t, &AgentCmd{settings: settings{OverlayNet: testOverlay}}, cl, wg, hosts)
 
 	cl.ch <- []overlay.Node{verifiedNode(t, "good", "192.0.2.1", "10.0.0.1")}
 
@@ -106,7 +106,7 @@ func Test_AgentCmd_loop_appliesAndTearsDown(t *testing.T) {
 
 func Test_AgentCmd_apply_allowedIPs(t *testing.T) {
 	wg := &fakeWG{}
-	a := &AgentCmd{OverlayNet: testOverlay, NoEtcHosts: true}
+	a := &AgentCmd{settings: settings{OverlayNet: testOverlay, NoEtcHosts: true}}
 	// z is listed first but b wins the shared network by name; the overlay-net prefix is dropped
 	z := verifiedNode(t, "z", "192.0.2.1", "10.0.0.1", "192.168.7.0/24", "10.9.0.0/16", "172.16.0.0/12")
 	b := verifiedNode(t, "b", "192.0.2.2", "10.0.0.2", "192.168.7.0/24")
@@ -123,7 +123,7 @@ func Test_AgentCmd_apply_allowedIPs(t *testing.T) {
 // The snapshot's route slices belong to the cluster, which persists them;
 // filtering must not touch their backing arrays.
 func Test_AgentCmd_apply_leavesInputRoutesAlone(t *testing.T) {
-	a := &AgentCmd{OverlayNet: testOverlay, NoEtcHosts: true}
+	a := &AgentCmd{settings: settings{OverlayNet: testOverlay, NoEtcHosts: true}}
 	z := verifiedNode(t, "z", "192.0.2.1", "10.0.0.1", "10.9.0.0/16", "192.168.7.0/24", "172.16.0.0/12")
 	shared := z.AllowedIPs
 	before := slices.Clone(shared)
@@ -137,7 +137,7 @@ func Test_AgentCmd_loop_noEtcHosts(t *testing.T) {
 	cl := &fakeCluster{ch: make(chan []overlay.Node)}
 	wg := &fakeWG{}
 	hosts := &fakeHosts{}
-	cancel, errc := runLoop(t, &AgentCmd{OverlayNet: testOverlay, NoEtcHosts: true}, cl, wg, hosts)
+	cancel, errc := runLoop(t, &AgentCmd{settings: settings{OverlayNet: testOverlay, NoEtcHosts: true}}, cl, wg, hosts)
 
 	cl.ch <- []overlay.Node{verifiedNode(t, "n", "192.0.2.1", "10.0.0.1")}
 	cancel()
@@ -148,7 +148,7 @@ func Test_AgentCmd_loop_noEtcHosts(t *testing.T) {
 func Test_AgentCmd_loop_setupFailureDownsInterface(t *testing.T) {
 	cl := &fakeCluster{ch: make(chan []overlay.Node)}
 	wg := &fakeWG{upErr: errors.New("boom")}
-	cancel, errc := runLoop(t, &AgentCmd{OverlayNet: testOverlay, NoEtcHosts: true}, cl, wg, &fakeHosts{})
+	cancel, errc := runLoop(t, &AgentCmd{settings: settings{OverlayNet: testOverlay, NoEtcHosts: true}}, cl, wg, &fakeHosts{})
 
 	cl.ch <- []overlay.Node{verifiedNode(t, "n", "192.0.2.1", "10.0.0.1")}
 	cancel()
@@ -180,7 +180,7 @@ func Test_AgentCmd_loop_toleratesFailures(t *testing.T) {
 	cl := &fakeCluster{ch: make(chan []overlay.Node)}
 	wg := &fakeWG{upErr: errors.New("up boom"), downErr: errors.New("down boom")}
 	hosts := &fakeHosts{err: errors.New("hosts boom")}
-	cancel, errc := runLoop(t, &AgentCmd{OverlayNet: testOverlay}, cl, wg, hosts, failingNotifier{})
+	cancel, errc := runLoop(t, &AgentCmd{settings: settings{OverlayNet: testOverlay}}, cl, wg, hosts, failingNotifier{})
 
 	cl.ch <- []overlay.Node{verifiedNode(t, "n", "192.0.2.1", "10.0.0.1")}
 	cl.ch <- nil // still running after every failure

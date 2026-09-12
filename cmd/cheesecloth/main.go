@@ -14,12 +14,13 @@ var version = "dev"
 
 func main() {
 	c := &cli.CLI{}
-	k, err := cli.Parser(c, cli.DefaultConfigPath, version)
+	args := os.Args[1:]
+	k, err := cli.Parser(c, cli.DefaultConfigPath, version, args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "cheesecloth:", err)
 		os.Exit(1)
 	}
-	ktx, err := k.Parse(os.Args[1:])
+	ktx, err := k.Parse(args)
 	k.FatalIfErrorf(err)
 	k.FatalIfErrorf(cli.Execute(c, ktx))
 }

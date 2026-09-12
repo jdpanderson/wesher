@@ -2,24 +2,39 @@
 
 Options come from command-line flags or from a YAML configuration file,
 `/etc/cheesecloth/config.yaml` by default (on Windows `%ProgramData%\cheesecloth\config.yaml`) or the file named by `--config`.
-Config keys are the flag names without the leading dashes, e.g. `bind-addr: "::"`.
-A flag given on the command line overrides the file. Unknown keys in the file are
-an error, as are `join-key` and `init`, which are one-time actions and stay on the
+The file is keyed by interface name; under each interface are that interface's
+settings, keyed by the flag names without the leading dashes:
+
+```yaml
+wgoverlay:
+  bind-addr: "::"
+  overlay-net: 10.42.0.0/24
+```
+
+`interface` is not a key: the section name is the interface, so the two cannot
+disagree. A flag given on the command line overrides the file. Unknown keys in
+the file are an error, as is `join-key`, a one-time secret that stays on the
 command line. Environment variables are not read. An annotated example is in
 [`dist/config.yaml`](../dist/config.yaml).
+
+One process serves one interface, so only that interface's section applies. A
+command takes the section named by `--interface`, or the only section there is
+when the file has just one. A file with several sections and no `--interface` to
+choose between them is an error rather than a guess, since guessing would act on
+the wrong interface. `cheesecloth config` is the exception: with no
+`--interface` it prints every section.
 
 | Option | Config key | Description | Default |
 |---|---|---|---|
 | `--join HOST[:PORT],...` | `join` | comma separated list of hostnames or IP addresses of existing cluster members, with the cluster port unless given; if not provided, will attempt resuming any known state or otherwise wait for further members |  |
 | `--join-key TOKEN` | command line only | invitation token from `cheesecloth invite` on a member; needed only the first time this node joins, ignored afterwards |  |
-| `--init` | command line only | start a new cluster with this node as its root; any known state from previous runs will be forgotten | `false` |
 | `--control-socket PATH` | `control-socket` | unix socket used by `cheesecloth invite` and `cheesecloth revoke` | `/run/cheesecloth/<interface>.sock` on Linux, see [Platforms](operations.md#platforms) |
 | `--bind-addr ADDR` | `bind-addr` | address to bind for cluster membership; `0.0.0.0` or `::` binds every interface of that family and advertises one of its addresses (public preferred). The family decides whether the cluster runs over IPv4 or IPv6, see [IPv4 and IPv6](#ipv4-and-ipv6) | `0.0.0.0` |
 | `--cluster-port PORT` | `cluster-port` | UDP port this node listens on for membership gossip and enrolment (QUIC); peers learn it and remember it, so it need not be the same on every node, but a member listening on another port must be given as `host:port` in `--join` | `7946` |
 | `--wireguard-port PORT` | `wireguard-port` | port used for wireguard traffic (UDP); must be the same across cluster | `51820` |
 | `--overlay-net ADDR/MASK` | `overlay-net` | the network in which to allocate addresses for the overlay mesh network (CIDR format), see [Overlay addresses](#overlay-addresses); the same on every node of a cluster | the cluster's, learned at enrolment and kept; `10.0.0.0/8` for a new cluster |
 | `--allowed-ips NET/MASK,...` | `allowed-ips` | extra networks reachable through this node, see [Routing networks through a node](#routing-networks-through-a-node); must not overlap `--overlay-net` |  |
-| `--interface DEV` | `interface` | name of the wireguard interface to create and manage | `wgoverlay` |
+| `--interface DEV` | the section name | name of the wireguard interface to create and manage, and the section of the config file this command acts under | `wgoverlay` |
 | `--mtu MTU` | `mtu` | MTU of the wireguard interface | `1420` |
 | `--persistent-keepalive DURATION` | `persistent-keepalive` | interval at which peers send keepalives, to keep NAT mappings open (e.g. `25s`); `0` disables | `0` |
 | `--no-etc-hosts` | `no-etc-hosts` | whether to skip writing hosts entries for each node in mesh | `false` |
@@ -27,13 +42,70 @@ command line. Environment variables are not read. An annotated example is in
 | `--log-level LEVEL` | `log-level` | set the verbosity (one of debug/info/warn/error) | `warn` |
 | `--config PATH` | command line only | configuration file to read | `/etc/cheesecloth/config.yaml` on Linux and macOS, see [Platforms](operations.md#platforms) |
 
+## What the agent does on start
+
+The agent settles its membership before it configures anything, from its state
+and what it was given:
+
+- **Already a member**: it resumes from its state file and rejoins. This is the
+  usual case, and needs neither `--overlay-net` nor `--join-key`. A stale
+  `--join-key` left on the command line is ignored.
+- **Not a member, `--join-key` given**: it enrols with one of the `--join`
+  members, which tells it the cluster's overlay network.
+- **Not a member, an overlay network configured**: it starts a new cluster with
+  itself as the root. Configuring a network for a node that has no state is
+  what starts a cluster; there is no separate flag for it.
+- **Not a member, neither given**: it waits. Nothing is configured, no interface
+  is created and no control socket is opened, but the node's identity is
+  generated and kept, so it is the same node when it is finally given something
+  to act on. Waiting rather than exiting means a node can be installed and its
+  service enabled before anyone has decided what it joins, and means a service
+  manager is not left restarting an agent that is only unconfigured.
+
+Because a configured network only starts a cluster on a node with no state, the
+setting is safe to leave in the file: a node that is already a member reads it
+as the network it allocates addresses in, not as an instruction to start over.
+To make a node forget the cluster it is in, use `cheesecloth leave` (or `leave
+--force` when its agent is not running), which is described in
+[operations](operations.md#decommissioning-a-node).
+
+## Reading and writing the configuration
+
+`cheesecloth config` prints settings as config file sections, so that what a
+node runs with can be captured into a file rather than reconstructed by hand.
+
+With `--interface`, it prints that interface's effective settings — the command
+line, then the file, then what the cluster told the node, then the defaults —
+which is the only form that applies settings given on its own command line.
+Settings that match their default are left out, so the result is as short as
+what has to be maintained:
+
+```
+# cheesecloth config --interface wgmesh
+wgmesh:
+  overlay-net: 10.42.0.0/24
+```
+
+With no `--interface`, it prints every section the file holds, which is the form
+to redirect somewhere as a whole:
+
+```
+# cheesecloth config > /etc/cheesecloth/config.yaml
+```
+
+`cheesecloth config --init` writes the section to the configuration file instead
+of printing it, which is how a node is set up before its agent first runs. The
+section is appended, so the comments of the file the packages ship survive, and
+a file that already has a section for that interface is left alone rather than
+written over — edit it, or print the settings and redirect them yourself.
+
 ## Overlay addresses
 
 The overlay IP address of each node is allocated out of a private network
 (`10.0.0.0/8` by default; it must not overlap the network the nodes use to
-reach each other). The node that ran `--init` takes the first address; each node
-enrolled afterwards is assigned the lowest free address by the member that
-admitted it, and that assignment is part of its signed admission record.
+reach each other). The node that starts the cluster takes the first address;
+each node enrolled afterwards is assigned the lowest free address by the
+member that admitted it, and that assignment is part of its signed admission record.
 Addresses are therefore stable across restarts, allocated from the start of
 the network, and agreed on by every member. A node claiming an address other
 than its assigned one is ignored.
@@ -110,3 +182,21 @@ cluster. Each instance must have different values for:
 
 `--overlay-net` need not differ but should, so a host in both clusters does not
 see the same addresses twice.
+
+One configuration file describes them all, a section each:
+
+```yaml
+wg1:
+  cluster-port: 7946
+  wireguard-port: 51820
+  overlay-net: 10.10.0.0/16
+wg2:
+  cluster-port: 7947
+  wireguard-port: 51821
+  overlay-net: 10.11.0.0/16
+```
+
+Every command then needs `--interface` to say which of them it acts on, since
+there is no longer one section to fall back to — the agent, and `status`,
+`invite`, `revoke` and `leave` alike. `cheesecloth config` without it prints
+both sections.

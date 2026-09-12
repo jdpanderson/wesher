@@ -200,10 +200,13 @@ identity can be revoked.
 
 ## Operations
 
-- `cheesecloth --init`: create identity and root; start the cluster.
+- `cheesecloth` with an overlay network configured and no state: create identity
+  and root; start the cluster.
 - `cheesecloth --join HOST --join-key TOKEN`: first start of a new node. The
   overlay network comes with the welcome; the node needs no setting of its own.
 - `cheesecloth --join HOST` or bare `cheesecloth`: restart of an admitted node.
+- bare `cheesecloth` on a node that is neither a member nor configured with an
+  overlay network: create the identity and wait, configuring nothing.
 - `cheesecloth invite [--ttl] [--uses]`: mint a token on a member (via the control
   socket `/run/cheesecloth/<interface>.sock`).
 - `cheesecloth revoke NAME|IDENTITY`: sign and broadcast a revocation.

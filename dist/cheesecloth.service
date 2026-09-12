@@ -6,7 +6,9 @@ After=network-online.target
 ExecStart=/usr/local/sbin/cheesecloth
 Restart=on-failure
 # cheesecloth reports READY=1 once it has joined the cluster and configured the
-# interface, so units ordered After= this one can rely on the overlay.
+# interface, so units ordered After= this one can rely on the overlay. An agent
+# that is not a member and has been given nothing to act on reports ready too,
+# and waits: there is nothing to restart it for until it is configured.
 Type=notify
 
 [Install]

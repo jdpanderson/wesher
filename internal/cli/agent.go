@@ -26,59 +26,17 @@ import (
 // AgentCmd is the long-running daemon: it joins the cluster and keeps the
 // wireguard interface and /etc/hosts in step with the membership.
 type AgentCmd struct {
-	Join          []string       `help:"comma separated list of hostnames or IP addresses of existing cluster members; if not provided, will attempt resuming any known state or otherwise wait for further members."`
-	JoinKey       string         `help:"invitation token from 'cheesecloth invite' on a member, needed only the first time this node joins"`
-	Init          bool           `help:"start a new cluster with this node as its root; any known state from previous runs will be forgotten"`
-	BindAddr      netip.Addr     `help:"address to bind for cluster membership traffic; 0.0.0.0 or :: binds every interface of that family and advertises one of its addresses. The address family decides whether the cluster runs over IPv4 or IPv6" default:"0.0.0.0"`
-	ClusterPort   int            `help:"UDP port used for membership gossip and enrolment (QUIC); must be the same across cluster" default:"7946"`
-	WireguardPort int            `help:"port used for wireguard traffic (UDP); must be the same across cluster" default:"51820"`
-	OverlayNet    netip.Prefix   `help:"the network in which to allocate addresses for the overlay mesh network (CIDR format); a node that is already a member, or being enrolled, takes the cluster's unless this says otherwise. Defaults to ${default_overlay_net} for a new cluster"`
-	AllowedIPs    []netip.Prefix `name:"allowed-ips" help:"extra networks reachable through this node (CIDR, comma separated); peers route them over the mesh via this node, which must forward. Must not overlap --overlay-net"`
-	Interface     string         `help:"name of the wireguard interface to create and manage" default:"${default_interface}"`
-	MTU           int            `help:"MTU of the wireguard interface" default:"1420"`
-	// PersistentKeepalive is a time.Duration so kong accepts "25s"; 0 disables it.
-	PersistentKeepalive time.Duration `help:"interval at which peers send keepalives, to keep NAT mappings open (e.g. 25s); 0 disables" default:"0"`
-	NoEtcHosts          bool          `help:"disable writing of entries to /etc/hosts"`
-	Userspace           bool          `help:"run wireguard inside the agent instead of the kernel module; the default wherever the kernel has none"`
-	ControlSocket       string        `help:"unix socket for 'cheesecloth invite' and 'cheesecloth revoke' (default ${default_socket_dir}/<interface>.sock)"`
+	settings `embed:""`
+	JoinKey  string `help:"invitation token from 'cheesecloth invite' on a member, needed only the first time this node joins"`
 
-	addrs    func(skip string) []net.Addr // lists this host's candidate addresses; nil means the interfaces
-	stateDir string                       // where the cluster state is kept; empty means cluster.DefaultDir
-}
-
-// state is the directory this node's cluster state is kept in.
-func (a *AgentCmd) state() string {
-	if a.stateDir == "" {
-		return cluster.DefaultDir
-	}
-	return a.stateDir
+	addrs func(skip string) []net.Addr // lists this host's candidate addresses; nil means the interfaces
 }
 
 func (a *AgentCmd) Validate() error {
-	// an overlay network given here is checked now; one that comes from the
-	// cluster is checked once it is known, in Run
-	if a.OverlayNet.IsValid() {
-		if err := checkOverlayNet(a.OverlayNet.Masked(), a.AllowedIPs); err != nil {
-			return err
-		}
-	}
-
 	if a.JoinKey != "" && len(a.Join) == 0 {
 		return fmt.Errorf("--join-key needs --join to say which member to enrol with")
 	}
-	if a.JoinKey != "" && a.Init {
-		return fmt.Errorf("--init starts a new cluster; it cannot be combined with --join-key")
-	}
-
-	if a.MTU < 576 || a.MTU > 65535 {
-		return fmt.Errorf("unsupported MTU %d; must be between 576 and 65535", a.MTU)
-	}
-
-	if ka := a.PersistentKeepalive; ka != 0 && (ka < time.Second || ka > 65535*time.Second || ka%time.Second != 0) {
-		return fmt.Errorf("unsupported persistent keepalive %s; must be whole seconds between 1s and 65535s", ka)
-	}
-
-	return nil
+	return a.check()
 }
 
 // checkOverlayNet is what must hold of the overlay network once it is known,
@@ -132,16 +90,20 @@ func (a *AgentCmd) Run(ctx context.Context, n notify.Notifier) error {
 	ctx, stop := context.WithCancel(ctx) // a leave request stops the agent the same way a signal does
 	defer stop()
 
-	boot, err := cluster.Load(a.state(), a.Interface, a.Init)
-	if err != nil {
-		return err
-	}
-	advertise, err := a.advertiseAddr()
+	boot, err := cluster.Load(a.state(), a.Interface)
 	if err != nil {
 		return err
 	}
 
 	joinAddrs, err := a.bootstrap(ctx, boot, hostname)
+	if err != nil {
+		return err
+	}
+	if !boot.Enrolled() {
+		return a.idle(ctx, n)
+	}
+
+	advertise, err := a.advertiseAddr()
 	if err != nil {
 		return err
 	}
@@ -225,19 +187,16 @@ func (a *AgentCmd) forget(l *leaving) error {
 }
 
 // bootstrap settles this node's membership before it joins: a node that is
-// already enrolled carries on, --init makes it the root of a new cluster, and
-// --join-key enrols it with one of the --join members. It returns the
-// addresses to join the gossip ring at.
+// already enrolled carries on, --join-key enrols it with one of the --join
+// members, and a configured overlay network with no state to go with it makes
+// it the root of a new cluster. It returns the addresses to join the gossip
+// ring at; a node it leaves unenrolled has nothing to act on and idles.
 func (a *AgentCmd) bootstrap(ctx context.Context, boot *cluster.Bootstrap, hostname string) ([]string, error) {
 	switch {
 	case boot.Enrolled():
 		if a.JoinKey != "" {
 			slog.Info("already a member of a cluster; ignoring --join-key")
 		}
-		return a.Join, nil
-	case a.Init:
-		boot.InitRoot(hostname)
-		slog.Info("initialised a new cluster", "root", boot.Root.Short())
 		return a.Join, nil
 	case a.JoinKey != "":
 		w, member, err := a.enrol(ctx, boot.Identity, hostname)
@@ -247,9 +206,31 @@ func (a *AgentCmd) bootstrap(ctx context.Context, boot *cluster.Bootstrap, hostn
 		boot.Enrol(w.Root, w.Records, w.OverlayNet)
 		slog.Info("enrolled in cluster", "root", w.Root.Short(), "via", w.GossipAddr, "member", member.Short())
 		return []string{w.GossipAddr}, nil
+	case a.OverlayNet.IsValid():
+		boot.InitRoot(hostname)
+		slog.Info("initialised a new cluster", "root", boot.Root.Short(), "overlay-net", a.OverlayNet)
+		return a.Join, nil
 	default:
-		return nil, errors.New("this node is not a member of any cluster: use --init to start one, or --join HOST --join-key TOKEN to enrol (get a token with 'cheesecloth invite' on a member)")
+		return nil, nil
 	}
+}
+
+// idle waits for a stop signal without configuring anything: this node is not
+// a member and was given nothing to act on. Exiting with an error instead
+// would leave the service manager restarting the agent until somebody
+// configures it, which is noise rather than news.
+func (a *AgentCmd) idle(ctx context.Context, n notify.Notifier) error {
+	slog.Warn("not a member of any cluster and nothing to act on; waiting for a restart with an overlay network to start one, or --join HOST --join-key TOKEN to enrol",
+		"interface", a.Interface)
+	if err := n.Ready("waiting to be configured"); err != nil {
+		slog.Warn("could not notify the service manager", "err", err)
+	}
+	<-ctx.Done()
+	slog.Info("terminating")
+	if err := n.Stopping(); err != nil {
+		slog.Warn("could not notify the service manager", "err", err)
+	}
+	return nil
 }
 
 // masked is the prefixes with their host bits cleared, as routes are written.

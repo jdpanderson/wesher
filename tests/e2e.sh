@@ -84,8 +84,11 @@ dump_logs() {
     docker exec "$1" sh -c 'cat /var/log/cheesecloth-*.log 2>/dev/null' || true
 }
 
+# A node roots a new cluster when it is given an overlay network and has no
+# state to go with it, so the node that starts a cluster in these tests is the
+# one passed --overlay-net; a node given neither that nor --join only waits.
 test_3_node_up() {
-    run_test_container test1-orig test1 --init
+    run_test_container test1-orig test1 --overlay-net 10.0.0.0/8
     token=$(invite test1-orig 2)
     run_test_container test2-orig test2 --join test1-orig --join-key "$token"
     run_test_container test3-orig test3 --join test1-orig --join-key "$token"
@@ -109,7 +112,7 @@ test_3_node_up() {
 }
 
 test_5_node_up() {
-    run_test_container test1-orig test1 --init
+    run_test_container test1-orig test1 --overlay-net 10.0.0.0/8
     token=$(invite test1-orig 4)
     for n in 2 3 4 5; do
         run_test_container test$n-orig test$n --join test1-orig --join-key "$token"
@@ -125,7 +128,7 @@ test_5_node_up() {
 # a restarted node rejoins from its persisted identity; the stale --join-key on
 # its command line is ignored
 test_node_restart() {
-    run_test_container test1-orig test1 --init
+    run_test_container test1-orig test1 --overlay-net 10.0.0.0/8
     token=$(invite test1-orig 1)
     run_test_container test2-orig test2 --join test1-orig --join-key "$token"
 
@@ -143,10 +146,44 @@ test_node_restart() {
     stop_test_container test1-orig
 }
 
+# a node given neither an overlay network nor a join has nothing to act on: it
+# waits instead of failing, holds nothing while it does, and roots a cluster
+# once it is started with a network
+test_idle_until_configured() {
+    run_test_container test1-orig test1 # nothing to act on
+
+    sleep 3
+
+    [ "$(docker inspect -f '{{.State.Running}}' test1-orig)" = "true" ] || {
+        echo "the agent did not wait to be configured"; dump_logs test1-orig; false
+    }
+    if docker exec test1-orig ip link show wgoverlay >/dev/null 2>&1; then
+        echo "the waiting agent brought up an interface"; dump_logs test1-orig; false
+    fi
+    # the identity is generated on the first start, so the node keeps the one it
+    # waited with when it is finally configured
+    docker exec test1-orig test -f /var/lib/cheesecloth/wgoverlay.json || {
+        echo "the waiting agent kept no identity"; dump_logs test1-orig; false
+    }
+
+    # the waiting agent holds nothing, so one started beside it with a network
+    # roots a cluster that a second node can join
+    docker exec -d test1-orig bash -c "/entrypoint.sh --overlay-net 10.0.0.0/8 >> /var/log/cheesecloth-root.log 2>&1"
+    token=$(invite test1-orig 1)
+    run_test_container test2-orig test2 --join test1-orig --join-key "$token"
+
+    sleep 3
+
+    ping_ok test1-orig test2 test2-orig
+
+    stop_test_container test2-orig
+    stop_test_container test1-orig
+}
+
 # a joiner is told which network the cluster allocates addresses in, so it
 # needs no --overlay-net of its own, at enrolment or on any later start
 test_overlay_net_from_cluster() {
-    run_test_container test1-orig test1 --init --overlay-net 10.77.0.0/16
+    run_test_container test1-orig test1 --overlay-net 10.77.0.0/16
     token=$(invite test1-orig 1)
     run_test_container test2-orig test2 --join test1-orig --join-key "$token" # no --overlay-net
 
@@ -180,9 +217,9 @@ test_mixed_cluster_ports() {
         docker exec -d test2-orig bash -c "echo \$\$ > /run/mesh.pid; exec /entrypoint.sh --cluster-port 7947 $* >> /var/log/cheesecloth-mesh.log 2>&1"
     }
 
-    run_test_container test1-orig test1 --init # the defaults: wgoverlay, cluster port 7946
+    run_test_container test1-orig test1 --overlay-net 10.0.0.0/8 # the defaults: wgoverlay, cluster port 7946
     token=$(invite test1-orig 1)
-    run_test_container test2-orig test2 --init $idle
+    run_test_container test2-orig test2 $idle
     mesh_agent --join test1-orig:7946 --join-key "$token" # test1 is not on test2's port
 
     sleep 3
@@ -212,7 +249,7 @@ test_mixed_cluster_ports() {
 
 # joiners started at the same time with a shared multi-use token
 test_cluster_simultaneous_start() {
-    run_test_container test1-orig test1 --init
+    run_test_container test1-orig test1 --overlay-net 10.0.0.0/8
     token=$(invite test1-orig 2)
     run_test_container test2-orig test2 --join test1-orig --join-key "$token" &
     run_test_container test3-orig test3 --join test1-orig --join-key "$token" &
@@ -235,8 +272,8 @@ test_multiple_clusters_restart() {
     cluster1='--cluster-port 7946 --wireguard-port 51820 --interface wg1 --overlay-net 10.10.0.0/16'
     cluster2='--cluster-port 7947 --wireguard-port 51821 --interface wg2 --overlay-net 10.11.0.0/16'
 
-    run_test_container test1-orig test1 --init $cluster1
-    run_test_container test2-orig test2 --init $cluster2
+    run_test_container test1-orig test1 $cluster1
+    run_test_container test2-orig test2 $cluster2
     token1=$(invite test1-orig 1 --interface wg1)
     token2=$(invite test2-orig 1 --interface wg2)
     run_test_container test3-orig test3 --join test1-orig --join-key "$token1" $cluster1
@@ -262,7 +299,7 @@ test_multiple_clusters_restart() {
 
 # wireguard runs inside the agent when asked (and wherever the kernel has none)
 test_userspace_device() {
-    run_test_container test1-orig test1 --init --userspace
+    run_test_container test1-orig test1 --overlay-net 10.0.0.0/8 --userspace
     token=$(invite test1-orig 1)
     run_test_container test2-orig test2 --join test1-orig --join-key "$token" --userspace
 
@@ -281,7 +318,7 @@ test_userspace_device() {
 test_ipv6_cluster() {
     network=cheesecloth_test6
     local v6='--bind-addr :: --overlay-net fd00:10::/64'
-    run_test_container test1-orig test1 --init $v6
+    run_test_container test1-orig test1 $v6
     token=$(invite test1-orig 2)
     run_test_container test2-orig test2 --join test1-orig --join-key "$token" $v6
     run_test_container test3-orig test3 --join test1-orig --join-key "$token" $v6
@@ -300,7 +337,7 @@ test_ipv6_cluster() {
 
 # IPv6 overlay over the IPv4 underlay
 test_ipv6_overlay() {
-    run_test_container test1-orig test1 --init --overlay-net fd00:10::/64
+    run_test_container test1-orig test1 --overlay-net fd00:10::/64
     token=$(invite test1-orig 1)
     run_test_container test2-orig test2 --join test1-orig --join-key "$token" --overlay-net fd00:10::/64
 
@@ -314,7 +351,7 @@ test_ipv6_overlay() {
 }
 
 test_node_leave() {
-    run_test_container test1-orig test1 --init
+    run_test_container test1-orig test1 --overlay-net 10.0.0.0/8
     token=$(invite test1-orig 1)
     run_test_container test2-orig test2 --join test1-orig --join-key "$token"
 
@@ -336,7 +373,7 @@ test_node_leave() {
 
 # a revoked node is dropped by its peers and can no longer talk to them
 test_revoke() {
-    run_test_container test1-orig test1 --init
+    run_test_container test1-orig test1 --overlay-net 10.0.0.0/8
     token=$(invite test1-orig 2)
     run_test_container test2-orig test2 --join test1-orig --join-key "$token"
     run_test_container test3-orig test3 --join test1-orig --join-key "$token"
@@ -370,7 +407,7 @@ test_revoke() {
 # a node takes itself out of the cluster: it revokes itself, the peers drop it,
 # and it keeps nothing of the cluster it left
 test_leave_command() {
-    run_test_container test1-orig test1 --init
+    run_test_container test1-orig test1 --overlay-net 10.0.0.0/8
     token=$(invite test1-orig 2)
     run_test_container test2-orig test2 --join test1-orig --join-key "$token"
     run_test_container test3-orig test3 --join test1-orig --join-key "$token"
@@ -416,7 +453,7 @@ test_leave_command() {
 
 # a network advertised with --allowed-ips is routed through the advertising node
 test_allowed_ips() {
-    run_test_container test1-orig test1 --init --allowed-ips 192.168.77.0/24
+    run_test_container test1-orig test1 --overlay-net 10.0.0.0/8 --allowed-ips 192.168.77.0/24
     token=$(invite test1-orig 1)
     run_test_container test2-orig test2 --join test1-orig --join-key "$token"
 

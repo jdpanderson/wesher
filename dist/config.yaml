@@ -1,26 +1,46 @@
-# cheesecloth configuration. Keys are the command-line flag names; a flag given
-# on the command line overrides the value here. Unknown keys are an error.
-# join-key and init are command-line only and must not appear in this file.
+# cheesecloth configuration. The file is keyed by interface name; under each
+# interface are its settings, keyed by the command-line flag names. A flag
+# given on the command line overrides the value here. Unknown keys are an
+# error. join-key is command line only, and interface is not a key: the
+# section name is the interface.
+#
+# Nothing is set below, so cheesecloth runs with its defaults. An agent that
+# is not yet a member of a cluster and has no overlay-net to start one with
+# waits until it is given something to act on. Set overlay-net to start a new
+# cluster on the next restart, or enrol this node with
+# 'cheesecloth --join HOST --join-key TOKEN'.
 #
 # Install as /etc/cheesecloth/config.yaml.
 
-# members to contact on start; leave out to resume from saved state
-#join:
-#  - node1.example.net
-#  - node2.example.net
+# the section name is the wireguard interface this node manages
+#wgoverlay:
+  # members to contact on start; leave out to resume from saved state
+  #join:
+  #  - node1.example.net
+  #  - node2.example.net
 
-# address family of the cluster is decided here: 0.0.0.0 (IPv4) or :: (IPv6)
-bind-addr: 0.0.0.0
-cluster-port: 7946
-wireguard-port: 51820
-# the cluster's overlay network; a node joining an existing cluster is told it
-# at enrolment and keeps it, so this is only needed to start a new cluster
-#overlay-net: 10.0.0.0/8
-# networks behind this node that peers should route through it
-#allowed-ips:
-#  - 192.168.7.0/24
-interface: wgoverlay
-mtu: 1420
-#persistent-keepalive: 25s
-#no-etc-hosts: true
-log-level: warn
+  # address family of the cluster is decided here: 0.0.0.0 (IPv4) or :: (IPv6)
+  #bind-addr: 0.0.0.0
+  #cluster-port: 7946
+  #wireguard-port: 51820
+
+  # the cluster's overlay network. Setting it on a node with no state starts a
+  # new cluster with this node as its root; a node joining an existing cluster
+  # is told the network at enrolment and keeps it, so it is not needed there.
+  #overlay-net: 10.0.0.0/8
+
+  # networks behind this node that peers should route through it
+  #allowed-ips:
+  #  - 192.168.7.0/24
+
+  #mtu: 1420
+  #persistent-keepalive: 25s
+  #no-etc-hosts: true
+  #log-level: warn
+
+# a second cluster on the same host gets its own section, with its own
+# interface, ports and overlay network
+#wghomelab:
+  #cluster-port: 7947
+  #wireguard-port: 51821
+  #overlay-net: 10.42.0.0/24

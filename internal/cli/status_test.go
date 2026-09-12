@@ -53,7 +53,7 @@ func Test_StatusCmd_Run(t *testing.T) {
 func Test_StatusCmd_Run_namesPeersFromState(t *testing.T) {
 	report, _, _ := statusFixture()
 	dir := t.TempDir()
-	boot, err := cluster.Load(dir, "wgoverlay", true) // writes the identity
+	boot, err := cluster.Load(dir, "wgoverlay") // writes the identity
 	require.NoError(t, err)
 
 	// add the peer the agent would have remembered, under the state file's "peers" key

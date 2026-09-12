@@ -27,13 +27,15 @@ for Linux; the other platforms are described in [operations](docs/operations.md#
    $ chmod a+x cheesecloth
    ```
 
-2. On the first node, start a cluster:
+2. On the first node, write a configuration and start the agent. A node with an overlay network configured and no
+   state to go with it starts a cluster with itself as its root, so nothing else is needed the first time:
 
    ```
-   ./cheesecloth --init
+   ./cheesecloth config --init --overlay-net 10.0.0.0/8
+   ./cheesecloth
 
    # Or customize the interface name, and the overlay network the cluster allocates addresses in
-   # ./cheesecloth --init --interface wghomelab --overlay-net 10.42.0.0/24
+   # ./cheesecloth config --init --interface wghomelab --overlay-net 10.42.0.0/24
    ```
 
 3. On the same node, create an invitation for the next node:
@@ -56,9 +58,14 @@ for Linux; the other platforms are described in [operations](docs/operations.md#
 
 The two nodes are now connected. Repeat steps 3 and 4 for each additional node; the invitation can be created on
 any node that is already a member. After the first start, a node needs neither `--join` nor `--join-key`: it resumes
-from what it saved. `cheesecloth status` lists the peers. `cheesecloth revoke NAME` removes another node, and
+from what it saved, which is what makes the agent something a service manager can start on every boot.
+`cheesecloth status` lists the peers. `cheesecloth revoke NAME` removes another node, and
 `cheesecloth leave` removes the node it runs on. Running
 cheesecloth as a system service is described in [operations](docs/operations.md).
+
+An agent that is not a member of any cluster and has been given nothing to act on — no overlay network to start one
+with, no `--join-key` to enrol with — waits rather than failing, so a node can be installed and enabled before anyone
+decides what it joins.
 
 A node does still need the settings it runs with, on every start, with one exception: `--overlay-net` comes from the
 cluster. The member that admits a node tells it which network the cluster allocates addresses in, and the node keeps
@@ -66,20 +73,24 @@ it, so only the node that starts a cluster is given one. `--wireguard-port` must
 `--cluster-port` need not be, though a member listening on another one has to be named as `host:port` in `--join`.
 `--interface` is local: each node names its interface what it likes, but that name has to be given to `invite`,
 `revoke` and `status` on that node, since they find the agent by it. Rather than repeat them, most setups put them in
-`/etc/cheesecloth/config.yaml` once, after which every command runs with no arguments:
+`/etc/cheesecloth/config.yaml` once, after which every command runs with no arguments. The file is keyed by interface
+name, with that interface's settings under it, so one file can describe several clusters on the same host:
 
 ```yaml
-interface: wgmesh
+wgmesh:
+  overlay-net: 10.42.0.0/24
 ```
 
-[`dist/config.yaml`](dist/config.yaml) is an annotated example, and [configuration](docs/configuration.md) describes
-every option.
+`cheesecloth config` prints what a node runs with, ready to be redirected into that file, and `cheesecloth config
+--init` writes it. [`dist/config.yaml`](dist/config.yaml) is an annotated example, and
+[configuration](docs/configuration.md) describes every option.
 
 ## How it works
 
 Each node has a permanent identity, which is an Ed25519 key pair generated on its first start. Membership is a list
-of signed admission records. The node that ran `--init` is the root and signs its own record. To admit a new node, an
-existing member signs a record for it. Any node can verify a record by following the signatures back to the root.
+of signed admission records. The node that started the cluster is the root and signs its own record. To admit a new
+node, an existing member signs a record for it. Any node can verify a record by following the signatures back to the
+root.
 There is no cluster-wide key. If a node is compromised, the attacker obtains that node's identity only, and any member
 can revoke it.
 
@@ -109,3 +120,7 @@ entries are updated whenever the membership changes.
   exchange and the transport.
 - [wesher](https://github.com/costela/wesher): the project cheesecloth was forked from. cheesecloth follows the same
   approach of a WireGuard mesh configured by gossip, but its protocol, state and key model are all different.
+
+## Credits
+
+This project is co-developed with Claude Opus 5 / Claude Fable 5.1.
