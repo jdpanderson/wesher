@@ -334,6 +334,13 @@ before starting; none are committed yet.
       podman's default 10.89.0.0/24 sits inside the default overlay net. Found
       and fixed on the way: stale-route pruning removed the kernel's route to
       our own IPv6 /128 address.
+- [ ] **DECISION** the invitation output prints `cheesecloth --join <host>
+      --join-key TOKEN`, which is the wrong command on a cluster that does not
+      use the default interface and overlay network: a joiner who pastes it
+      enrols onto `wgoverlay` and `10.0.0.0/8`. The agent knows its own
+      settings, so it could print them, or the token could carry the cluster's
+      overlay network and the joiner adopt it. The README works around this by
+      telling the operator to add the flags.
 - [ ] Rate limiting sensitive incoming requests; We don't want to allow brute-forcing joins or denial of service. We should have a mechanism of shutting down incoming requests if the rate is too high. This feels like something that must already exist as a package (or combination of packages). We could also just support dectection or logging such that an external piece of software would watch the logs and block hosts. This needs thought and design before we implement
 
 ## Phase 7: identity-based membership

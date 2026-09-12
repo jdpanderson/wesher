@@ -31,6 +31,10 @@ for Linux; the other platforms are described in [operations](docs/operations.md#
 
    ```
    # ./cheesecloth --init
+
+   # most clusters set at least these two: a name for the interface, and an
+   # overlay network smaller than the 10.0.0.0/8 default
+   # ./cheesecloth --init --interface wgmesh --overlay-net 10.42.0.0/24
    ```
 
 3. On the same node, create an invitation for the next node:
@@ -46,12 +50,28 @@ for Linux; the other platforms are described in [operations](docs/operations.md#
 
    ```
    # ./cheesecloth --join first.example.net --join-key 7xk3...
+
+   # the interface and overlay network are per-node settings, so a node that
+   # uses them has to be given them every time, enrolment included
+   # ./cheesecloth --join first.example.net --join-key 7xk3... --interface wgmesh --overlay-net 10.42.0.0/24
    ```
 
 The two nodes are now connected. Repeat steps 3 and 4 for each additional node; the invitation can be created on
-any node that is already a member. After the first start, a node is restarted with `cheesecloth` and no arguments.
-`cheesecloth status` lists the peers. `cheesecloth revoke NAME` removes a node. Running cheesecloth as a system
-service is described in [operations](docs/operations.md).
+any node that is already a member. After the first start, a node needs neither `--join` nor `--join-key`: it resumes
+from what it saved. `cheesecloth status` lists the peers. `cheesecloth revoke NAME` removes a node. Running
+cheesecloth as a system service is described in [operations](docs/operations.md).
+
+A node does still need the settings it runs with. `--overlay-net` must be the same on every node, and `--interface`
+is needed by `invite`, `revoke` and `status` as well as by the agent. Rather than repeat them, most setups put them
+in `/etc/cheesecloth/config.yaml` once, after which every command runs with no arguments:
+
+```yaml
+interface: wgmesh
+overlay-net: 10.42.0.0/24
+```
+
+[`dist/config.yaml`](dist/config.yaml) is an annotated example, and [configuration](docs/configuration.md) describes
+every option.
 
 ## How it works
 
