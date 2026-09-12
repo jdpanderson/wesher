@@ -488,21 +488,13 @@ func (t *quicTransport) dial(ctx context.Context, addr string) (*quic.Conn, erro
 }
 
 // dialAsync starts a connection attempt to addr unless one is under way or
-// the transport is shutting down.
+// the transport is shutting down. Two callers racing past the check both
+// start one; connect collapses them onto a single dial.
 func (t *quicTransport) dialAsync(addr string) {
 	t.mu.Lock()
 	_, busy := t.dialing[addr]
-	shutdown := false
-	select {
-	case <-t.done:
-		shutdown = true
-	default:
-	}
-	if !busy && !shutdown {
-		t.wg.Add(1)
-	}
 	t.mu.Unlock()
-	if busy || shutdown {
+	if busy || !t.track(1) {
 		return
 	}
 	go func() {
