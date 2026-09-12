@@ -351,6 +351,18 @@ before starting; none are committed yet.
       treating the flag as an override that logs a renumbering would remove
       the failure, and pairs with the invitation item above: the joiner could
       learn the network at enrolment and never be told it again.
+- [ ] A node that runs with no peers erases the addresses it needs to rejoin.
+      The state file's peer list is written from the live membership, so a node
+      left alone persists an empty list: verified 2026-09-12, a two-node
+      cluster where one node was stopped left the survivor with no remembered
+      peers within seconds. Any node that is ever the last one running forgets
+      every address, and once that has happened to all of them a cluster-wide
+      restart leaves every node running, a member, and unable to find the
+      others without `--join`. Seen for real while renumbering: both nodes came
+      up alone and neither could rejoin. This contradicts the goal that all
+      nodes may restart at once unattended. Options: never persist an empty
+      peer list; or keep the last known address of each member separately from
+      the live membership, dropped only when the member is revoked.
 - [ ] Rate limiting sensitive incoming requests; We don't want to allow brute-forcing joins or denial of service. We should have a mechanism of shutting down incoming requests if the rate is too high. This feels like something that must already exist as a package (or combination of packages). We could also just support dectection or logging such that an external piece of software would watch the logs and block hosts. This needs thought and design before we implement
 
 ## Phase 7: identity-based membership
