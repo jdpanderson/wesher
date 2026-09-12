@@ -51,6 +51,7 @@ type leaving struct {
 	stop      func()        // stops the agent, as a signal does
 	done      chan struct{} // closed once the agent has torn down and forgotten the cluster
 	requested atomic.Bool
+	err       error // what forgetting the cluster ran into; written before done is closed
 }
 
 // agentControl adapts a Cluster to the control.Handler interface.
@@ -66,21 +67,21 @@ func (a agentControl) Invite(ttl time.Duration, uses int) (string, error) {
 // Leave revokes this node and stops the agent. Without force a node that
 // cannot revoke itself, the root, stays where it is rather than leaving a
 // member the cluster still trusts without saying so.
-func (a agentControl) Leave(force bool) (string, int, error) {
-	var identity string
+func (a agentControl) Leave(force bool) (control.LeaveResult, error) {
+	left := control.LeaveResult{Identity: a.cluster.Identity().String()}
 	notified, err := a.cluster.RevokeSelf()
 	if err != nil {
 		if !force {
-			return "", 0, err
+			return control.LeaveResult{}, err
 		}
 		slog.Warn("leaving the cluster without revoking this node", "err", err)
 	} else {
-		identity = a.cluster.Identity().String()
+		left.Revoked, left.Notified = true, notified
 	}
 	a.leaving.requested.Store(true)
 	a.leaving.stop()
 	<-a.leaving.done
-	return identity, notified, nil
+	return left, a.leaving.err
 }
 
 func (a agentControl) Revoke(target string) (string, error) {

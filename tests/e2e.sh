@@ -285,6 +285,53 @@ test_revoke() {
     stop_test_container test1-orig
 }
 
+# a node takes itself out of the cluster: it revokes itself, the peers drop it,
+# and it keeps nothing of the cluster it left
+test_leave_command() {
+    run_test_container test1-orig test1 --init
+    token=$(invite test1-orig 2)
+    run_test_container test2-orig test2 --join test1-orig --join-key "$token"
+    run_test_container test3-orig test3 --join test1-orig --join-key "$token"
+
+    sleep 3
+
+    ping_ok test1-orig test3 test3-orig
+    docker exec test3-orig /app/cheesecloth leave 2>&1 | grep -q "left the cluster: revoked" || {
+        echo "leave did not report a revocation"; dump_logs test3-orig; false
+    }
+
+    # the agent stops once it has left, and with it the container
+    for _ in $(seq 1 20); do
+        [ "$(docker inspect -f '{{.State.Running}}' test3-orig)" = "false" ] && break
+        sleep 0.5
+    done
+    [ "$(docker inspect -f '{{.State.Running}}' test3-orig)" = "false" ] || {
+        echo "the agent kept running after it left"; dump_logs test3-orig; false
+    }
+    docker cp test3-orig:/var/lib/cheesecloth/wgoverlay.json - >/dev/null 2>&1 && {
+        echo "the state file survived the leave"; false
+    }
+
+    # test2 was handed the revocation too, though the operator never talked to it
+    for _ in $(seq 1 20); do
+        docker exec test2-orig grep -q test3 /etc/hosts || break
+        sleep 0.5
+    done
+    for c in test1-orig test2-orig; do
+        if docker exec "$c" grep -q test3 /etc/hosts; then
+            echo "$c still has a hosts entry for the node that left"; dump_logs "$c"; false
+        fi
+        docker exec "$c" /app/cheesecloth status | grep -q test3 && {
+            echo "$c still has the node that left as a wireguard peer"; false
+        }
+    done
+    ping_ok test1-orig test2 test2-orig
+
+    stop_test_container test3-orig
+    stop_test_container test2-orig
+    stop_test_container test1-orig
+}
+
 # a network advertised with --allowed-ips is routed through the advertising node
 test_allowed_ips() {
     run_test_container test1-orig test1 --init --allowed-ips 192.168.77.0/24

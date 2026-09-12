@@ -57,6 +57,46 @@ linode3  kwvzJSL2  10.0.0.3  172.105.13.112:51820  1s ago     348 B  404 B  -
 `cheesecloth invite [--ttl 10m] [--uses 1]` creates an invitation token on a
 running member. `cheesecloth revoke NAME|IDENTITY` removes a member. Every
 peer stops talking to the revoked node; the revoked node is not notified.
+`cheesecloth leave` removes the node it runs on, see [Decommissioning a
+node](#decommissioning-a-node).
+
+## Decommissioning a node
+
+`cheesecloth leave` takes the node it runs on out of the cluster for good. The
+agent revokes this node's own identity, hands the revocation to each member it
+can still reach, tears the interface down, removes its hosts entries and
+deletes its state file, then stops. Every peer drops the node; the node keeps
+nothing of the cluster.
+
+```
+# cheesecloth leave
+left the cluster: revoked KE9rn7ryXPCL+A1uHT1Or7tnBG/eheIihMPaYcN9EME=, 2 member(s) told
+the agent has stopped and its state for wgoverlay is gone
+```
+
+The agent exits, so a service that starts it at boot should be disabled as
+well (`systemctl disable cheesecloth`). Starting it again without a fresh
+invitation fails: the node is no longer a member and has no state.
+
+Two cases cannot tell the cluster anything, and both need `--force`:
+
+- **The node's agent is not running.** Nothing can sign or send a revocation.
+  `--force` removes the interface, the hosts entries and the state file only.
+- **The node is the cluster root.** Every admission chains back to the root's
+  own record, so the root cannot be revoked. `--force` leaves without
+  revoking.
+
+In both cases the command prints the node's identity and the cluster keeps
+trusting it until a member revokes it:
+
+```
+# cheesecloth leave --force
+removed this node's state for wgoverlay
+the cluster still trusts this node: run 'cheesecloth revoke KE9r...' on a member
+```
+
+Removing a node that cannot be reached at all is the same operation seen from
+the other side: run `cheesecloth revoke NAME|IDENTITY` on any member.
 
 ## Restarts and recovery
 

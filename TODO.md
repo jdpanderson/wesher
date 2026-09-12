@@ -469,15 +469,15 @@ identity lingers in every peer's record set. `cheesecloth leave` fills that
 gap. `--init` as an agent flag and changing settings on a running agent are
 separate items, still to be designed.
 
-- [x] A member may revoke itself. Done 2026-09-12. `Set.validAt` only honoured a revocation
-      whose revoker was valid, and the cycle guard made a self-revocation a
-      no-op: the record was accepted and had no effect. Only the holder of
-      that key can sign it and it removes nobody else, so it is honoured
-      unconditionally. The root still cannot be revoked.
-- [x] `cluster.RevokeSelf`: done 2026-09-12. Revoke this node's identity and push the record to
+- [x] A member may revoke itself. Done 2026-09-12. `Set.validAt` only
+      honoured a revocation whose revoker was valid, and the cycle guard made
+      a self-revocation a no-op: the record was accepted and had no effect.
+      Only the holder of that key can sign it and it removes nobody else, so
+      it is honoured unconditionally. The root still cannot be revoked.
+- [x] `cluster.RevokeSelf`: revoke this node's identity and push the record to
       each member over the stream transport, rather than only queueing it for
       gossip, because the node is about to stop. `cluster.Forget` deletes the
-      state file.
+      state file. Done 2026-09-12.
 - [x] `control`: a `leave` operation, and `Server.Close` waits for in-flight
       handlers so the reply outlives the agent's shutdown. Done 2026-09-12:
       the handler revokes this node, stops the agent as a signal would, waits
@@ -486,10 +486,13 @@ separate items, still to be designed.
 - [x] `wg.Remove`: delete an interface a stopped agent left behind. Only a
       kernel interface outlives its agent; elsewhere it is a no-op. Done
       2026-09-12.
-- [ ] `cheesecloth leave`: the agent revokes this node, tears the interface
+- [x] `cheesecloth leave`: the agent revokes this node, tears the interface
       down and forgets the cluster. `--force` leaves without revoking, for the
       root (which cannot be revoked) and for a node whose agent is not
       running; it says the cluster keeps trusting the identity until a member
-      revokes it.
-- [ ] Docs: decommissioning a node in `docs/operations.md`, the command list
-      in `docs/membership.md`, README.
+      revokes it. Done 2026-09-12, with the `test_leave_command` e2e scenario:
+      the leaving node's peers drop it, including the one the operator never
+      talked to, and its state file is gone.
+- [x] Docs: decommissioning a node in `docs/operations.md`, the command list
+      in `docs/membership.md`, the operator interface in `docs/design.md`,
+      README. Done 2026-09-12.

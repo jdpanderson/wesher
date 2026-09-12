@@ -32,7 +32,7 @@ func (f *fakeHandler) Invite(ttl time.Duration, uses int) (string, error) {
 	return "TOKEN", nil
 }
 
-func (f *fakeHandler) Leave(force bool) (string, int, error) {
+func (f *fakeHandler) Leave(force bool) (LeaveResult, error) {
 	f.force = force
 	if f.entered != nil {
 		close(f.entered)
@@ -41,9 +41,9 @@ func (f *fakeHandler) Leave(force bool) (string, int, error) {
 		<-f.block
 	}
 	if f.leaveErr != nil {
-		return "", 0, f.leaveErr
+		return LeaveResult{}, f.leaveErr
 	}
-	return "IDENTITY", 2, nil
+	return LeaveResult{Identity: "IDENTITY", Revoked: true, Notified: 2}, nil
 }
 
 func (f *fakeHandler) Revoke(target string) (string, error) {
@@ -93,6 +93,7 @@ func Test_control_roundTrip(t *testing.T) {
 	resp, err = Call(path, Request{Op: OpLeave, Force: true})
 	require.NoError(t, err)
 	assert.Equal(t, "IDENTITY", resp.Identity)
+	assert.True(t, resp.Revoked)
 	assert.Equal(t, 2, resp.Notified)
 	assert.True(t, h.force)
 	h.leaveErr = errors.New("the root cannot be revoked")
@@ -103,6 +104,7 @@ func Test_control_roundTrip(t *testing.T) {
 	srv.Close()
 	_, err = Call(path, Request{Op: "invite", TTL: "1m", Uses: 1})
 	assert.ErrorContains(t, err, "is it running")
+	assert.ErrorIs(t, err, ErrNoAgent)
 }
 
 // The agent closes the control server as it shuts down, which is what a leave

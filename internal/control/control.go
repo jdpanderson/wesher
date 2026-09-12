@@ -50,9 +50,20 @@ type Request struct {
 // Response carries the result or an error message.
 type Response struct {
 	Token    string `json:"token,omitempty"`
-	Identity string `json:"identity,omitempty"` // revoke and leave: the identity that was revoked
+	Identity string `json:"identity,omitempty"` // revoke: the identity that was revoked; leave: this node's
+	Revoked  bool   `json:"revoked,omitempty"`  // leave: whether the identity was revoked
 	Notified int    `json:"notified,omitempty"` // leave: members handed the revocation
 	Error    string `json:"error,omitempty"`
+}
+
+// LeaveResult is what a leave did: this node's identity, whether it managed
+// to revoke it, and how many members were handed the revocation. A node that
+// could not revoke itself is still a member as far as the cluster knows, so
+// the operator is given the identity to revoke from a member.
+type LeaveResult struct {
+	Identity string
+	Revoked  bool
+	Notified int
 }
 
 // Handler performs the operations on behalf of the agent.
@@ -60,11 +71,10 @@ type Handler interface {
 	Invite(ttl time.Duration, uses int) (string, error)
 	// Revoke resolves target to an identity, revokes it and returns the identity.
 	Revoke(target string) (string, error)
-	// Leave revokes this node, stops the agent once it has torn the interface
-	// down and forgotten the cluster, and returns the revoked identity and the
-	// number of members handed the revocation. With force it leaves even when
-	// it cannot revoke itself, and the identity is then empty.
-	Leave(force bool) (string, int, error)
+	// Leave revokes this node and stops the agent once it has torn the
+	// interface down and forgotten the cluster. With force it leaves even when
+	// it cannot revoke itself.
+	Leave(force bool) (LeaveResult, error)
 }
 
 // Server answers requests on a unix socket.
@@ -190,21 +200,25 @@ func (s *Server) handle(req Request) Response {
 		}
 		return Response{Identity: id}
 	case OpLeave:
-		id, notified, err := s.handler.Leave(req.Force)
+		left, err := s.handler.Leave(req.Force)
 		if err != nil {
 			return Response{Error: err.Error()}
 		}
-		return Response{Identity: id, Notified: notified}
+		return Response{Identity: left.Identity, Revoked: left.Revoked, Notified: left.Notified}
 	default:
 		return Response{Error: "unknown operation " + req.Op}
 	}
 }
 
+// ErrNoAgent means nothing is listening on the control socket, which the
+// leave command tells apart from an agent that answered with an error.
+var ErrNoAgent = errors.New("no agent is listening")
+
 // Call sends one request to the agent listening at path.
 func Call(path string, req Request) (Response, error) {
 	conn, err := net.DialTimeout("unix", path, 5*time.Second)
 	if err != nil {
-		return Response{}, fmt.Errorf("connecting to the agent at %s (is it running, and are you root?): %w", path, err)
+		return Response{}, fmt.Errorf("%w at %s (is it running, and are you root?): %w", ErrNoAgent, path, err)
 	}
 	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(deadline(req.Op)))

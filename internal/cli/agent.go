@@ -17,7 +17,6 @@ import (
 	"github.com/jdpanderson/cheesecloth/internal/cluster"
 	"github.com/jdpanderson/cheesecloth/internal/control"
 	"github.com/jdpanderson/cheesecloth/internal/enrol"
-	"github.com/jdpanderson/cheesecloth/internal/etchosts"
 	"github.com/jdpanderson/cheesecloth/internal/notify"
 	"github.com/jdpanderson/cheesecloth/internal/overlay"
 	"github.com/jdpanderson/cheesecloth/internal/trust"
@@ -150,10 +149,7 @@ func (a *AgentCmd) Run(ctx context.Context, n notify.Notifier) error {
 	defer ctl.Close() // answers a leave request once it has been carried out
 	defer close(leave.done)
 
-	hostsFile := &etchosts.EtcHosts{
-		Banner: "# ! managed automatically by cheesecloth interface " + a.Interface,
-		Logger: slog.Default(),
-	}
+	hostsFile := hostsFor(a.Interface)
 
 	// Keep trying to join until it works or we are told to stop; a node that gives
 	// up would need a manual restart, which is worse than a noisy log.
@@ -184,7 +180,8 @@ func (a *AgentCmd) forget(l *leaving) error {
 		return nil
 	}
 	slog.Info("forgetting the cluster", "interface", a.Interface)
-	return cluster.Forget(a.state(), a.Interface)
+	l.err = cluster.Forget(a.state(), a.Interface) // read by the operator waiting on the control socket
+	return l.err
 }
 
 // bootstrap settles this node's membership before it joins: a node that is

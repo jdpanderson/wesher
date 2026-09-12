@@ -171,8 +171,11 @@ fresh token and the old identity revoked.
 ## Operator interface
 
 A running agent is reached over a local socket, one request and one response
-per connection. Inviting and revoking go through it, because both require the
-node's identity key, which only the running agent holds. The socket is
+per connection. Inviting, revoking and leaving go through it, because they
+require the node's identity key, which only the running agent holds. A leave
+is answered only once the agent has revoked this node, told the members, torn
+the interface down and deleted the state file, so the operator is told what
+actually happened rather than what was started. The socket is
 protected by file permissions, so the ability to run these commands is the
 ability to read that file.
 

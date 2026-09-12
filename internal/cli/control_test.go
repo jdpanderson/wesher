@@ -104,10 +104,11 @@ func Test_agentControl_Leave(t *testing.T) {
 	m, _ := newFakeMembership(t)
 	ctl, l, stopped := leaveControl(m)
 
-	id, notified, err := ctl.Leave(false)
+	left, err := ctl.Leave(false)
 	require.NoError(t, err)
-	assert.Equal(t, m.Identity().String(), id)
-	assert.Equal(t, 3, notified)
+	assert.Equal(t, m.Identity().String(), left.Identity)
+	assert.True(t, left.Revoked)
+	assert.Equal(t, 3, left.Notified)
 	assert.True(t, m.revokedSelf)
 	assert.True(t, l.requested.Load(), "the agent forgets its state on the way out")
 	<-stopped
@@ -119,7 +120,7 @@ func Test_agentControl_Leave_cannotRevoke(t *testing.T) {
 	m.revokeSelfErr = errors.New("the root cannot be revoked")
 	ctl, l, stopped := leaveControl(m)
 
-	_, _, err := ctl.Leave(false)
+	_, err := ctl.Leave(false)
 	assert.ErrorContains(t, err, "root cannot be revoked")
 	assert.False(t, l.requested.Load())
 	select {
@@ -128,10 +129,11 @@ func Test_agentControl_Leave_cannotRevoke(t *testing.T) {
 	default:
 	}
 
-	id, notified, err := ctl.Leave(true)
+	left, err := ctl.Leave(true)
 	require.NoError(t, err)
-	assert.Empty(t, id, "nothing was revoked")
-	assert.Zero(t, notified)
+	assert.Equal(t, m.Identity().String(), left.Identity, "the operator needs it to revoke this node from a member")
+	assert.False(t, left.Revoked)
+	assert.Zero(t, left.Notified)
 	assert.True(t, l.requested.Load())
 	<-stopped
 }

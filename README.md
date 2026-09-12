@@ -58,7 +58,8 @@ for Linux; the other platforms are described in [operations](docs/operations.md#
 
 The two nodes are now connected. Repeat steps 3 and 4 for each additional node; the invitation can be created on
 any node that is already a member. After the first start, a node needs neither `--join` nor `--join-key`: it resumes
-from what it saved. `cheesecloth status` lists the peers. `cheesecloth revoke NAME` removes a node. Running
+from what it saved. `cheesecloth status` lists the peers. `cheesecloth revoke NAME` removes another node, and
+`cheesecloth leave` removes the node it runs on. Running
 cheesecloth as a system service is described in [operations](docs/operations.md).
 
 A node does still need the settings it runs with. `--overlay-net` must be the same on every node, and `--interface`

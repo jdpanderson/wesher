@@ -19,6 +19,7 @@ type fakeAgent struct {
 	uses   int
 	target string
 	force  bool
+	left   control.LeaveResult
 	err    error
 }
 
@@ -32,9 +33,15 @@ func (f *fakeAgent) Revoke(target string) (string, error) {
 	return "IDENTITY", f.err
 }
 
-func (f *fakeAgent) Leave(force bool) (string, int, error) {
+func (f *fakeAgent) Leave(force bool) (control.LeaveResult, error) {
 	f.force = force
-	return "IDENTITY", 3, f.err
+	switch {
+	case f.err != nil:
+		return control.LeaveResult{}, f.err
+	case f.left != (control.LeaveResult{}):
+		return f.left, nil
+	}
+	return control.LeaveResult{Identity: "IDENTITY", Revoked: true, Notified: 3}, nil
 }
 
 // socketDir is a short-lived directory for sockets. t.TempDir() names the

@@ -184,6 +184,9 @@ identity can be revoked.
 - `cheesecloth invite [--ttl] [--uses]`: mint a token on a member (via the control
   socket `/run/cheesecloth/<interface>.sock`).
 - `cheesecloth revoke NAME|IDENTITY`: sign and broadcast a revocation.
+- `cheesecloth leave`: revoke this node itself, hand the revocation to the
+  members, and delete the state file. The root cannot revoke itself, so it can
+  only leave with `--force`, which tells the cluster nothing.
 - `cheesecloth status`: shows peers with their identity fingerprints.
 
 ## Clocks
