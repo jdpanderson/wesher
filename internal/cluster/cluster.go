@@ -240,22 +240,21 @@ func assignedAddr(set *trust.Set, prefix netip.Prefix, id trust.PublicKey) (neti
 // verifyMeta checks a node's metadata: a valid member signed it, it claims the
 // overlay address that member's admission assigns, and its wireguard key
 // parses. A node that passes can be installed as a peer as is.
-func verifyMeta(set *trust.Set, prefix netip.Prefix, n *overlay.Node) (trust.PublicKey, error) {
-	id := n.Identity
-	want, err := assignedAddr(set, prefix, id)
+func verifyMeta(set *trust.Set, prefix netip.Prefix, n *overlay.Node) error {
+	want, err := assignedAddr(set, prefix, n.Identity)
 	if err != nil {
-		return id, err
+		return err
 	}
 	if n.OverlayAddr != want {
-		return id, fmt.Errorf("%s claims overlay address %s but is assigned %s", n.Name, n.OverlayAddr, want)
+		return fmt.Errorf("%s claims overlay address %s but is assigned %s", n.Name, n.OverlayAddr, want)
 	}
-	if !trust.Verify(id, trust.MetaDigest(n.Name, n.OverlayAddr, n.PubKey, n.AllowedIPs), n.Signature) {
-		return id, fmt.Errorf("metadata signature of %s does not verify", n.Name)
+	if !trust.Verify(n.Identity, trust.MetaDigest(n.Name, n.OverlayAddr, n.PubKey, n.AllowedIPs), n.Signature) {
+		return fmt.Errorf("metadata signature of %s does not verify", n.Name)
 	}
 	if _, err := wgtypes.ParseKey(n.PubKey); err != nil {
-		return id, fmt.Errorf("wireguard key of %s: %w", n.Name, err)
+		return fmt.Errorf("wireguard key of %s: %w", n.Name, err)
 	}
-	return id, nil
+	return nil
 }
 
 // forwardEvents logs memberlist events about other nodes, learns their
@@ -403,7 +402,7 @@ func (c *Cluster) snapshot() []overlay.Node {
 		}
 		addr, _ := netip.AddrFromSlice(n.Addr)
 		node := overlay.Node{Name: n.Name, Addr: addr.Unmap(), Meta: meta}
-		if _, err := verifyMeta(c.set, c.overlay, &node); err != nil {
+		if err := verifyMeta(c.set, c.overlay, &node); err != nil {
 			slog.Warn("ignoring node with unverified metadata", "name", n.Name, "addr", n.Addr, "err", err)
 			continue
 		}
