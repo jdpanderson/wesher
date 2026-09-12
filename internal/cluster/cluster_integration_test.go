@@ -81,16 +81,20 @@ func enrolCluster(t *testing.T, dir string, member *Cluster, name string, opts .
 
 // Peers are remembered by address alone; a restarted node rejoins them on the
 // cluster port, which is the one it was started with, not memberlist's default.
+// The local profile matters here: a node that left is normally let back in as
+// soon as it refutes the death gossiped at it, but a lost packet leaves it
+// waiting for the dead record to be reaped, which the WAN profile puts a
+// minute away and this one fifteen seconds.
 func Test_Cluster_Join_rememberedPeers(t *testing.T) {
 	dir := useTempStatePaths(t)
-	a := rootCluster(t, dir, "a")
+	a := rootCluster(t, dir, "a", fastMemberlist)
 	defer a.Leave()
 	chA := a.Members()
 
 	// b shares a's port on another loopback address, as real nodes share the cluster port
 	other := secondLoopback(t)
 	samePort := func(cfg *Config) { cfg.BindAddr, cfg.AdvertiseAddr, cfg.BindPort = other, other, a.port }
-	b := enrolCluster(t, dir, a, "b", samePort)
+	b := enrolCluster(t, dir, a, "b", samePort, fastMemberlist)
 	waitMembers(t, b.Members(), 1) // a is now remembered
 	waitMembers(t, chA, 1)
 	b.Leave()
@@ -102,6 +106,7 @@ func Test_Cluster_Join_rememberedPeers(t *testing.T) {
 	require.Len(t, boot.Peers, 1)
 	cfg := Config{StateDir: dir, StateName: "b", OverlayNet: testOverlay, LocalNode: testNodeFor(t, "b", boot), Boot: boot}
 	samePort(&cfg)
+	fastMemberlist(&cfg)
 	b, err = New(cfg)
 	require.NoError(t, err)
 	defer b.Leave()
@@ -172,7 +177,10 @@ func secondLoopback(t *testing.T) netip.Addr {
 
 func waitMembers(t *testing.T, ch <-chan []overlay.Node, want int) []overlay.Node {
 	t.Helper()
-	deadline := time.After(30 * time.Second)
+	// Long enough for the slowest way a membership settles under the local
+	// profile: a dead record reaped after fifteen seconds, then the state sync
+	// fifteen seconds after that.
+	deadline := time.After(60 * time.Second)
 	for {
 		select {
 		case nodes := <-ch:
