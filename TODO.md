@@ -343,6 +343,14 @@ before starting; none are committed yet.
       carries the cluster's overlay network and the joiner adopts it, which
       would also remove a setting an operator can get wrong. The README works
       around it by telling the operator to add the flag.
+- [ ] **DECISION** `--overlay-net` is not persisted, so a node restarted
+      without it silently moves to the default network: verified 2026-09-12, a
+      node on `10.42.0.0/24` came back as `10.0.0.1` with nothing in the log.
+      Its peers then reject its announcement, because the address no longer
+      matches the one its admission assigns. Persisting the network and
+      treating the flag as an override that logs a renumbering would remove
+      the failure, and pairs with the invitation item above: the joiner could
+      learn the network at enrolment and never be told it again.
 - [ ] Rate limiting sensitive incoming requests; We don't want to allow brute-forcing joins or denial of service. We should have a mechanism of shutting down incoming requests if the rate is too high. This feels like something that must already exist as a package (or combination of packages). We could also just support dectection or logging such that an external piece of software would watch the logs and block hosts. This needs thought and design before we implement
 
 ## Phase 7: identity-based membership
