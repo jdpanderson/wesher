@@ -14,16 +14,21 @@ Quality of the code and the interfaces exposed externally by this software must 
 
 ## Task Tracking
 
-Work is tracked in `TODO.md`. Take items in order, one at a time, check them off when done.
+Proposed and completed work is tracked in `TODO.md`. Take items in order, one at a time, check them off when done.
 
 ## Commits
-- One notable change per commit; each must stand alone.
-- Message: terse 1-line summary, optional short detail paragraph.
+- One notable change per commit; each must stand alone. Only simple related items can be combined.
+- Message: concise 1-line summary, optional short detail paragraph.
 
-## Code
+## Testing
  - Code that can be tested should be tested.
+ - Consider (re)writing code to allow for more thorough testing, but not if it sacrifices architecture
 
-## Comments & Documentation
+## Language
+
+Use straightforward English, without expressions; Clear and concise wording always. This applies to communication, comments, documentation, and commit messages.
+
+ ## Comments & Documentation
  - Function docblock: 1-line summary; a few more lines only if an algorithm needs it.
  - Code body comments: only where the code itself does not sufficiently explain what it does or why.
  - Algorithmic documentation: Name established patterns and algorithms used as building blocks; do not explain them.
