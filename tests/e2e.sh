@@ -57,6 +57,21 @@ invite() {
     return 1
 }
 
+# wait_gone <container> <pidfile>: block until the process named in pidfile has
+# exited, so a restart never races the old one's port still being bound. A
+# leaving node can spend up to 10s on its graceful Leave before it releases
+# anything, so a fixed sleep is not enough.
+wait_gone() {
+    local container=$1 pidfile=$2
+    for _ in $(seq 1 60); do
+        docker exec "$container" bash -c "kill -0 \$(cat $pidfile) 2>/dev/null" || return 0
+        sleep 0.5
+    done
+    echo "process in $pidfile on $container did not exit" >&2
+    dump_logs "$container"
+    return 1
+}
+
 ping_ok() { # ping_ok <from-container> <to-host> [containers whose logs to dump on failure...]
     local from=$1 to=$2
     shift 2
@@ -180,7 +195,7 @@ test_mixed_cluster_ports() {
     # the mesh agent restarts with nothing but its state: it must reach test1 on
     # 7946, the port it remembered, and not on its own 7947
     docker exec test2-orig bash -c 'kill $(cat /run/mesh.pid)'
-    sleep 2
+    wait_gone test2-orig /run/mesh.pid
     mesh_agent
 
     sleep 3
