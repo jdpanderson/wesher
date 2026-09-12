@@ -246,6 +246,33 @@ func Test_New_badBindAddr(t *testing.T) {
 	assert.Contains(t, err.Error(), "gossip transport")
 }
 
+// The local node must claim the overlay address its admission assigns, and
+// that address must fit the overlay net; both are checked before anything binds.
+func Test_New_overlayAddressMismatch(t *testing.T) {
+	dir := useTempStatePaths(t)
+	b, err := Load(dir, "a", true)
+	require.NoError(t, err)
+	b.InitRoot("a")
+	node := testNodeFor(t, "a", b)
+	node.OverlayAddr = netip.MustParseAddr("10.0.0.9")
+	_, err = New(Config{StateDir: dir, StateName: "a", BindAddr: loopback, AdvertiseAddr: loopback, OverlayNet: testOverlay, LocalNode: node, Boot: b})
+	assert.ErrorContains(t, err, "is not the assigned 10.0.0.1")
+
+	_, err = New(Config{StateDir: dir, StateName: "a", BindAddr: loopback, AdvertiseAddr: loopback, OverlayNet: netip.MustParsePrefix("10.0.0.0/31"), LocalNode: testNodeFor(t, "a", b), Boot: b})
+	assert.ErrorContains(t, err, "does not fit")
+}
+
+// memberlist refusing the configuration is reported, and the transport it was
+// handed is shut down: the same port binds again at once.
+func Test_New_badAdvertiseAddr(t *testing.T) {
+	dir := useTempStatePaths(t)
+	b, err := Load(dir, "a", true)
+	require.NoError(t, err)
+	b.InitRoot("a")
+	_, err = New(Config{StateDir: dir, StateName: "a", BindAddr: loopback, OverlayNet: testOverlay, LocalNode: testNodeFor(t, "a", b), Boot: b})
+	assert.ErrorContains(t, err, "creating memberlist")
+}
+
 func Test_New_notAMember(t *testing.T) {
 	dir := useTempStatePaths(t)
 	b, err := Load(dir, "a", true)
@@ -316,4 +343,36 @@ func Test_Cluster_detectsFailedNode(t *testing.T) {
 	close(b.done)
 	b.routines.Wait()
 	waitMembers(t, chA, 0)
+}
+
+// Enrol against nothing fails with the address in the error.
+func Test_Enrol_unreachable(t *testing.T) {
+	id := testIdentity(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, _, err := Enrol(ctx, "not an address", "token", id, "j")
+	assert.Error(t, err)
+	_, _, err = Enrol(ctx, "127.0.0.1:1", "token", id, "j")
+	assert.ErrorContains(t, err, "connecting to 127.0.0.1:1")
+}
+
+// The whole of enrolment and gossip works over IPv6.
+func Test_Cluster_ipv6(t *testing.T) {
+	v6 := netip.MustParseAddr("::1")
+	if l, err := net.ListenUDP("udp", &net.UDPAddr{IP: v6.AsSlice()}); err != nil {
+		t.Skipf("no IPv6 loopback: %v", err)
+	} else {
+		_ = l.Close()
+	}
+	onV6 := func(cfg *Config) { cfg.BindAddr, cfg.AdvertiseAddr = v6, v6 }
+	dir := useTempStatePaths(t)
+	a := rootCluster(t, dir, "a", onV6)
+	defer a.Leave()
+	chA := a.Members()
+	b := enrolCluster(t, dir, a, "b", onV6)
+	defer b.Leave()
+	drain(b.Members())
+	members := waitMembers(t, chA, 1)
+	assert.Equal(t, "b", members[0].Name)
+	assert.Equal(t, v6, members[0].Addr)
 }

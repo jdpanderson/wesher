@@ -3,7 +3,12 @@ package cluster
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
 	"io"
+	"math/big"
 	"net"
 	"net/netip"
 	"sync"
@@ -109,6 +114,7 @@ func Test_quicTransport_packetsAndStreams(t *testing.T) {
 	conn, err := a.tr.DialTimeout(b.addr, 2*time.Second)
 	require.NoError(t, err)
 	assert.Equal(t, b.addr, conn.RemoteAddr().String())
+	assert.Equal(t, a.addr, conn.LocalAddr().String())
 	go func() { _, _ = conn.Write([]byte("hello")); _ = conn.Close() }()
 	select {
 	case s := <-b.tr.StreamCh():
@@ -131,6 +137,8 @@ func Test_quicTransport_packetsAndStreams(t *testing.T) {
 	assert.NoError(t, err, "packets to a dead peer are dropped, not failed")
 	_, err = a.tr.DialTimeout("127.0.0.1:1", time.Second)
 	assert.ErrorContains(t, err, "gossip to 127.0.0.1:1")
+	_, err = a.tr.DialTimeout("not an address", time.Second)
+	assert.Error(t, err)
 }
 
 // A connection dropped from the table is closed, so the peer drops it too.
@@ -413,4 +421,59 @@ func openEnrol(t *testing.T, addr string, id *trust.Identity) (*quic.Conn, *quic
 	_, err = stream.Write([]byte{0}) // announces the stream to the peer
 	require.NoError(t, err)
 	return conn, stream
+}
+
+func Test_certIdentity(t *testing.T) {
+	_, err := certIdentity(nil)
+	assert.ErrorContains(t, err, "no certificate")
+	_, err = certIdentity([][]byte{[]byte("not a certificate")})
+	assert.Error(t, err)
+
+	// a well-formed certificate whose key is of another kind
+	ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), NotBefore: time.Now(), NotAfter: time.Now().Add(time.Hour)}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &ecKey.PublicKey, ecKey)
+	require.NoError(t, err)
+	_, err = certIdentity([][]byte{der})
+	assert.ErrorContains(t, err, "not an Ed25519 identity")
+
+	id := testIdentity(t)
+	cert, err := identityCertificate(id)
+	require.NoError(t, err)
+	got, err := certIdentity(cert.Certificate)
+	require.NoError(t, err)
+	assert.Equal(t, id.Public(), got)
+}
+
+// After Shutdown, packets are dropped as UDP would and streams are refused;
+// memberlist treats the first as a lost probe and the second as its own error.
+func Test_quicTransport_afterShutdown(t *testing.T) {
+	a, b := twoMembers(t)
+	require.NoError(t, a.tr.Shutdown())
+	_, err := a.tr.WriteTo([]byte("x"), b.addr)
+	assert.NoError(t, err)
+	_, err = a.tr.DialTimeout(b.addr, time.Second)
+	assert.ErrorContains(t, err, "shut down")
+	assert.NoError(t, a.tr.Shutdown(), "idempotent")
+}
+
+// A revoked peer's stream on a connection that is still up closes the connection.
+func Test_quicTransport_revocationCutsStreams(t *testing.T) {
+	a, b := twoMembers(t)
+	sendUntilConnected(t, a, b.addr)
+	expectPacket(t, b, "ping")
+	require.NotNil(t, b.tr.lookup(a.addr), "b reuses the connection a dialled")
+
+	_, err := a.tr.set.AddRevocation(trust.Revoke(a.id, b.id.Public(), time.Now()))
+	require.NoError(t, err)
+	conn, err := b.tr.DialTimeout(a.addr, 2*time.Second)
+	require.NoError(t, err, "the stream opens locally; a has not seen it yet")
+	streamDies(t, conn)
+	select {
+	case s := <-a.tr.StreamCh():
+		t.Fatalf("stream from a revoked node surfaced (%s)", s.RemoteAddr())
+	case <-time.After(300 * time.Millisecond):
+	}
+	waitForgotten(t, a, b.addr)
 }

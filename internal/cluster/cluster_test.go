@@ -2,10 +2,12 @@ package cluster
 
 import (
 	"encoding/json"
+	"net/netip"
 	"testing"
 	"time"
 
 	"github.com/hashicorp/memberlist"
+	"github.com/jdpanderson/cheesecloth/internal/overlay"
 	"github.com/jdpanderson/cheesecloth/internal/trust"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -139,4 +141,34 @@ func Test_Cluster_admit_refusesTakenName(t *testing.T) {
 	k := testIdentity(t)
 	_, _, err = a.admit(k.Public(), k.DHPublic(), "j")
 	assert.ErrorContains(t, err, "already exists")
+}
+
+func Test_Cluster_Revoke_root(t *testing.T) {
+	dir := useTempStatePaths(t)
+	a := rootCluster(t, dir, "a")
+	defer a.Leave()
+	assert.ErrorContains(t, a.Revoke(a.Identity()), "root cannot be revoked")
+	assert.True(t, a.Trust().Valid(a.Identity()))
+}
+
+// A cluster whose overlay net is full refuses the next joiner, naming the net.
+func Test_Cluster_admit_overlayFull(t *testing.T) {
+	dir := useTempStatePaths(t)
+	small := netip.MustParsePrefix("10.0.0.0/30") // slots 1 and 2
+	b, err := Load(dir, "a", true)
+	require.NoError(t, err)
+	b.InitRoot("a")
+	node := &overlay.Node{Name: "a"}
+	node.OverlayAddr, node.PubKey = netip.MustParseAddr("10.0.0.1"), testKey
+	a, err := New(Config{StateDir: dir, StateName: "a", BindAddr: loopback, AdvertiseAddr: loopback, OverlayNet: small, LocalNode: node, Boot: b})
+	require.NoError(t, err)
+	defer a.Leave()
+
+	j, k := testIdentity(t), testIdentity(t)
+	adm, _, err := a.admit(j.Public(), j.DHPublic(), "j")
+	require.NoError(t, err)
+	assert.Equal(t, uint64(2), adm.Host)
+	_, _, err = a.admit(k.Public(), k.DHPublic(), "k")
+	require.ErrorIs(t, err, trust.ErrOverlayFull)
+	assert.ErrorContains(t, err, "10.0.0.0/30")
 }

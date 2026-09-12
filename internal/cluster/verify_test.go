@@ -33,6 +33,8 @@ func Test_assignedAddr_and_verifyMeta(t *testing.T) {
 	assert.ErrorContains(t, err, "not a member")
 	_, err = assignedAddr(set, netip.MustParsePrefix("10.0.0.0/31"), a.Public())
 	assert.ErrorContains(t, err, "does not fit")
+	_, err = assignedAddr(set, testOverlay, trust.PublicKey{})
+	assert.ErrorContains(t, err, "not a member")
 
 	// metadata must claim the assigned address, signed by the identity
 	meta := func(id *trust.Identity, name, overlayAddr string) *overlay.Node {
@@ -48,6 +50,9 @@ func Test_assignedAddr_and_verifyMeta(t *testing.T) {
 	assert.ErrorContains(t, err, "is assigned 10.0.0.2")
 	err = verifyMeta(set, testOverlay, meta(b, "b", "10.0.0.2"))
 	assert.ErrorContains(t, err, "collides")
+	forged := meta(a, "a", "10.0.0.2")
+	forged.Signature[0] ^= 1
+	assert.ErrorContains(t, verifyMeta(set, testOverlay, forged), "signature", "metadata not signed by the identity is refused")
 
 	bad := meta(a, "a", "10.0.0.2")
 	bad.PubKey = "not a wireguard key"

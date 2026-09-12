@@ -49,6 +49,8 @@ func Test_state_save_unwritableDir(t *testing.T) {
 	blocker := filepath.Join(dir, "blocker")
 	require.NoError(t, os.WriteFile(blocker, nil, 0o600))
 	assert.Error(t, (&state{}).save(statePath(blocker, "test")), "a file where the directory should be")
+	_, err := Load(blocker, "test", true)
+	assert.ErrorContains(t, err, "saving new identity")
 }
 
 func Test_loadState_missingOrBroken(t *testing.T) {
@@ -59,6 +61,17 @@ func Test_loadState_missingOrBroken(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.json"), []byte("{not json"), 0o600))
 	_, err = loadState(statePath(dir, "test"))
 	assert.ErrorContains(t, err, "decoding state")
+	require.NoError(t, os.Mkdir(statePath(dir, "dir"), 0o700))
+	_, err = loadState(statePath(dir, "dir"))
+	assert.ErrorContains(t, err, "reading state")
+}
+
+// A state file whose seed is not one is refused, not replaced.
+func Test_Load_refusesBadSeed(t *testing.T) {
+	dir := useTempStatePaths(t)
+	require.NoError(t, (&state{Seed: []byte("short")}).save(statePath(dir, "a")))
+	_, err := Load(dir, "a", false)
+	assert.ErrorContains(t, err, "loading identity")
 }
 
 // A damaged state file must not be replaced by a new identity: that would
