@@ -54,22 +54,23 @@ const (
 )
 
 type quicTransport struct {
-	id       *trust.Identity
-	set      *trust.Set
-	udp      *net.UDPConn
-	qt       *quic.Transport
-	ln       *quic.Listener
-	server   *tls.Config
-	client   *tls.Config
-	qconf    *quic.Config
-	packets  chan *memberlist.Packet
-	streams  chan net.Conn
-	enrol    func(enrol.Conn) // runs one enrolment on a stream; nil refuses enrolment
-	enrolSem chan struct{}    // one slot per enrolment in flight
-	done     chan struct{}
-	wg       sync.WaitGroup
-	once     sync.Once
-	err      error // from Shutdown
+	id        *trust.Identity
+	set       *trust.Set
+	udp       *net.UDPConn
+	qt        *quic.Transport
+	ln        *quic.Listener
+	server    *tls.Config
+	client    *tls.Config
+	qconf     *quic.Config
+	packets   chan *memberlist.Packet
+	streams   chan net.Conn
+	enrol     func(enrol.Conn) // runs one enrolment on a stream; nil refuses enrolment
+	enrolSem  chan struct{}    // one slot per enrolment in flight
+	enrolWait time.Duration    // how long an enrolment connection may sit without opening its stream
+	done      chan struct{}
+	wg        sync.WaitGroup
+	once      sync.Once
+	err       error // from Shutdown
 
 	mu      sync.Mutex
 	conns   map[string]peerConn  // by the peer's gossip address
@@ -153,13 +154,14 @@ func newQUICTransport(bind netip.Addr, port int, id *trust.Identity, set *trust.
 			EnableDatagrams: true, MaxIdleTimeout: idleTimeout, KeepAlivePeriod: keepAlive,
 			HandshakeIdleTimeout: handshakeTime,
 		},
-		packets:  make(chan *memberlist.Packet),
-		streams:  make(chan net.Conn),
-		enrol:    handler,
-		enrolSem: make(chan struct{}, maxEnrolments),
-		done:     make(chan struct{}),
-		conns:    map[string]peerConn{},
-		dialing:  map[string]*dialCall{},
+		packets:   make(chan *memberlist.Packet),
+		streams:   make(chan net.Conn),
+		enrol:     handler,
+		enrolSem:  make(chan struct{}, maxEnrolments),
+		enrolWait: enrolStreamTime,
+		done:      make(chan struct{}),
+		conns:     map[string]peerConn{},
+		dialing:   map[string]*dialCall{},
 	}
 	t.ln, err = t.qt.Listen(t.server, t.qconf)
 	if err != nil {
@@ -405,10 +407,11 @@ func (t *quicTransport) serveEnrol(conn *quic.Conn, peer trust.PublicKey) {
 	defer t.wg.Done()
 	defer func() { <-t.enrolSem }()
 	defer func() { _ = conn.CloseWithError(0, "done") }()
-	ctx, cancel := context.WithTimeout(context.Background(), enrolStreamTime)
+	ctx, cancel := context.WithTimeout(context.Background(), t.enrolWait)
 	defer cancel()
 	s, err := conn.AcceptStream(ctx)
 	if err != nil {
+		slog.Debug("enrolment connection opened no stream", "from", conn.RemoteAddr(), "err", err)
 		return
 	}
 	t.enrol(newStreamConn(conn, s, peer))

@@ -347,18 +347,63 @@ func Test_quicTransport_enrolmentCap(t *testing.T) {
 	close(release)
 }
 
-// openEnrol dials addr for enrolment as id and opens the stream, without running the exchange.
-func openEnrol(t *testing.T, addr string, id *trust.Identity) (*quic.Conn, *quic.Stream) {
+// A transport with no enrolment handler turns enrolment connections away.
+func Test_quicTransport_enrolmentNotOffered(t *testing.T) {
+	a, _ := twoMembers(t) // nil handler
+	conn, stream := openEnrol(t, a.addr, testIdentity(t))
+	defer func() { _ = conn.CloseWithError(0, "") }()
+	_ = stream.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, err := stream.Read(make([]byte, 1))
+	require.Error(t, err, "the connection is closed")
+	var appErr *quic.ApplicationError
+	require.ErrorAs(t, err, &appErr)
+	assert.Equal(t, "enrolment not offered", appErr.ErrorMessage)
+}
+
+// An enrolment connection that never opens its stream is closed after enrolWait.
+func Test_quicTransport_enrolmentStreamTimeout(t *testing.T) {
+	rootID := testIdentity(t)
+	set := trust.NewSet(rootID.Public())
+	set.Merge(trust.Records{Admissions: []trust.Admission{trust.SelfAdmit(rootID, "a", time.Now())}})
+	handled := make(chan struct{}, 1)
+	tr, err := newQUICTransport(netip.MustParseAddr("127.0.0.1"), 0, rootID, set, func(c enrol.Conn) { handled <- struct{}{}; _ = c.Close() })
+	require.NoError(t, err)
+	defer func() { _ = tr.Shutdown() }()
+	tr.enrolWait = 200 * time.Millisecond
+
+	conn := dialEnrol(t, tr.udp.LocalAddr().String(), testIdentity(t))
+	select {
+	case <-conn.Context().Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("idle enrolment connection was not closed")
+	}
+	assert.Empty(t, handled, "the handler never ran")
+	select {
+	case <-tr.enrolSem:
+		t.Fatal("the enrolment slot was not released")
+	default:
+	}
+}
+
+// dialEnrol dials addr for enrolment as id, without opening a stream.
+func dialEnrol(t *testing.T, addr string, id *trust.Identity) *quic.Conn {
 	t.Helper()
 	cert, err := identityCertificate(id)
 	require.NoError(t, err)
-	tlsConf := enrolClientTLSConfig(cert)
-	ua, err := net.ResolveUDPAddr("udp", addr)
-	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	conn, err := quic.DialAddr(ctx, ua.String(), tlsConf, &quic.Config{})
+	conn, err := quic.DialAddr(ctx, addr, enrolClientTLSConfig(cert), &quic.Config{})
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.CloseWithError(0, "") })
+	return conn
+}
+
+// openEnrol dials addr for enrolment as id and opens the stream, without running the exchange.
+func openEnrol(t *testing.T, addr string, id *trust.Identity) (*quic.Conn, *quic.Stream) {
+	t.Helper()
+	conn := dialEnrol(t, addr, id)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 	stream, err := conn.OpenStreamSync(ctx)
 	require.NoError(t, err)
 	_, err = stream.Write([]byte{0}) // announces the stream to the peer
