@@ -1,7 +1,9 @@
 package control
 
 import (
+	"encoding/json"
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -125,4 +127,44 @@ func Test_Listen_refusesLongPath(t *testing.T) {
 
 func Test_DefaultSocket(t *testing.T) {
 	assert.Equal(t, "/run/cheesecloth/wgoverlay.sock", DefaultSocket("wgoverlay"))
+}
+
+func Test_Listen_badDirectory(t *testing.T) {
+	file := filepath.Join(socketDir(t), "file")
+	require.NoError(t, os.WriteFile(file, nil, 0o600))
+	_, err := Listen(filepath.Join(file, "ctl.sock"), &fakeHandler{})
+	assert.ErrorContains(t, err, "creating control socket directory")
+}
+
+// A request that is not JSON gets an error response, not silence.
+func Test_serve_malformedRequest(t *testing.T) {
+	path := filepath.Join(socketDir(t), "w.sock")
+	srv, err := Listen(path, &fakeHandler{})
+	require.NoError(t, err)
+	defer srv.Close()
+
+	conn, err := net.Dial("unix", path)
+	require.NoError(t, err)
+	defer func() { _ = conn.Close() }()
+	_, err = conn.Write([]byte("not json\n"))
+	require.NoError(t, err)
+	var resp Response
+	require.NoError(t, json.NewDecoder(conn).Decode(&resp))
+	assert.Equal(t, "malformed request", resp.Error)
+}
+
+// An agent that hangs up without answering is reported as such.
+func Test_Call_noReply(t *testing.T) {
+	path := filepath.Join(socketDir(t), "mute.sock")
+	ln, err := net.Listen("unix", path)
+	require.NoError(t, err)
+	defer func() { _ = ln.Close() }()
+	go func() {
+		if conn, aerr := ln.Accept(); aerr == nil {
+			_, _ = conn.Read(make([]byte, 1024)) // take the request, answer nothing
+			_ = conn.Close()
+		}
+	}()
+	_, err = Call(path, Request{Op: OpInvite, TTL: "1m", Uses: 1})
+	assert.ErrorContains(t, err, "reading the agent's reply")
 }
