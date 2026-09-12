@@ -113,7 +113,15 @@ func (s *Set) Valid(id PublicKey) bool {
 
 // valid is Valid with the lock held.
 func (s *Set) valid(id PublicKey) bool {
-	return s.validAt(id, math.MaxInt64, map[PublicKey]bool{})
+	return s.validAt(id, math.MaxInt64, map[question]bool{})
+}
+
+// question is one thing the recursion has already set out to answer: was this
+// identity a member at this time. The same identity is asked about at several
+// times along one chain, so the time belongs in the key.
+type question struct {
+	id PublicKey
+	at int64
 }
 
 // validAdmissions iterates over the valid members' records; callers hold the lock.
@@ -132,15 +140,21 @@ func (s *Set) validAdmissions() iter.Seq[Admission] {
 // it signed, even if the admitter was revoked afterwards. A member may always
 // revoke itself: only the holder of that key can sign such a record, and it
 // takes nobody else out.
-func (s *Set) validAt(id PublicKey, at int64, visiting map[PublicKey]bool) bool {
+//
+// Asking whether a revoker was a member reaches the identity it revokes again,
+// at the earlier time that identity was admitted, so the cycle guard tracks
+// the time as well as the identity. A record's time never changes, so the
+// questions the recursion can ask are finite and it always ends.
+func (s *Set) validAt(id PublicKey, at int64, visiting map[question]bool) bool {
 	if id == s.root {
 		return true
 	}
-	if visiting[id] {
+	q := question{id, at}
+	if visiting[q] {
 		return false
 	}
-	visiting[id] = true
-	defer delete(visiting, id)
+	visiting[q] = true
+	defer delete(visiting, q)
 
 	if rev, ok := s.revocations[id]; ok && rev.IssuedAt <= at && (rev.Revoker == id || s.validAt(rev.Revoker, rev.IssuedAt, visiting)) {
 		return false

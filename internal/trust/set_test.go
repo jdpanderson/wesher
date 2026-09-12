@@ -291,6 +291,16 @@ func Test_Set_validity_cycle(t *testing.T) {
 	assert.False(t, set.Valid(y.Public()))
 }
 
+func Test_Set_revocation_ofOwnAdmitter(t *testing.T) {
+	_, a, b, _, set := cluster(t) // root admitted a, a admitted b
+	rev := Revoke(b, a.Public(), t0.Add(time.Hour))
+	ok, err := set.AddRevocation(rev)
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.False(t, set.Valid(a.Public()), "a member may revoke the member that admitted it")
+	assert.True(t, set.Valid(b.Public()), "the revoker keeps the membership it was already granted")
+}
+
 func Test_Set_revocationsMergeAndRoundTrip(t *testing.T) {
 	root, a, b, _, set := cluster(t)
 	revB := Revoke(root, b.Public(), t0.Add(time.Hour))
