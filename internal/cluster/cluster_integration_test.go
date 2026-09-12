@@ -270,26 +270,32 @@ func Test_Cluster_Leave_closesMembers(t *testing.T) {
 			t.Fatal("no first snapshot")
 		}
 	}
+	// second stops reading; every change from here on lands in its one slot
 	c.signalChanged()
-	c.signalChanged() // a subscriber that does not read keeps only the latest snapshot
-	time.Sleep(100 * time.Millisecond)
-	assert.LessOrEqual(t, len(second), 1)
+	require.Eventually(t, func() bool { return len(second) == 1 }, 5*time.Second, 10*time.Millisecond, "snapshot buffered")
+	c.signalChanged()
+	c.signalChanged()
 
 	c.Leave()
 	c.Leave() // idempotent
 
-	// a snapshot still buffered is delivered, then every subscriber's channel is closed
+	// what is still buffered is delivered, then every subscriber's channel is closed
+	received := map[<-chan []overlay.Node]int{}
 	for _, sub := range []<-chan []overlay.Node{ch, second} {
 		deadline := time.After(5 * time.Second)
 		for closed := false; !closed; {
 			select {
 			case _, ok := <-sub:
 				closed = !ok
+				if ok {
+					received[sub]++
+				}
 			case <-deadline:
 				t.Fatal("Members channel not closed after Leave")
 			}
 		}
 	}
+	assert.Equal(t, 1, received[second], "a subscriber that fell behind gets the latest snapshot, not every one")
 
 	// a subscriber that arrives after Leave is not left waiting
 	_, ok := <-c.Members()
